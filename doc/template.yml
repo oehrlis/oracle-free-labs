@@ -1,0 +1,113 @@
+# ------------------------------------------------------------------------------
+# OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
+# ------------------------------------------------------------------------------
+# Name.......: template.yml
+# Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
+# Editor.....: Stefan Oehrli
+# Date.......: 2024.05.02
+# Version....: v0.1.0
+# Purpose....: Metadata file for pandoc conversion
+# Notes......: This file contains the metadata for the pandoc conversion.
+# Reference..: 
+# License....: Apache License Version 2.0
+# ------------------------------------------------------------------------------
+# Modified...:
+# 2025.05.02 oehrli - initial version
+# ------------------------------------------------------------------------------
+title: Example Document
+subtitle: Example Document Subtitle
+# uncomment the author to make them visible in the document e.g titlepage
+# author: 
+# - Stefan Oehrli
+# date is set by pandoc, uncomment the date line to explicitly set a date
+# date: 2020 November 06
+tvddocversion: 0.1.0
+lang: en
+
+# - Book settings --------------------------------------------------------------
+# book: true
+# classoption: oneside
+
+# - Page settings --------------------------------------------------------------
+papersize: a4 
+geometry:
+- top=2.54cm
+- bottom=2.54cm
+- left=2.54cm
+- right=2.54cm
+
+# - Page Header/Footer ---------------------------------------------------------
+disable-header: true
+footer-left: "Copyright © 2025 Accenture. All rights reserved."
+
+# - Titel Page -----------------------------------------------------------------
+titlepage: true
+titlepage-rule-height: 0
+titlepage-text-color: "000000"
+subtitle-color: 7500C0
+
+# - TOC Config -----------------------------------------------------------------
+toc: true
+toc-own-page: true
+toc-title: Table of Contents
+toc-depth: 2
+
+# - List of Tables / Figures ---------------------------------------------------
+lof: true
+lof-own-page: false
+lot: true
+lot-own-page: true
+
+numbersections: true
+links-as-notes: false
+linkcolor:      purple
+urlcolor:       purple
+filecolor:      purple
+bulletcolor:    black
+
+# - Listings -------------------------------------------------------------------
+listings: true
+listings-disable-line-numbers: true
+listings-no-page-break: true
+code-block-font-size: \scriptsize
+
+# - LaTeX config ---------------------------------------------------------------
+header-includes: |
+   \definecolor{purple}{HTML}{7500C0}
+
+# - Pandoc Environment ---------------------------------------------------------
+pandoc-latex-environment:
+  noteblock:      [note]
+  tipblock:       [tip]
+  warningblock:   [warning]
+  cautionblock:   [caution]
+  importantblock: [important]
+
+# - Font settings --------------------------------------------------------------
+# generic font settings
+# mainfont: Arial           # Main font
+# sansfont: Arial           # Font for headings and toc
+monofont: Courier New     # Font for listing and codes
+
+mainfont: Graphik-Regular.ttf
+mainfontoptions:
+- Path=fonts/
+- BoldFont=Graphik-Bold.ttf
+- ItalicFont=Graphik-Regular-Italic.ttf
+- BoldItalicFont=Graphik-Bold-Italic.ttf
+  
+sansfont: Graphik-Regular.ttf
+sansfontoptions:
+- Path=fonts/
+- BoldFont=Graphik-Bold.ttf
+- ItalicFont=Graphik-Regular-Italic.ttf
+- BoldItalicFont=Graphik-Bold-Italic.ttf
+
+# - Logo settings --------------------------------------------------------------
+# Local logo
+titlepage-logo: images/Acc_Logo_Black_Purple_RGB.png
+# Container based logos
+# logo:           /trivadis/images/TVDLogo2021blue.eps
+# footer-logo:    /trivadis/images/TVDLogo2021blue.eps
+# titlepage-logo: /trivadis/images/TVDLogo2021white.eps
+# --- EOF ----------------------------------------------------------------------    
