@@ -14,7 +14,7 @@
 #              - easeed  : EA repository created from PDB archive
 #              - eademo  : complex EA demo repository from PDB archive
 #
-# Reference..: https://github.com/oehrlis/oracle-free23-ealab
+# Reference..: https://github.com/oehrlis/oracle-free-labs
 # License....: Apache License Version 2.0, January 2004 as shown
 #              at http://www.apache.org/licenses/
 # ------------------------------------------------------------------------------
@@ -81,57 +81,57 @@ services:
       - "${LABDB_LISTENER_PORT}:1521"
       - "${LABDB_OEM_EXPRESS_PORT}:5500"
 
-  # - TVD repository via SQL scripts -------------------------------------------
-  tvdrepo:
+  # - OraDBA repository via SQL scripts ----------------------------------------
+  odbrepo:
     <<: *db-base
-    container_name: tvdrepo
-    hostname: tvdrepo
-    profiles: ["tvdrepo"]
+    container_name: odbrepo
+    hostname: odbrepo
+    profiles: ["odbrepo"]
     volumes:
-      - ./data/tvdrepo:/opt/oracle/oradata
-      - ./data/tvdrepo/dbconfig:/opt/oracle/dbconfig
-      - ./data/tvdrepo/logs:/opt/oracle/scripts/logs   # <-- writable logs
+      - ./data/odbrepo:/opt/oracle/oradata
+      - ./data/odbrepo/dbconfig:/opt/oracle/dbconfig
+      - ./data/odbrepo/logs:/opt/oracle/scripts/logs   # <-- writable logs
       - ${COMMON_DATA_HOST}:/opt/oracle/data
       - ./config/common/scripts:/opt/oracle/common/scripts:ro
-      - ./config/tvdrepo/setup:/opt/oracle/scripts/setup:ro
-      - ./config/tvdrepo/startup:/opt/oracle/scripts/startup:ro
+      - ./config/odbrepo/setup:/opt/oracle/scripts/setup:ro
+      - ./config/odbrepo/startup:/opt/oracle/scripts/startup:ro
     ports:
-      - "${TVDREPO_LISTENER_PORT}:1521"
-      - "${TVDREPO_OEM_EXPRESS_PORT}:5500"
+      - "${ODBREPO_LISTENER_PORT}:1521"
+      - "${ODBREPO_OEM_EXPRESS_PORT}:5500"
 
-  # - TVD repository from PDB archive (seed) -----------------------------------
-  tvdseed:
+  # - OraDBA repository from PDB archive (seed) --------------------------------
+  odbseed:
     <<: *db-base
-    container_name: tvdseed
-    hostname: tvdseed
-    profiles: ["tvdseed"]
+    container_name: odbseed
+    hostname: odbseed
+    profiles: ["odbseed"]
     volumes:
-      - ./data/tvdseed:/opt/oracle/oradata
-      - ./data/tvdseed/dbconfig:/opt/oracle/dbconfig
-      - ./data/tvdseed/logs:/opt/oracle/scripts/logs   # <-- writable logs
+      - ./data/odbseed:/opt/oracle/oradata
+      - ./data/odbseed/dbconfig:/opt/oracle/dbconfig
+      - ./data/odbseed/logs:/opt/oracle/scripts/logs   # <-- writable logs
       - ${COMMON_DATA_HOST}:/opt/oracle/data
       - ./config/common/scripts:/opt/oracle/common/scripts:ro
-      - ./config/tvdseed/setup:/opt/oracle/scripts/setup:ro
-      - ./config/tvdseed/startup:/opt/oracle/scripts/startup:ro
+      - ./config/odbseed/setup:/opt/oracle/scripts/setup:ro
+      - ./config/odbseed/startup:/opt/oracle/scripts/startup:ro
     ports:
-      - "${TVDSEED_LISTENER_PORT}:1521"
-      - "${TVDSEED_OEM_EXPRESS_PORT}:5500"
+      - "${ODBSEED_LISTENER_PORT}:1521"
+      - "${ODBSEED_OEM_EXPRESS_PORT}:5500"
 
-  # - Complex TVD demo from PDB archive ----------------------------------------
-  tvddemo:
+  # - Complex OraDBA demo from PDB archive -------------------------------------
+  odbdemo:
     <<: *db-base
-    container_name: tvddemo
-    hostname: tvddemo
-    profiles: ["tvddemo"]
+    container_name: odbdemo
+    hostname: odbdemo
+    profiles: ["odbdemo"]
     volumes:
-      - ./data/tvddemo:/opt/oracle/oradata
-      - ./data/tvddemo/dbconfig:/opt/oracle/dbconfig
-      - ./data/tvddemo/logs:/opt/oracle/scripts/logs   # <-- writable logs
+      - ./data/odbdemo:/opt/oracle/oradata
+      - ./data/odbdemo/dbconfig:/opt/oracle/dbconfig
+      - ./data/odbdemo/logs:/opt/oracle/scripts/logs   # <-- writable logs
       - ${COMMON_DATA_HOST}:/opt/oracle/data
       - ./config/common/scripts:/opt/oracle/common/scripts:ro
-      - ./config/tvddemo/setup:/opt/oracle/scripts/setup:ro
-      - ./config/tvddemo/startup:/opt/oracle/scripts/startup:ro
+      - ./config/odbdemo/setup:/opt/oracle/scripts/setup:ro
+      - ./config/odbdemo/startup:/opt/oracle/scripts/startup:ro
     ports:
-      - "${TVDEMO_LISTENER_PORT}:1521"
-      - "${TVDEMO_OEM_EXPRESS_PORT}:5500"
+      - "${ODBEMO_LISTENER_PORT}:1521"
+      - "${ODBEMO_OEM_EXPRESS_PORT}:5500"
 # - EOF ------------------------------------------------------------------------

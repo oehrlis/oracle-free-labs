@@ -1,30 +1,81 @@
+# ------------------------------------------------------------------------------
+# OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
+# ------------------------------------------------------------------------------
+# Name.......: .gitignore
+# Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
+# Editor.....: Stefan Oehrli
+# Date.......: 2025.11.14
+# Revision...: v0.1.0
+# Purpose....: Git ignore rules for oracle-free-labs repository
+# Notes......: Ignores runtime data, local environment files, OS/editor artifacts
+#
+# Reference..: https://github.com/oehrlis/oracle-free-labs
+# License....: Apache License Version 2.0, January 2004 as shown
+#              at http://www.apache.org/licenses/
+# ------------------------------------------------------------------------------
+# Modified...:
+# see git revision history with git log for more information on changes
+# ------------------------------------------------------------------------------
 
-# VS Code workspace
-*.code-workspace
+# - Runtime database data (never commit) ---------------------------------------
+# Ignore only the top-level data directory contents
+/data/*
 
-# Artefakte und generierte Dateien
-/artefacts/*
-!/artefacts/.gitkeep
-!/artefacts/*.pdf
-!/artefacts/*.xlsx
-!/artefacts/*.docx
-!/artefacts/*.pptx
+# Keep a top-level README
+!/data/README.md
 
-# Temporäre Dateien und Backup-Dateien
-*~
-*.bak
-*.tmp
+# Keep service subfolders and their README.md files
+!/data/*/
+!/data/*/README.md
+
+# Keep nested dbconfig and FREE directories (but not their contents by default)
+!/data/*/dbconfig/
+!/data/*/FREE/
+
+# Still ignore actual DB files inside those
+/data/*/dbconfig/*
+/data/*/FREE/*
+data/*/.FREE.created
+
+# Allow .gitkeep or README.md inside ignored dirs
+!/data/*/dbconfig/.gitkeep
+!/data/*/dbconfig/README.md
+!/data/*/FREE/.gitkeep
+!/data/*/FREE/README.md
+
+# - Do not ignore config/common/data (we want .gitignore there to apply) -------
+!config/common/data/
+!config/common/data/.gitignore
+!config/common/data/dpdump/
+!config/common/data/dpdump/.gitignore
+!config/common/data/pdbarch/
+!config/common/data/pdbarch/.gitignore
+
+# - Local environment files ----------------------------------------------------
+.env
+.env.local
+*.log
+
+# - OS junk --------------------------------------------------------------------
 .DS_Store
 Thumbs.db
 
-# Systemverzeichnisse
-__pycache__/
-*.log
-
-# Editor-spezifisch
+# - Editor / IDE junk ----------------------------------------------------------
 .vscode/
 .idea/
+*.swp
+*~
 
-# Python virtual environments
-.venv/
-env/
+# - Archive / export files -----------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.bak
+*.dmp
+
+# - Python / Node helpers (if used for tooling) --------------------------------
+__pycache__/
+node_modules/
+
+# - EOF ------------------------------------------------------------------------
