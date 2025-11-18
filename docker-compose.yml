@@ -6,7 +6,7 @@
 # Editor.....: Stefan Oehrli
 # Date.......: 2025.08.18
 # Revision...: v0.1.0
-# Purpose....: Docker Compose file for Oracle Free 23ai EA Lab services
+# Purpose....: Docker Compose file for Oracle Free 23ai OraDBA Lab services
 # Notes......: Defines profiles for the following services:
 #              - cdbfree : plain Oracle 23ai Free Edition
 #              - labdb   : empty database for labs/tests

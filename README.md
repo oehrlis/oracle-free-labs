@@ -1,6 +1,6 @@
-# Oracle Database 23ai Free EA Lab Environment
+# Oracle Database 23ai Free OraDBA Lab Environment
 
-This repository delivers a **container-based lab environment** for *Oracle Database Free 23ai*, designed for testing, training, and engineering use cases within the **EA Lab Environment**.
+This repository delivers a **container-based lab environment** for *Oracle Database Free 23ai*, designed for testing, training, and engineering use cases within the **OraDBA Lab Environment**.
 It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle Database instances — with or without EA Sparx repositories — using **Docker** or **Podman**. The setup is optimized for **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
 
 ## Requirements
