@@ -32,6 +32,7 @@ docker compose --profile cdbfree up -d
 # docker compose --profile odbseed up -d
 # docker compose --profile odbrepo up -d
 # docker compose --profile odbdemo up -d
+# docker compose --profile odbenc up -d
 
 # 5) Check containers
 docker ps
@@ -106,7 +107,7 @@ DATABASE IS READY TO USE!
 podman-compose --profile cdbfree up -d
 ```
 
-Replace `cdbfree` with `labdb`, `odbseed`, `odbrepo`, or `odbdemo` to start other scenarios.
+Replace `cdbfree` with `labdb`, `odbseed`, `odbrepo`, `odbdemo` or `odbenc` to start other scenarios.
 
 ## Verify setup
 
@@ -129,6 +130,7 @@ Ports are preconfigured in the `.env` file. Each service uses its own dedicated 
 | odbrepo | 1528          | 5508             |
 | odbseed | 1529          | 5509             |
 | odbdemo | 1530          | 5510             |
+| odbenc  | 1531          | 5511             |
 
 ## Requirements
 

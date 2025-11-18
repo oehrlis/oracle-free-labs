@@ -79,6 +79,8 @@ ODBSEED_LISTENER_PORT=1529
 ODBSEED_OEM_EXPRESS_PORT=5509
 ODBDEMO_LISTENER_PORT=1530
 ODBDEMO_OEM_EXPRESS_PORT=5510
+ODBENC_LISTENER_PORT=1531
+ODBENC_OEM_EXPRESS_PORT=5511
 ```
 
 ## Folder Layout
@@ -128,8 +130,8 @@ cdbfree:
     - ${COMMON_DATA_HOST}:/opt/oracle/data
     - ./config/common/scripts:/opt/oracle/scripts:ro
   ports:
-    - "${CDBFREE_LISTENER_PORT}:1521"
-    - "${CDBFREE_OEM_EXPRESS_PORT}:5500"
+    - "${CDBFREE_LISTENER_PORT}:1526"
+    - "${CDBFREE_OEM_EXPRESS_PORT}:5506"
 ```
 
 Access
@@ -157,8 +159,8 @@ labdb:
     - ./config/labdb/setup:/opt/oracle/scripts/setup:ro
     - ./config/labdb/startup:/opt/oracle/scripts/startup:ro
   ports:
-    - "${LABDB_LISTENER_PORT}:1521"
-    - "${LABDB_OEM_EXPRESS_PORT}:5500"
+    - "${LABDB_LISTENER_PORT}:1527"
+    - "${LABDB_OEM_EXPRESS_PORT}:5507"
 ```
 
 ### ODBREPO
@@ -180,8 +182,8 @@ odbrepo:
     - ./config/odbrepo/setup:/opt/oracle/scripts/setup:ro
     - ./config/odbrepo/startup:/opt/oracle/scripts/startup:ro
   ports:
-    - "${ODBREPO_LISTENER_PORT}:1521"
-    - "${ODBREPO_OEM_EXPRESS_PORT}:5500"
+    - "${ODBREPO_LISTENER_PORT}:1528"
+    - "${ODBREPO_OEM_EXPRESS_PORT}:5508"
 ```
 
 ### ODBSEED
@@ -203,8 +205,8 @@ odbseed:
     - ./config/odbseed/setup:/opt/oracle/scripts/setup:ro
     - ./config/odbseed/startup:/opt/oracle/scripts/startup:ro
   ports:
-    - "${ODBSEED_LISTENER_PORT}:1521"
-    - "${ODBSEED_OEM_EXPRESS_PORT}:5500"
+    - "${ODBSEED_LISTENER_PORT}:1529"
+    - "${ODBSEED_OEM_EXPRESS_PORT}:5509"
 ```
 
 ### ODBDEMO
@@ -226,8 +228,31 @@ odbdemo:
     - ./config/odbdemo/setup:/opt/oracle/scripts/setup:ro
     - ./config/odbdemo/startup:/opt/oracle/scripts/startup:ro
   ports:
-    - "${ODBDEMO_LISTENER_PORT}:1521"
-    - "${ODBDEMO_OEM_EXPRESS_PORT}:5500"
+    - "${ODBDEMO_LISTENER_PORT}:1530"
+    - "${ODBDEMO_OEM_EXPRESS_PORT}:5510"
+```
+
+### ODBENC
+
+Purpose: full-featured demo environment for Enterprise Architect
+Specialty: drops FREEPDB1, creates and configures ODBENC PDB, loads schema and data and configure TDE.
+
+```yaml
+odbenc:
+  <<: *db-base
+  container_name: odbenc
+  profiles: ["odbenc"]
+  volumes:
+    - ./data/odbenc:/opt/oracle/oradata
+    - ./data/odbenc/dbconfig:/opt/oracle/dbconfig
+    - ./data/odbenc/logs:/opt/oracle/scripts/logs
+    - ${COMMON_DATA_HOST}:/opt/oracle/data
+    - ./config/common/scripts:/opt/oracle/common/scripts:ro
+    - ./config/odbenc/setup:/opt/oracle/scripts/setup:ro
+    - ./config/odbenc/startup:/opt/oracle/scripts/startup:ro
+  ports:
+    - "${ODBENC_LISTENER_PORT}:1531"
+    - "${ODBENC_OEM_EXPRESS_PORT}:5511"
 ```
 
 ## Starting and verifying a service

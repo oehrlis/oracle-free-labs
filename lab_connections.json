@@ -299,6 +299,81 @@
       },
       "name": "odbdemo ODBDEMO odb_hr",
       "type": "jdbc"
+    },
+    {
+      "info": {
+        "role": "SYSDBA",
+        "SavePassword": "false",
+        "OracleConnectionType": "BASIC",
+        "PROXY_TYPE": "USER NAME",
+        "RaptorConnectionType": "Oracle",
+        "sid": "FREE",
+        "NAV_FOLDER": "OraDBA/odbenc",
+        "customUrl": "jdbc:oracle:thin:@localhost:1531:FREE",
+        "oraDriverType": "thin",
+        "NoPasswordConnection": "TRUE",
+        "hostname": "localhost",
+        "driver": "oracle.jdbc.OracleDriver",
+        "subtype": "oraJDBC",
+        "port": "1531",
+        "OS_AUTHENTICATION": "false",
+        "IS_PROXY": "false",
+        "KERBEROS_AUTHENTICATION": "false",
+        "user": "sys",
+        "PROXY_USER_NAME": ""
+      },
+      "name": "odbenc CDB$ROOT",
+      "type": "jdbc"
+    },
+    {
+      "info": {
+        "role": "SYSDBA",
+        "SavePassword": "false",
+        "OracleConnectionType": "BASIC",
+        "PROXY_TYPE": "USER NAME",
+        "RaptorConnectionType": "Oracle",
+        "serviceName": "odbenc.oradba.ch",
+        "NAV_FOLDER": "OraDBA/odbenc",
+        "customUrl": "jdbc:oracle:thin:@//localhost:1531/odbenc.oradba.ch",
+        "oraDriverType": "thin",
+        "NoPasswordConnection": "TRUE",
+        "hostname": "localhost",
+        "driver": "oracle.jdbc.OracleDriver",
+        "subtype": "oraJDBC",
+        "port": "1531",
+        "OS_AUTHENTICATION": "false",
+        "IS_PROXY": "false",
+        "KERBEROS_AUTHENTICATION": "false",
+        "user": "sys",
+        "PROXY_USER_NAME": ""
+      },
+      "name": "odbenc ODBENC",
+      "type": "jdbc"
+    },
+    {
+      "info": {
+        "role": "",
+        "SavePassword": "false",
+        "OracleConnectionType": "BASIC",
+        "PROXY_TYPE": "USER NAME",
+        "RaptorConnectionType": "Oracle",
+        "serviceName": "odbenc.oradba.ch",
+        "NAV_FOLDER": "OraDBA/odbenc",
+        "customUrl": "jdbc:oracle:thin:@//localhost:1531/odbenc.oradba.ch",
+        "oraDriverType": "thin",
+        "NoPasswordConnection": "TRUE",
+        "hostname": "localhost",
+        "driver": "oracle.jdbc.OracleDriver",
+        "subtype": "oraJDBC",
+        "port": "1531",
+        "OS_AUTHENTICATION": "false",
+        "IS_PROXY": "false",
+        "KERBEROS_AUTHENTICATION": "false",
+        "user": "odb_hr",
+        "PROXY_USER_NAME": ""
+      },
+      "name": "odbenc ODBENC odb_hr",
+      "type": "jdbc"
     }
   ]
 }

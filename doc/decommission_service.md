@@ -101,6 +101,17 @@ rm -rf ./data/odbrepo/dbconfig/*
 rm -rf ./data/odbrepo/logs/*
 ```
 
+For `odbenc`:
+
+```bash
+docker compose --profile odbenc down
+rm -f ./data/odbenc/.FREE.created
+rm -f ./data/odbenc/FREE/.FREE.created
+rm -rf ./data/odbenc/FREE/*
+rm -rf ./data/odbenc/dbconfig/*
+rm -rf ./data/odbenc/logs/*
+```
+
 ## Notes
 
 - Use caution: removing files under `data/<service>` permanently deletes the database and cannot be undone
