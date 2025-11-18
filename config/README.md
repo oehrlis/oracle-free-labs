@@ -14,16 +14,20 @@ Each subfolder corresponds to a service profile defined in `docker-compose.yml`.
   [Read more »](labdb/README.md)
 
 - **odbrepo/**  
-  Configuration for the **odbrepo** service - creates an EA Sparx repository using SQL scripts.  
+  Configuration for the **odbrepo** service - creates an OraDBA Lab using SQL scripts.  
   [Read more »](odbrepo/README.md)
 
 - **odbseed/**  
-  Configuration for the **odbseed** service - restores an EA Sparx repository from a PDB archive.  
+  Configuration for the **odbseed** service - restores an OraDBA Lab from a PDB archive.  
   [Read more »](odbseed/README.md)
 
 - **odbdemo/**  
-  Configuration for the **odbdemo** service - sets up a complex EA demo repository from a PDB archive with additional setup steps.  
+  Configuration for the **odbdemo** service - sets up a complex OraDBA Lab from a PDB archive with additional setup steps.  
   [Read more »](odbdemo/README.md)
+
+- **odbenc/**  
+  Configuration for the **odbenc** service - sets up a complex OraDBA Lab with TDE using SQL scripts.
+  [Read more »](odbenc/README.md)
 
 ## 🛠 Conventions
 
