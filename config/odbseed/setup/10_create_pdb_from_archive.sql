@@ -32,7 +32,7 @@ DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 
 -- run the main script ---------------------------------------------------------
 -- Create PDB from PDB$SEED ----------------------------------------------------
-@/opt/oracle/common/scripts/create_pdb_from_archive.sql ODBSEED /opt/oracle/data/pdbarch/pdb23ai_odbseed.pdb
+@/opt/oracle/common/scripts/create_pdb_from_archive.sql ODBSEED /opt/oracle/data/pdbarch/pdb26ai_odbseed.pdb
 
 -- End logging -----------------------------------------------------------------
 @/opt/oracle/common/scripts/define_logging_end.sql

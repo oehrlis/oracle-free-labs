@@ -75,8 +75,8 @@ rm -f ./data/odbdemo/FREE/.FREE.created
 rm -rf ./data/odbdemo/FREE/*
 rm -rf ./data/odbdemo/dbconfig/*
 rm -rf ./data/odbdemo/logs/*
-mv config/common/data/pdbarch/pdb23ai_odbseed.pdb \
-config/common/data/pdbarch/pdb23ai_odbseed.$(date '+%d%m%y-%H%M%S').pdb
+mv config/common/data/pdbarch/pdb26ai_odbseed.pdb \
+config/common/data/pdbarch/pdb26ai_odbseed.$(date '+%d%m%y-%H%M%S').pdb
 ```
 
 For `odbseed`:

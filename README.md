@@ -13,8 +13,8 @@ Before starting, ensure you have the following:
 - Preconfigured PDBs with EA Repositories require the following PDB archives.
   They must be placed in `config/common/data/pdbarch` on the host, which is mounted into the container at `/opt/oracle/data/pdbarch/`.
   These archives are **mandatory** if the services `odbseed` and `odbrepo` are used:
-  - `pdb23ai_odbseed.pdb`
-  - `pdb23ai_odbrepo.pdb`
+  - `pdb26ai_odbseed.pdb`
+  - `pdb26ai_odbrepo.pdb`
 - Optionally: a **basenv** archive if you want to install basenv inside the container  
 
 ## Repository Structure
@@ -46,8 +46,8 @@ This environment includes several containerized database services, each with a d
 | **cdbfree** | FREEDB1     | Plain Oracle Database 23ai Free base instance for general tests.            |
 | **labdb**   | LABPDB1       | Customized Oracle Database for miscellaneous experiments.                   |
 | **odbdemo**  | ODBDEMO      | OraDBA repository created using official OraDBA scripts.                |
-| **odbseed**  | ODBSEED      | Minimal OraDBA repository initialized from `pdb23ai_odbseed.pdb`.          |
-| **odbrepo**  | ODBREPO      | Full multitenant OraDBA repository initialized from `pdb23ai_odbrepo.pdb`. |
+| **odbseed**  | ODBSEED      | Minimal OraDBA repository initialized from `pdb26ai_odbseed.pdb`.          |
+| **odbrepo**  | ODBREPO      | Full multitenant OraDBA repository initialized from `pdb26ai_odbrepo.pdb`. |
 
 ![Architecture Overview](doc/oracle-free-labs.png)
 

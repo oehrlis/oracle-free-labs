@@ -13,7 +13,7 @@
 --    - Must be executed in CDB$ROOT as SYSDBA.
 --    - Default values:
 --        pdb_name    = odbseed
---        pdb_archive = /opt/oracle/data/pdbarch/pdb23ai_odbseed.pdb
+--        pdb_archive = /opt/oracle/data/pdbarch/pdb26ai_odbseed.pdb
 --  Reference.: DBMS_PDB.CHECK_PLUG_COMPATIBILITY, CREATE PLUGGABLE DATABASE
 --  License...: Apache License Version 2.0, January 2004
 --              http://www.apache.org/licenses/
@@ -30,14 +30,14 @@ SET VERIFY OFF
 
 -- Parameters ------------------------------------------------------------------
 -- &1 => PDB name (optional; default: PDB1)
--- &2 => Archive path (optional; default: /opt/oracle/data/pdbarch/pdb23ai_<pdbname>.pdb)
+-- &2 => Archive path (optional; default: /opt/oracle/data/pdbarch/pdb26ai_<pdbname>.pdb)
 COLUMN 1 NEW_VALUE 1 NOPRINT
 COLUMN 2 NEW_VALUE 2 NOPRINT
 SELECT '' "1" FROM dual WHERE ROWNUM = 0;
 SELECT '' "2" FROM dual WHERE ROWNUM = 0;
 
 DEFINE _PDB_NAME = &1 'odbseed'
-DEFINE _PDB_ARCH = &2 '/opt/oracle/data/pdbarch/pdb23ai_odbseed.pdb'
+DEFINE _PDB_ARCH = &2 '/opt/oracle/data/pdbarch/pdb26ai_odbseed.pdb'
 SET FEEDBACK ON
 
 -- Main ------------------------------------------------------------------------

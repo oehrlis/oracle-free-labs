@@ -16,13 +16,13 @@ must be run in the specified order.
 
 - **10_create_pdb_from_archive.sql**  
   Creates the pluggable database `ODBSEED` from a PDB archive.  
-  The archive file `pdb23ai_odbseed.pdb` must be placed in
+  The archive file `pdb26ai_odbseed.pdb` must be placed in
   `config/common/data/pdbarch` before starting the container.
 
 ## Notes
 
 - Scripts in this folder run automatically during the first container startup.
-- Ensure the required archive file `pdb23ai_odbseed.pdb` is available in
+- Ensure the required archive file `pdb26ai_odbseed.pdb` is available in
   `config/common/data/pdbarch` before starting the container.
 - File names are numbered to enforce execution order.
 - Additional setup scripts can be added as needed to extend or customize the
