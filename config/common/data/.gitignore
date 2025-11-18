@@ -1,0 +1,8 @@
+# Ignore all contents in data except subfolder rules
+*
+
+# Keep folder structure and README files
+!README.md
+!.gitignore
+!dpdump/
+!pdbarch/

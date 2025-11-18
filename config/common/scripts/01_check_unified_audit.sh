@@ -1,0 +1,63 @@
+#!/bin/bash
+# ------------------------------------------------------------------------------
+# OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
+# ------------------------------------------------------------------------------
+# Name.......: 01_check_unified_audit.sh
+# Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
+# Editor.....: Stefan Oehrli
+# Date.......: 2025.08.19
+# Revision...: v1.0.0
+# Purpose....: Check if Unified Auditing is enabled for the database and enable
+#              it if not. Stops the database, relinks with unified audit, and
+#              restarts the instance if required.
+# Notes......:
+#   - Requires ORACLE_HOME and ORACLE_SID to be set in the environment.
+#   - Must be executed on the database server as the Oracle software owner.
+# Reference..: https://github.com/oehrlis/oudbase
+# License....: Apache License Version 2.0, January 2004
+#              http://www.apache.org/licenses/
+# ------------------------------------------------------------------------------
+# Modified...:
+#   see git revision history with git log for more information on changes
+# ------------------------------------------------------------------------------
+
+# - configure instance ---------------------------------------------------------
+echo "Verify Unified Audit for Database ${ORACLE_SID}:"
+echo "  ORACLE_SID          :   ${ORACLE_SID}"
+echo "  ORACLE_HOME         :   ${ORACLE_HOME}"
+
+# get the status from the DB
+UNIFIED_AUDIT_STATUS=$(${ORACLE_HOME}/bin/sqlplus -S -L /nolog <<EOFSQL 
+connect / as sysdba
+SET VERIFY OFF FEEDBACK OFF HEADING OFF PAGES 0 LINES 40 TRIMSPOOL on SERVEROUTPUT ON
+SELECT value FROM v\$option WHERE parameter = 'Unified Auditing';
+EOFSQL
+)
+
+if [ "${UNIFIED_AUDIT_STATUS^^}" == "TRUE" ]; then
+    echo "unified audit option is enabled"
+elif [ "${UNIFIED_AUDIT_STATUS^^}" == "FALSE" ]; then
+    echo "unified audit option is not enabled and will no be enabled"
+    echo "Stop Database ${ORACLE_SID}:"
+    ${ORACLE_HOME}/bin/sqlplus -S -L /nolog <<EOFSQL
+    connect / as sysdba
+    SELECT value FROM v\$option WHERE parameter = 'Unified Auditing';
+    shutdown immediate;
+    exit;
+EOFSQL
+
+    echo "Relink Database ${ORACLE_SID} to enable unified audit:"
+    cd $ORACLE_HOME/rdbms/lib
+    make -f ins_rdbms.mk uniaud_on ioracle
+
+    echo "Start Database ${ORACLE_SID}:"
+    ${ORACLE_HOME}/bin/sqlplus -S -L /nolog <<EOFSQL
+    connect / as sysdba
+    startup;
+    SELECT value FROM v\$option WHERE parameter = 'Unified Auditing';
+    exit;
+EOFSQL
+else
+    echo "Can not determin status of unified audit option is enabled"  
+fi
+# - EOF ------------------------------------------------------------------------

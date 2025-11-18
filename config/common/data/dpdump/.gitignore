@@ -1,0 +1,8 @@
+# Ignore Data Pump dump and log files
+*.dmp
+*.log
+
+# Keep parameter files and README
+!*.par
+!README.md
+!.gitignore

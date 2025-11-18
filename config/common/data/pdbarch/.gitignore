@@ -1,0 +1,7 @@
+# Ignore all PDB archive files
+*.pdb
+*.zip
+
+# Keep the README
+!README.md
+!.gitignore
