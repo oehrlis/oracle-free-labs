@@ -4,7 +4,7 @@
 --  Name......: require_pdb.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Generic snippet to validate execution in a PDB (not CDB$ROOT).
 --  Notes.....: To be called at the beginning of scripts that must run

@@ -2,7 +2,7 @@
 
 This folder contains startup scripts that are executed every time the container
 starts. Use these scripts for recurring configuration tasks that must be applied
-after the database and the `ODBDEMO` PDB are opened.
+after the database and the `ODBENC` PDB are opened.
 
 ## Scripts in Use
 
@@ -10,8 +10,8 @@ after the database and the `ODBDEMO` PDB are opened.
   Basic instance startup configuration. Executed in CDB$ROOT to apply settings
   each time the database instance is started.
 
-- **10_startup_config_odbdemo.sql**  
-  Basic instance startup configuration for the PDB `ODBDEMO`. Executed after the
+- **10_startup_config_odbenc.sql**  
+  Basic instance startup configuration for the PDB `ODBENC`. Executed after the
   PDB is opened to apply PDB-scoped settings.
 
 ## Notes

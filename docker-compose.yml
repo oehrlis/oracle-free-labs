@@ -4,15 +4,16 @@
 # Name.......: docker-compose.yml
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2025.08.18
+# Date.......: 2025.11.18
 # Revision...: v0.1.0
 # Purpose....: Docker Compose file for Oracle Free 23ai OraDBA Lab services
 # Notes......: Defines profiles for the following services:
-#              - cdbfree : plain Oracle 23ai Free Edition
-#              - labdb   : empty database for labs/tests
+#              - cdbfree  : plain Oracle 23ai Free Edition
+#              - labdb    : empty database for labs/tests
 #              - odbrepo  : EA repository created via SQL scripts
 #              - odbseed  : EA repository created from PDB archive
 #              - odbdemo  : complex EA demo repository from PDB archive
+#              - odbenc   : complex EA demo with TDE via SQL scripts
 #
 # Reference..: https://github.com/oehrlis/oracle-free-labs
 # License....: Apache License Version 2.0, January 2004 as shown
@@ -81,7 +82,7 @@ services:
       - "${LABDB_LISTENER_PORT}:1521"
       - "${LABDB_OEM_EXPRESS_PORT}:5500"
 
-  # - OraDBA repository via SQL scripts ----------------------------------------
+  # - OraDBA LAB via SQL scripts -----------------------------------------------
   odbrepo:
     <<: *db-base
     container_name: odbrepo
@@ -99,7 +100,7 @@ services:
       - "${ODBREPO_LISTENER_PORT}:1521"
       - "${ODBREPO_OEM_EXPRESS_PORT}:5500"
 
-  # - OraDBA repository from PDB archive (seed) --------------------------------
+  # - OraDBA LAB from PDB archive (seed) ---------------------------------------
   odbseed:
     <<: *db-base
     container_name: odbseed
@@ -117,7 +118,7 @@ services:
       - "${ODBSEED_LISTENER_PORT}:1521"
       - "${ODBSEED_OEM_EXPRESS_PORT}:5500"
 
-  # - Complex OraDBA demo from PDB archive -------------------------------------
+  # - Complex OraDBA LAB from PDB archive ---------------------------------------
   odbdemo:
     <<: *db-base
     container_name: odbdemo
@@ -134,4 +135,22 @@ services:
     ports:
       - "${ODBDEMO_LISTENER_PORT}:1521"
       - "${ODBDEMO_OEM_EXPRESS_PORT}:5500"
+
+  # - Complex OraDBA TDE via SQL scripts ---------------------------------------
+  odbenc:
+    <<: *db-base
+    container_name: odbenc
+    hostname: odbenc
+    profiles: ["odbenc"]
+    volumes:
+      - ./data/odbenc:/opt/oracle/oradata
+      - ./data/odbenc/dbconfig:/opt/oracle/dbconfig
+      - ./data/odbenc/logs:/opt/oracle/scripts/logs   # <-- writable logs
+      - ${COMMON_DATA_HOST}:/opt/oracle/data
+      - ./config/common/scripts:/opt/oracle/common/scripts:ro
+      - ./config/odbenc/setup:/opt/oracle/scripts/setup:ro
+      - ./config/odbenc/startup:/opt/oracle/scripts/startup:ro
+    ports:
+      - "${ODBENC_LISTENER_PORT}:1521"
+      - "${ODBENC_OEM_EXPRESS_PORT}:5500"
 # - EOF ------------------------------------------------------------------------

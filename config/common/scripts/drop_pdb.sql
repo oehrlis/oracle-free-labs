@@ -4,7 +4,7 @@
 --  Name......: drop_pdb.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.21
+--  Date......: 2025.11.18
 --  Revision..: v1.0.1
 --  Purpose...: Drop a pluggable database (PDB) if it exists. Closes the PDB
 --              if open, then drops INCLUDING DATAFILES.

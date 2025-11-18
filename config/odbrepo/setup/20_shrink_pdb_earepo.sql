@@ -4,7 +4,7 @@
 --  Name......: 20_shrink_pdb_odbrepo.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Script to resize the datafile down to the highwater mark
 --  Notes.....: Must be executed as SYSDBA connected to CDB$ROOT

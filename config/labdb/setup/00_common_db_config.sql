@@ -4,7 +4,7 @@
 --  Name......: 00_config_db.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Basic instance configuration (parameters requiring restart)
 --  Notes.....: Must be executed as SYSDBA connected to CDB$ROOT

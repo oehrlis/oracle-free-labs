@@ -4,7 +4,7 @@
 --  Name......: init_audit_config.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Initialize Audit environment. Create Tablespace, reorganize Audit
 --              tables and create jobs

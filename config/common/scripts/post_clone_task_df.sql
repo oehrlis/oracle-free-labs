@@ -4,7 +4,7 @@
 --  Name......: post_clone_task_df.sql
 --  Author....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Resize datafiles down to the high-water mark after a clone
 --              operation. Disables block change tracking in the CDB root if

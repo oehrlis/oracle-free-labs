@@ -4,7 +4,7 @@
 --  Name......: define_logging_end.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: End logging for script execution (SPOOL OFF).
 --  Notes.....: To be included at the end of scripts paired with

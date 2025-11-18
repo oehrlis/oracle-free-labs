@@ -1,10 +1,10 @@
 --------------------------------------------------------------------------------
 -- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 --------------------------------------------------------------------------------
---  Name......: 20_setup_ea_baseline_odbdemo.sql
+--  Name......: 20_setup_ea_baseline_odbenc.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: PDB-scoped security baseline for EA repository
 --              - Create EA role with minimum required privileges
@@ -23,11 +23,11 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 SET LINESIZE 256 PAGESIZE 1000
 SET SERVEROUTPUT ON FEEDBACK ON ECHO OFF TERMOUT ON VERIFY OFF
 
-PROMPT - Switch to PDB ODBDEMO
-ALTER SESSION SET CONTAINER=ODBDEMO;
+PROMPT - Switch to PDB ODBENC
+ALTER SESSION SET CONTAINER=ODBENC;
 
 -- Begin logging ---------------------------------------------------------------
-DEFINE LOG_PREFIX = '20_setup_ea_baseline_odbdemo'
+DEFINE LOG_PREFIX = '20_setup_ea_baseline_odbenc'
 DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 @/opt/oracle/common/scripts/define_logging_begin.sql
 

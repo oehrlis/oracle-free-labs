@@ -1,12 +1,12 @@
 --------------------------------------------------------------------------------
 -- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 --------------------------------------------------------------------------------
---  Name......: 10_create_pdb_odbdemo.sql
+--  Name......: 10_create_pdb_odbenc.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
---  Purpose...: Script to create PDB ODBDEMO from PPDB$SEED if it does not exists yet and
+--  Purpose...: Script to create PDB ODBENC from PPDB$SEED if it does not exists yet and
 --              add a tablespace USESRS
 --  Notes.....: Must be executed as SYSDBA connected to CDB$ROOT
 --  Reference.: --
@@ -23,7 +23,7 @@ SET LINESIZE 256 PAGESIZE 1000
 SET SERVEROUTPUT ON FEEDBACK ON ECHO OFF TERMOUT ON VERIFY OFF
 
 -- Begin logging ---------------------------------------------------------------
-DEFINE LOG_PREFIX = '10_create_pdb_odbdemo'
+DEFINE LOG_PREFIX = '10_create_pdb_odbenc'
 DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 @/opt/oracle/common/scripts/define_logging_begin.sql
 
@@ -32,7 +32,7 @@ DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 
 -- run the main script ---------------------------------------------------------
 -- Create PDB from PDB$SEED ----------------------------------------------------
-@/opt/oracle/common/scripts/create_pdb.sql ODBDEMO
+@/opt/oracle/common/scripts/create_pdb.sql ODBENC
 
 -- End logging -----------------------------------------------------------------
 @/opt/oracle/common/scripts/define_logging_end.sql

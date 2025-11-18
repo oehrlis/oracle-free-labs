@@ -1,10 +1,11 @@
 --------------------------------------------------------------------------------
 -- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 --------------------------------------------------------------------------------
---  Name......: 10_startup_config_odbseed.sql
+--  Name......: 
+.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Basic instance startup configuration for PDB ODBSEED
 --  Notes.....: Must be executed as SYSDBA connected to CDB$ROOT

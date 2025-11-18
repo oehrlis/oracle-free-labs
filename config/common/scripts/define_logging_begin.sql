@@ -4,7 +4,7 @@
 --  Name......: define_logging_begin.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.1
 --  Purpose...: Define logging variables and start SPOOL for script execution.
 --  Notes.....: 

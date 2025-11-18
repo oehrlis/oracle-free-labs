@@ -4,7 +4,7 @@
 --  Name......: create_pdb.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Create a PDB from PDB$SEED (if not existing), open it RW, save
 --              state. Admin user defaults to PDBADMIN with a random password.

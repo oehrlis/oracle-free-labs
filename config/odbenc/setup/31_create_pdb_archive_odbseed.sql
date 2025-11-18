@@ -4,9 +4,9 @@
 --  Name......: 31_create_pdb_archive_odbseed.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
---  Purpose...: SQL script to initialize schema for PDB ODBDEMO
+--  Purpose...: SQL script to initialize schema for PDB ODBENC
 --  Notes.....: Must be executed with SYSDBA or DBA privileges
 --  Reference.: --
 --  License...: Apache License Version 2.0, January 2004 as shown

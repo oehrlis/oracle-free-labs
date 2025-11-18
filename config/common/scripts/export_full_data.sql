@@ -4,7 +4,7 @@
 --  Name......: export_full_data.sql
 --  Author....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Perform a full PDB export using DBMS_DATAPUMP. Creates a dump
 --              file set and log file in the COMMON_DATA directory and starts

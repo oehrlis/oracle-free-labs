@@ -4,7 +4,7 @@
 --  Name......: 10_create_pdb_odbdemo.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Script to create PDB ODBDEMO from PPDB$SEED if it does not exists yet and
 --              add a tablespace USESRS

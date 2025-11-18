@@ -4,7 +4,7 @@
 --  Name......: common_db_config.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Common instance configuration (parameters requiring restart)
 --  Notes.....: - Execute in CDB$ROOT as SYSDBA (pair with require_cdb_root.sql).

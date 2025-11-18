@@ -5,7 +5,7 @@
 # Name.......: 01_check_unified_audit.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2025.08.19
+# Date.......: 2025.11.18
 # Revision...: v1.0.0
 # Purpose....: Check if Unified Auditing is enabled for the database and enable
 #              it if not. Stops the database, relinks with unified audit, and

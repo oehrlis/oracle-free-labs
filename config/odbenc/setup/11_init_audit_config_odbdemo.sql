@@ -1,10 +1,10 @@
 --------------------------------------------------------------------------------
 -- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 --------------------------------------------------------------------------------
---  Name......: 11_init_audit_config_odbdemo.sql
+--  Name......: 11_init_audit_config_odbenc.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Initialize Audit environment. Create Tablespace, reorganize Audit
 --              tables and create jobs
@@ -22,12 +22,12 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 SET LINESIZE 256 PAGESIZE 1000
 SET SERVEROUTPUT ON FEEDBACK ON ECHO OFF TERMOUT ON VERIFY OFF
 
--- Switch to PDB ODBDEMO --------------------------------------------------------
-PROMPT - Switch to PDB ODBDEMO
-ALTER SESSION SET CONTAINER=ODBDEMO;
+-- Switch to PDB ODBENC --------------------------------------------------------
+PROMPT - Switch to PDB ODBENC
+ALTER SESSION SET CONTAINER=ODBENC;
 
 -- Begin logging ---------------------------------------------------------------
-DEFINE LOG_PREFIX = '11_init_audit_config_odbdemo'
+DEFINE LOG_PREFIX = '11_init_audit_config_odbenc'
 DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 @/opt/oracle/common/scripts/define_logging_begin.sql
 

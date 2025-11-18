@@ -5,7 +5,7 @@
 # Name.......: 00_run_datapatch.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2025.08.19
+# Date.......: 2025.11.18
 # Revision...: v1.0.0
 # Purpose....: Run datapatch for regular databases, CDBs, and JVM components.
 # Notes......:

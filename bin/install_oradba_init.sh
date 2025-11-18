@@ -5,7 +5,7 @@
 # Name.......: install_oradba_init.sh
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2025.08.19
+# Date.......: 2025.11.18
 # Version....: v0.7.0
 # Purpose....: Install oradba_init (and optional BasEnv) into a running container
 # Notes......: Works with Docker and Podman. Default container: cdbfree
@@ -18,8 +18,8 @@
 # ------------------------------------------------------------------------------
 # Modified...:
 # 2025.05.15 oehrli - initial version
-# 2025.08.06 oehrli - add BasEnv installation
-# 2025.08.19 oehrli - add podman support, lean pkg install, profile cleanup,
+# 2025.11.18 oehrli - add BasEnv installation
+# 2025.11.18 oehrli - add podman support, lean pkg install, profile cleanup,
 #                     BasEnv etc relocation, Oracle Net symlinks
 # ------------------------------------------------------------------------------
 

@@ -4,7 +4,7 @@
 --  Name......: create_ts_users.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Create (if needed) a BIGFILE tablespace and set it as the
 --              database default tablespace (PDB context).

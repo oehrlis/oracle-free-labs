@@ -4,7 +4,7 @@
 --  Name......: clone_pdb.sql
 --  Author....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.21
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Clone a source PDB into a new target PDB.
 --              Defaults:

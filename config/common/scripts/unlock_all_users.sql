@@ -4,7 +4,7 @@
 --  Name......: unlock_all_users.sql
 --  Author....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.19
+--  Date......: 2025.11.18
 --  Revision..: v1.0.0
 --  Purpose...: Unlock all non-Oracle-maintained users and lock Oracle-maintained
 --              users explicitly.

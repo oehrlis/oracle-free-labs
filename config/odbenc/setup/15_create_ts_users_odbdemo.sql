@@ -1,12 +1,12 @@
 -- -----------------------------------------------------------------------------
 -- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 -- -----------------------------------------------------------------------------
---  Name......: 15_create_ts_users_odbdemo.sql
+--  Name......: 15_create_ts_users_odbenc.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2025.08.20
+--  Date......: 2025.11.18
 --  Revision..: v1.0.1
---  Purpose...: Create USERS tablespace in PDB ODBDEMO and set it as the default
+--  Purpose...: Create USERS tablespace in PDB ODBENC and set it as the default
 --              database tablespace. Uses common helper scripts for logging and
 --              PDB context validation.
 --  Notes.....: - Execute as SYSDBA.
@@ -25,11 +25,11 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 SET LINESIZE 256 PAGESIZE 1000
 SET SERVEROUTPUT ON FEEDBACK ON ECHO OFF TERMOUT ON VERIFY OFF
 
-PROMPT - Switch to PDB ODBDEMO
-ALTER SESSION SET CONTAINER=ODBDEMO;
+PROMPT - Switch to PDB ODBENC
+ALTER SESSION SET CONTAINER=ODBENC;
 
 -- Begin logging ---------------------------------------------------------------
-DEFINE LOG_PREFIX = '15_create_ts_users_odbdemo'
+DEFINE LOG_PREFIX = '15_create_ts_users_odbenc'
 DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 @/opt/oracle/common/scripts/define_logging_begin.sql
 
