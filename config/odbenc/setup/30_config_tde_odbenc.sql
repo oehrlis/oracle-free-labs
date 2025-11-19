@@ -5,15 +5,14 @@
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
 --  Date......: 2025.11.19
---  Revision..: v1.1.0
+--  Revision..: v1.2.0
 --  Purpose...: Configure TDE for ODBENC using WALLET_ROOT and software
 --              keystore, including master key creation.
 --  Notes.....: - Must be executed as SYSDBA connected to CDB$ROOT.
---              - WALLET_ROOT is configured based on AUDIT_FILE_DEST (or an
---                explicit base path) via idenc_wroot.sql.
---              - Wallet password and base path can optionally be overridden
---                by arguments (&1 and &2) via define_wallet_pwd.sql and
---                define_wallet_root_base.sql.
+--              - WALLET_ROOT is configured via:
+--                  define_wallet_root_base.sql  -> wallet_root_base
+--                  idenc_wroot.sql &wallet_root_base
+--              - Wallet password is generated via define_wallet_pwd.sql.
 --              - The script restarts the database:
 --                  1) After setting WALLET_ROOT
 --                  2) After configuring the master encryption key
