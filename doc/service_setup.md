@@ -272,7 +272,7 @@ docker compose --profile labdb --profile odbrepo up -d
 Check logs
 
 ```bash
-docker logs -f labdb
+docker compose --profile labdb logs -f
 ```
 
 Wait until you see
