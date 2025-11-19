@@ -26,7 +26,7 @@ DEFINE LOG_PREFIX = '01_drop_pdb_freepdb1'
 DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 @/opt/oracle/common/scripts/define_logging_begin.sql
 
--- Require we are in a PDB (not CDB$ROOT) --------------------------------------
+-- Require we are in CDB$ROOT (not a PDB) --------------------------------------
 @/opt/oracle/common/scripts/require_cdb_root.sql
 
 -- run the main script ---------------------------------------------------------
