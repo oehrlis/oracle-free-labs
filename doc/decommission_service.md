@@ -68,6 +68,8 @@ rm -rf ./data/labdb/dbconfig/*
 rm -rf ./data/labdb/logs/*
 ```
 
+For `odbdemo`:
+
 ```bash
 docker compose --profile odbdemo down
 rm -f ./data/odbdemo/.FREE.created

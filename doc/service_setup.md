@@ -303,6 +303,50 @@ Verify connectivity
   docker exec -it labdb bash
   ```
 
+### Example setup
+
+For `cdbfree`:
+
+```bash
+docker compose --profile cdbfree up -d
+docker compose --profile cdbfree logs -f
+```
+
+For `labdb`:
+
+```bash
+docker compose --profile labdb up -d
+docker compose --profile labdb logs -f
+```
+
+For `odbdemo`:
+
+```bash
+docker compose --profile odbdemo up -d
+docker compose --profile odbdemo logs -f
+```
+
+For `odbseed`:
+
+```bash
+docker compose --profile odbseed up -d
+docker compose --profile odbseed logs -f
+```
+
+For `odbrepo`:
+
+```bash
+docker compose --profile odbrepo up -d
+docker compose --profile odbrepo logs -f
+```
+
+For `odbenc`:
+
+```bash
+docker compose --profile odbenc up -d
+docker compose --profile odbenc logs -f
+```
+
 ## Links
 
 - [Setup Lab Environment](setup_lab_environment.md)
