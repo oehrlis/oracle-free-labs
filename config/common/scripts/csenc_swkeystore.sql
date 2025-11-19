@@ -4,11 +4,10 @@
 --  Name......: csenc_swkeystore.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2023.08.30
---  Revision..: v1.0.1
+--  Date......: 2025.11.19
+--  Revision..: v1.2.0
 --  Purpose...: Create TDE software keystore in WALLET_ROOT.
---  Notes.....: - Argument &1 = wallet password (optional).
---              - If &1 is empty, a random password is generated.
+--  Notes.....: - Argument &1 = wallet password (required).
 --              - WALLET_ROOT must already be set and database restarted.
 --              - No local SPOOL; logging handled by caller.
 --  Reference.: Requires SYS, SYSDBA or SYSKM privilege
@@ -16,15 +15,19 @@
 --              at http://www.apache.org/licenses/
 --------------------------------------------------------------------------------
 
--- define default values --------------------------------------------------------
-COLUMN def_wallet_pwd NEW_VALUE def_wallet_pwd NOPRINT
-COLUMN wallet_root    NEW_VALUE wallet_root    NOPRINT
+SET LINESIZE 160 PAGESIZE 200
+SET FEEDBACK ON
+SET VERIFY OFF
 
--- generate random password -----------------------------------------------------
-SELECT dbms_random.string('X', 20) AS def_wallet_pwd
-FROM   dual;
+COLUMN wrl_type      FORMAT A8
+COLUMN wrl_parameter FORMAT A75
+COLUMN status        FORMAT A18
+COLUMN wallet_type   FORMAT A15
+COLUMN con_id        FORMAT 99999
 
--- get wallet root from v$parameter with pdb guid if we are in a PDB -----------
+-- derive wallet_root from current WALLET_ROOT ----------------------------------
+COLUMN wallet_root NEW_VALUE wallet_root NOPRINT
+
 SELECT TRIM(TRAILING '/' FROM value
             ||'/'
             ||NVL((SELECT RAWTOHEX(guid)
@@ -34,55 +37,43 @@ SELECT TRIM(TRAILING '/' FROM value
 FROM   v$parameter
 WHERE  name = 'wallet_root';
 
--- assign default value for parameter if argument 1 is empty --------------------
-COLUMN "1" NEW_VALUE "1" NOPRINT
-SELECT '' AS "1" FROM dual WHERE ROWNUM = 0;
-
-DEFINE wallet_pwd = &1 &def_wallet_pwd
-COLUMN wallet_pwd NEW_VALUE wallet_pwd NOPRINT
-
--- format SQL*Plus output and behavior -----------------------------------------
-SET LINESIZE 160 PAGESIZE 200
-SET FEEDBACK ON
-
-COLUMN wrl_type      FORMAT A8
-COLUMN wrl_parameter FORMAT A75
-COLUMN status        FORMAT A18
-COLUMN wallet_type   FORMAT A15
-COLUMN con_id        FORMAT 99999
+PROMPT == Configure software keystore in WALLET_ROOT ===========================
+PROMPT    WALLET_ROOT path : &wallet_root
+PROMPT    Wallet password  : **** (hidden)
 
 -- create the wallet folder ----------------------------------------------------
 HOST mkdir -p &wallet_root
 HOST mkdir -p &wallet_root/tde_seps
 
--- store wallet password -------------------------------------------------------
+-- store wallet password (with backup if file exists) --------------------------
 PROMPT == Store the wallet password in &wallet_root/wallet_pwd.txt
-HOST test ! -e &wallet_root/wallet_pwd.txt \
-  || cp &wallet_root/wallet_pwd.txt &wallet_root/wallet_pwd_$(date +"%Y%m%d%H%M").bck
-HOST echo &wallet_pwd > &wallet_root/wallet_pwd.txt
+HOST if [ -e &wallet_root/wallet_pwd.txt ]; then \
+  cp &wallet_root/wallet_pwd.txt &wallet_root/wallet_pwd_$(date +%Y%m%d%H%M).bck; \
+  fi
+HOST echo &1 > &wallet_root/wallet_pwd.txt
 HOST chmod 600 &wallet_root/wallet_pwd.txt
 
 PROMPT == Configure the software keystore ======================================
 
--- config TDE_CONFIGURATION -----------------------------------------------------
+-- configure TDE_CONFIGURATION for file-based keystore -------------------------
 ALTER SYSTEM SET TDE_CONFIGURATION='KEYSTORE_CONFIGURATION=FILE' SCOPE=BOTH;
 
 -- create software keystore in WALLET_ROOT -------------------------------------
-ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "&wallet_pwd";
+ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "&1";
 
 -- create an external keystore password store in WALLET_ROOT -------------------
-ADMINISTER KEY MANAGEMENT ADD SECRET '&wallet_pwd'
+ADMINISTER KEY MANAGEMENT ADD SECRET '&1'
   FOR CLIENT 'TDE_WALLET'
   TO LOCAL AUTO_LOGIN KEYSTORE '&wallet_root/tde_seps';
 
--- open the software keystore --------------------------------------------------
+-- open the software keystore using external store -----------------------------
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE
   KEYSTORE IDENTIFIED BY EXTERNAL STORE;
 
--- create local auto-login software keystore from the existing software keystore
+-- create local auto-login keystore from software keystore ---------------------
 ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE
   FROM KEYSTORE '&wallet_root/tde'
-  IDENTIFIED BY "&wallet_pwd";
+  IDENTIFIED BY "&1";
 
 -- list wallet information -----------------------------------------------------
 PROMPT == Encryption wallet information from v$encryption_wallet ===============
