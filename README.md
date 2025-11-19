@@ -41,15 +41,16 @@ Shared configuration and scripts are located under `config/common/`.
 
 This environment includes several containerized database services, each with a dedicated purpose and default PDB:
 
-| Service     | Default PDB | Purpose                                                                     |
-| ----------- | ----------- | --------------------------------------------------------------------------- |
-| **cdbfree** | FREEDB1     | Plain Oracle Database 23ai Free base instance for general tests.            |
-| **labdb**   | LABPDB1       | Customized Oracle Database for miscellaneous experiments.                   |
-| **odbdemo**  | ODBDEMO      | OraDBA repository created using official OraDBA scripts.                |
-| **odbseed**  | ODBSEED      | Minimal OraDBA repository initialized from `pdb26ai_odbseed.pdb`.          |
-| **odbrepo**  | ODBREPO      | Full multitenant OraDBA repository initialized from `pdb26ai_odbrepo.pdb`. |
+| Service     | Default PDB | Purpose                                                                                      |
+|-------------|-------------|----------------------------------------------------------------------------------------------|
+| **cdbfree** | FREEDB1     | Plain Oracle Database 23ai Free base instance for general tests.                             |
+| **labdb**   | LABPDB1     | Customized Oracle Database for miscellaneous experiments.                                    |
+| **odbdemo** | ODBDEMO     | OraDBA LAB created using OraDBA scripts e.g. TVD_HR, SCOTT and Audit OraDBA config.          |
+| **odbseed** | ODBSEED     | Minimal OraDBA LAB initialized from `pdb26ai_odbseed.pdb`.                                   |
+| **odbrepo** | ODBREPO     | Full multitenant OraDBA LAB initialized from `pdb26ai_odbrepo.pdb`.                          |
+| **odbenc**  | ODBENC      | OraDBA LAB with TDE created using OraDBA scripts e.g. TVD_HR, SCOTT and Audit OraDBA config. |
 
-![Architecture Overview](doc/oracle-free-labs.png)
+![Architecture Overview](doc/images/oracle-free-labs.png)
 
 ## Quickstart
 
@@ -70,11 +71,12 @@ This environment includes several containerized database services, each with a d
 3. **Start a scenario (Docker or Podman)**
 
    ```bash
-   docker compose --profile cdbfree up -d     # plain Oracle Free
-   docker compose --profile labdb up -d       # empty DB for labs
-   docker compose --profile odbrepo up -d      # EA via SQL scripts
-   docker compose --profile odbseed up -d      # EA from PDB archive
-   docker compose --profile odbdemo up -d      # complex EA demo
+   docker compose --profile cdbfree up -d   # plain Oracle Free
+   docker compose --profile labdb up -d     # empty DB for labs
+   docker compose --profile odbrepo up -d   # EA via SQL scripts
+   docker compose --profile odbseed up -d   # EA from PDB archive
+   docker compose --profile odbdemo up -d   # complex EA demo
+   docker compose --profile odbenc up -d    # complex EA demo
    ```
 
    > Podman users can simply alias `docker` to `podman`.
