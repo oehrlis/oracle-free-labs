@@ -42,6 +42,9 @@ DEFINE LOG_DIR    = '/opt/oracle/scripts/logs'
 -- Encrypt USERS tablespace ----------------------------------------------------
 @/opt/oracle/common/scripts/encrypt_ts_users.sql USERS
 
+-- Show resulting TDE configuration and encrypted objects
+@/opt/oracle/common/scripts/ssenc_info.sql
+
 -- End logging -----------------------------------------------------------------
 @/opt/oracle/common/scripts/define_logging_end.sql
 -- EOF -------------------------------------------------------------------------
