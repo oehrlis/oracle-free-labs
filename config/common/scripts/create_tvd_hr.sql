@@ -1,6 +1,5 @@
 ----------------------------------------------------------------------------
---  Trivadis AG, Infrastructure Managed Services
---  Saegereistrasse 29, 8152 Glattbrugg, Switzerland
+-- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 ----------------------------------------------------------------------------
 --  Name......: create_tvd_hr.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@trivadis.com
@@ -53,7 +52,7 @@ END;
 
 ----------------------------------------------------------------------------
 -- create user 
-CREATE USER tvd_hr IDENTIFIED BY &pass;
+CREATE USER tvd_hr NO AUTHENTICATION;
 
 ALTER USER tvd_hr DEFAULT TABLESPACE &tbs
     QUOTA UNLIMITED ON &tbs;
@@ -63,7 +62,7 @@ ALTER USER tvd_hr TEMPORARY TABLESPACE &ttbs;
 GRANT CREATE SESSION, CREATE VIEW, ALTER SESSION, CREATE SEQUENCE TO tvd_hr;
 GRANT CREATE SYNONYM, CREATE DATABASE LINK, RESOURCE , UNLIMITED TABLESPACE TO tvd_hr;
 
-CREATE USER tvd_hr_sec IDENTIFIED BY &pass_sec;
+CREATE USER tvd_hr_sec NO AUTHENTICATION;
 
 ALTER USER tvd_hr_sec DEFAULT TABLESPACE &tbs
     QUOTA UNLIMITED ON &tbs;

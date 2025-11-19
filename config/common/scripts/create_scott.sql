@@ -1,6 +1,5 @@
 ----------------------------------------------------------------------------
---  Trivadis AG, Infrastructure Managed Services
---  Saegereistrasse 29, 8152 Glattbrugg, Switzerland
+-- OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 ----------------------------------------------------------------------------
 --  Name......: create_scott.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@trivadis.com
@@ -22,7 +21,8 @@ DROP USER ADAMS CASCADE;
 DROP USER JONES CASCADE;
 DROP USER CLARK CASCADE;
 DROP USER BLAKE CASCADE;
-GRANT CONNECT,RESOURCE,UNLIMITED TABLESPACE TO SCOTT IDENTIFIED BY tiger;
+CREATE USER SCOTT NO AUTHENTICATION;
+GRANT CONNECT,RESOURCE,UNLIMITED TABLESPACE TO SCOTT;
 DROP PUBLIC SYNONYM PARTS;
 
 ALTER SESSION SET CURRENT_SCHEMA=SCOTT;
