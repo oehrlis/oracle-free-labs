@@ -1,15 +1,15 @@
-# Oracle Database 23ai Free OraDBA Lab Environment
+# Oracle AI Database 26ai Free OraDBA Lab Environment
 
-This repository delivers a **container-based lab environment** for *Oracle Database Free 23ai*, designed for testing, training, and engineering use cases within the **OraDBA Lab Environment**.
-It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle Database instances — with or without EA Sparx repositories — using **Docker** or **Podman**. The setup is optimized for **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
+This repository delivers a **container-based lab environment** for *Oracle AI Database Free 26ai*, designed for testing, training, and engineering use cases within the **OraDBA Lab Environment**.
+It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle AI Database instances — with or without EA Sparx repositories — using **Docker** or **Podman**. The setup is optimized for **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
 
 ## Requirements
 
 Before starting, ensure you have the following:
 
 - Docker or Podman installed and configured  
-- Oracle Database container images (e.g. Oracle Database 23ai Free)  
-  See [Oracle Database 23ai Free Container Image Documentation](https://container-registry.oracle.com/ords/ocr/ba/database/free)  
+- Oracle AI Database container images (e.g. Oracle AI Database 26ai Free)  
+  See [Oracle AI Database 26ai Free Container Image Documentation](https://container-registry.oracle.com/ords/ocr/ba/database/free)  
 - Preconfigured PDBs with EA Repositories require the following PDB archives.
   They must be placed in `config/common/data/pdbarch` on the host, which is mounted into the container at `/opt/oracle/data/pdbarch/`.
   These archives are **mandatory** if the services `odbseed` and `odbrepo` are used:
@@ -43,8 +43,8 @@ This environment includes several containerized database services, each with a d
 
 | Service     | Default PDB | Purpose                                                                                      |
 |-------------|-------------|----------------------------------------------------------------------------------------------|
-| **cdbfree** | FREEDB1     | Plain Oracle Database 23ai Free base instance for general tests.                             |
-| **labdb**   | LABPDB1     | Customized Oracle Database for miscellaneous experiments.                                    |
+| **cdbfree** | FREEDB1     | Plain Oracle AI Database 26ai Free base instance for general tests.                             |
+| **labdb**   | LABPDB1     | Customized Oracle AI Database for miscellaneous experiments.                                    |
 | **odbdemo** | ODBDEMO     | OraDBA LAB created using OraDBA scripts e.g. TVD_HR, SCOTT and Audit OraDBA config.          |
 | **odbseed** | ODBSEED     | Minimal OraDBA LAB initialized from `pdb26ai_odbseed.pdb`.                                   |
 | **odbrepo** | ODBREPO     | Full multitenant OraDBA LAB initialized from `pdb26ai_odbrepo.pdb`.                          |
