@@ -23,8 +23,6 @@
 # see git revision history with git log for more information on changes
 # ------------------------------------------------------------------------------
 
-#version: "3.9"
-
 # - Reusable base --------------------------------------------------------------
 x-db-service: &db-base
   image: ${DB_IMAGE}
@@ -48,7 +46,6 @@ x-db-service: &db-base
   restart: unless-stopped
 
 services:
-
   # - Plain Oracle AI Database 26ai Free ---------------------------------------
   # Baseline container; mounts only common assets.
   cdbfree:
