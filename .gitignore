@@ -79,3 +79,5 @@ __pycache__/
 node_modules/
 
 # - EOF ------------------------------------------------------------------------
+artefacts/notes.md
+artefacts/notes2.md
