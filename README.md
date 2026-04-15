@@ -21,7 +21,8 @@ Before starting, ensure you have the following:
 
 ```text
 oracle-free-labs/
-├── bin/                # helper scripts (start/stop, logs, SQL access, password mgmt)
+├── scripts/            # local helper scripts (PDF generation, container tooling)
+├── build/              # Dockerfile and build context for extended Oracle Free image
 ├── config/             # scenario configs
 │   ├── common/         # shared assets (scripts, datapump dir, templates)
 │   ├── labdb/          # empty lab/test DB
@@ -68,7 +69,27 @@ This environment includes several containerized database services, each with a d
    # Edit .env to set ORACLE_PWD, ports, image tag etc.
    ```
 
-3. **Start a scenario (Docker or Podman)**
+3. **Start a scenario via Makefile (recommended)**
+
+   ```bash
+   make up-labdb       # start labdb service
+   make logs-labdb     # follow logs
+   make sql-labdb      # open sqlplus session
+   make bash-labdb     # open bash shell
+   make down-labdb     # stop service
+   make reset-labdb    # full reset (destructive - prompts for confirmation)
+   ```
+
+   Or use the generic form:
+
+   ```bash
+   make up SERVICE=labdb
+   make down SERVICE=odbrepo
+   ```
+
+   Run `make help` for a full list of targets.
+
+4. **Start a scenario directly (Docker or Podman)**
 
    ```bash
    docker compose --profile cdbfree up -d   # plain Oracle Free
@@ -76,12 +97,12 @@ This environment includes several containerized database services, each with a d
    docker compose --profile odbrepo up -d   # EA via SQL scripts
    docker compose --profile odbseed up -d   # EA from PDB archive
    docker compose --profile odbdemo up -d   # complex EA demo
-   docker compose --profile odbenc up -d    # complex EA demo
+   docker compose --profile odbenc up -d    # EA demo with TDE
    ```
 
    > Podman users can simply alias `docker` to `podman`.
 
-4. **Stop a scenario**
+5. **Stop a scenario**
 
    ```bash
    docker compose --profile odbrepo down -v
@@ -100,9 +121,9 @@ Configuration is managed through a combination of environment variables and moun
 
 - **Environment Variables**: Defined in `.env` or directly in the Docker/Podman Compose setup. Common variables include:
 
-  - `ORACLE_SID` - Container database SID
+  - `DB_ORACLE_SID` - Container database SID (use `DB_ORACLE_SID` not `ORACLE_SID` to avoid conflict with oraenv)
   - `ORACLE_PDB` - Default pluggable database
-  - `ORACLE_PWD` - Password for `SYS`, `SYSTEM`, and `PDBADMIN` (can also be set using [`bin/setPassword.sh`](bin/setPassword.sh))
+  - `ORACLE_PWD` - Password for `SYS`, `SYSTEM`, and `PDBADMIN`
   - `ENABLE_ARCHIVELOG` - Enable or disable ARCHIVELOG mode
 
 - **Configuration Folders**:
@@ -112,7 +133,7 @@ Configuration is managed through a combination of environment variables and moun
 
 - **Database Passwords**:
 
-  - Core accounts (`SYS`, `SYSTEM`, `PDBADMIN`) can be reset with [`setPassword.sh`](bin/setPassword.sh).
+  - Core accounts (`SYS`, `SYSTEM`, `PDBADMIN`) can be reset manually via `docker exec`.
   - Application schemas (e.g. `EAUSER`) may default to *no authentication* and should be reset manually if required.
 
 These configuration mechanisms make it easy to customize and extend the lab environment for different use cases.

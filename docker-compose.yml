@@ -30,7 +30,7 @@ x-db-service: &db-base
   environment:
     - TZ=${TZ}
     - ORACLE_PWD=${ORACLE_PWD}
-    - ORACLE_SID=${ORACLE_SID}
+    - ORACLE_SID=${DB_ORACLE_SID}
     - ORACLE_PDB=${ORACLE_PDB}
   ports:
     - "${LISTENER_PORT}:1521"

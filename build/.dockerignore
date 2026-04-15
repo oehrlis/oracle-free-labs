@@ -1,0 +1,4 @@
+# Ignore everything outside the build context
+# Only Dockerfile and directly referenced files are needed
+**
+!Dockerfile

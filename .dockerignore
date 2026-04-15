@@ -1,0 +1,43 @@
+# ------------------------------------------------------------------------------
+# .dockerignore - root build context exclusions
+# Used when building from project root (e.g. docker build .)
+# ------------------------------------------------------------------------------
+
+# Git metadata
+.git/
+.gitignore
+
+# Runtime database data (large, not needed in image)
+data/
+
+# Local environment overrides
+.env
+.env.local
+
+# Editor / OS artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Documentation sources (not needed in runtime image)
+doc/
+artefacts/
+tasks/
+
+# CI/CD configs
+.github/
+.forgejo/
+
+# Claude / AI tooling
+.claude/
+
+# Log files
+*.log
+
+# Python / Node helpers
+__pycache__/
+node_modules/
+# - EOF ------------------------------------------------------------------------

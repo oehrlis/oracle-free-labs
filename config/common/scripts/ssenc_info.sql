@@ -21,7 +21,7 @@ SET VERIFY  ON
 SET FEEDBACK ON
 
 COLUMN wrl_type             FORMAT A8
-COLUMN wrl_parameter        FORMAT A75
+COLUMN wrl_parameter        FORMAT A65
 COLUMN status               FORMAT A18
 COLUMN wallet_type          FORMAT A15
 COLUMN con_id               FORMAT 99999
@@ -44,7 +44,7 @@ COLUMN I                    FORMAT A1
 COLUMN D                    FORMAT A1
 COLUMN Description          FORMAT A65
 COLUMN key_id               FORMAT A52
-COLUMN creation_time        FORMAT A20
+COLUMN creation_time        FORMAT A19
 COLUMN creator              FORMAT A10
 COLUMN creator_pdbname      FORMAT A10
 COLUMN activation_time      FORMAT A20

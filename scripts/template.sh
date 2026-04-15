@@ -1,41 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
 # ------------------------------------------------------------------------------
 # Name.......: template.sh
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2024.05.02
-# Version....: v0.1.0
+# Date.......: 2026.04.15
+# Version....: v0.2.0
 # Purpose....: Generic Bash script template with logging and parameter parsing.
 # Notes......: Extend this script to automate a specific task.
-# Features...:
+#              Features:
 #              - Verbose and debug logging
 #              - Dry run support
 #              - Argument parsing with usage display
-# License....: Apache License, Version 2.0
+# Reference..: https://github.com/oehrlis/oracle-free-labs
+# License....: Apache License Version 2.0, January 2004 as shown
+#              at http://www.apache.org/licenses/
 # ------------------------------------------------------------------------------
 # Modified...:
 # 2025.05.02 oehrli - initial version
+# 2026.04.15 oehrli - hardened to set -euo pipefail; updated header
 # ------------------------------------------------------------------------------
-# - Customization --------------------------------------------------------------
-set -e                  # Exit on error
-# - End of Customization of configuration files --------------------------------
+set -euo pipefail
 
 # - Default Values -------------------------------------------------------------
-# source genric environment variables and functions
-SCRIPT_NAME=$(basename ${BASH_SOURCE[0]})
-SCRIPT_CONF="$(basename $SCRIPT_NAME .sh).conf"
-SCRIPT_BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-SCRIPT_BASE=$(dirname ${SCRIPT_BIN_DIR})
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+SCRIPT_BASE="$(dirname "${SCRIPT_BIN_DIR}")"
 VERBOSE=""
 DEBUG=""
 DRY_RUN=""
-# - EOF Default Values ---------------------------------------------------------
+# - End of Default Values ------------------------------------------------------
 
 # - Functions ------------------------------------------------------------------
-function Usage {
-    cat << EOF
+function usage {
+    cat <<EOF
 
 Usage: ${SCRIPT_NAME} [OPTIONS]
 
@@ -53,34 +52,31 @@ EOF
     exit 0
 }
 
-function log_message() {
+function log_message {
     local message="$1"
-    local level=${2:-INFO}
-    if [[ -n "$VERBOSE" || ("$level" == "DEBUG" && -n "$DEBUG") ]]; then
-        echo "[$level] $message"
+    local level="${2:-INFO}"
+    if [[ -n "${VERBOSE}" || ("${level}" == "DEBUG" && -n "${DEBUG}") ]]; then
+        echo "[${level}] ${message}"
     fi
 }
+# - End of Functions -----------------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# Argument Parsing
-# ------------------------------------------------------------------------------
+# - Argument Parsing -----------------------------------------------------------
 while getopts "hvnd" opt; do
-    case $opt in
-        h) Usage ;;
+    case ${opt} in
+        h) usage ;;
         v) VERBOSE=1 ;;
         d) DEBUG=1 ;;
         n) DRY_RUN=1 ;;
-        *) Usage ;;
+        *) usage ;;
     esac
 done
+# - End of Argument Parsing ----------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# Main Logic Placeholder
-# ------------------------------------------------------------------------------
+# - Main Logic -----------------------------------------------------------------
 log_message "Starting script execution..." "INFO"
 
-# Example conditional logic
-if [[ -n "$DRY_RUN" ]]; then
+if [[ -n "${DRY_RUN}" ]]; then
     log_message "Dry run enabled. No actions will be performed." "INFO"
 else
     log_message "Performing live operations..." "INFO"
@@ -88,6 +84,4 @@ else
 fi
 
 log_message "Script execution completed." "INFO"
-exit 0
-
-# --- EOF ----------------------------------------------------------------------
+# - End of script --------------------------------------------------------------
