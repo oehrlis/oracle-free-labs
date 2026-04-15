@@ -65,9 +65,9 @@ config/common/scripts/
 
 ### 📦 Application Base Schemas
 
-* **EABase\_1558\_Oracle.sql** - Base schema for EA demo.
-* **EASchema\_1558\_Oracle.sql** - Schema definition for EA demo.
-* **setup\_ea\_baseline.sql** - Sets up EA application baseline.
+* **EABase\_1558\_Oracle.sql** - Base schema for OraDBA demo.
+* **EASchema\_1558\_Oracle.sql** - Schema definition for OraDBA demo.
+* **setup\_ea\_baseline.sql** - Sets up OraDBA demo baseline.
 
 ### 📑 Templates
 

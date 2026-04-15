@@ -31,10 +31,10 @@ docker compose --profile labdb down -v && rm -rf data/labdb/
 |---------|---------|----------|-------------|-------------|
 | `cdbfree` | `cdbfree` | 1526 | 5506 | Plain Oracle 26ai Free, common scripts only |
 | `labdb` | `labdb` | 1527 | 5507 | Empty DB for labs, full setup/startup scripts |
-| `odbrepo` | `odbrepo` | 1528 | 5508 | EA repository created via SQL scripts |
-| `odbseed` | `odbseed` | 1529 | 5509 | EA repository from PDB archive |
-| `odbdemo` | `odbdemo` | 1530 | 5511 | Complex EA demo from PDB archive |
-| `odbenc` | `odbenc` | 1531 | 5511 | EA demo with TDE via SQL scripts |
+| `odbrepo` | `odbrepo` | 1528 | 5508 | OraDBA demo created via SQL scripts |
+| `odbseed` | `odbseed` | 1529 | 5509 | OraDBA demo from PDB archive |
+| `odbdemo` | `odbdemo` | 1530 | 5511 | Complex OraDBA demo from PDB archive |
+| `odbenc` | `odbenc` | 1531 | 5511 | OraDBA demo with TDE via SQL scripts |
 
 ## Architecture
 

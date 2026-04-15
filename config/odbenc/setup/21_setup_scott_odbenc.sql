@@ -6,9 +6,9 @@
 --  Editor....: Stefan Oehrli
 --  Date......: 2025.11.18
 --  Revision..: v1.0.0
---  Purpose...: PDB-scoped security baseline for EA repository
---              - Create EA role with minimum required privileges
---              - Create EA profile and EA user, grant role and directory access
+--  Purpose...: PDB-scoped security baseline for OraDBA demo
+--              - Create demo role with minimum required privileges
+--              - Create demo profile and demo user, grant role and directory access
 --  Notes.....: Must be executed as a DBA user connected to the target PDB
 --  Reference.: --
 --  License...: Apache License Version 2.0, January 2004 as shown

@@ -1,7 +1,7 @@
 # Oracle AI Database 26ai Free OraDBA Lab Environment
 
 This repository delivers a **container-based lab environment** for *Oracle AI Database Free 26ai*, designed for testing, training, and engineering use cases within the **OraDBA Lab Environment**.
-It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle AI Database instances — with or without EA Sparx repositories — using **Docker** or **Podman**. The setup is optimized for **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
+It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle AI Database instances — with or without OraDBA demo labs — using **Docker** or **Podman**. The setup is optimized for **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ Before starting, ensure you have the following:
 - Docker or Podman installed and configured  
 - Oracle AI Database container images (e.g. Oracle AI Database 26ai Free)  
   See [Oracle AI Database 26ai Free Container Image Documentation](https://container-registry.oracle.com/ords/ocr/ba/database/free)  
-- Preconfigured PDBs with EA Repositories require the following PDB archives.
+- Preconfigured PDBs with OraDBA demo labs require the following PDB archives.
   They must be placed in `config/common/data/pdbarch` on the host, which is mounted into the container at `/opt/oracle/data/pdbarch/`.
   These archives are **mandatory** if the services `odbseed` and `odbrepo` are used:
   - `pdb26ai_odbseed.pdb`
@@ -26,9 +26,9 @@ oracle-free-labs/
 ├── config/             # scenario configs
 │   ├── common/         # shared assets (scripts, datapump dir, templates)
 │   ├── labdb/          # empty lab/test DB
-│   ├── odbrepo/         # EA repo via SQL scripts
-│   ├── odbseed/         # EA repo from PDB archive
-│   └── odbdemo/         # complex EA demo from PDB archive
+│   ├── odbrepo/         # OraDBA demo via SQL scripts
+│   ├── odbseed/         # OraDBA demo from PDB archive
+│   └── odbdemo/         # complex OraDBA demo from PDB archive
 ├── data/               # persisted DB files (gitignored)
 ├── doc/                # documentation and notes (detailed use cases to follow)
 ├── docker-compose.yml  # main compose file (with profiles)
@@ -94,10 +94,10 @@ This environment includes several containerized database services, each with a d
    ```bash
    docker compose --profile cdbfree up -d   # plain Oracle Free
    docker compose --profile labdb up -d     # empty DB for labs
-   docker compose --profile odbrepo up -d   # EA via SQL scripts
-   docker compose --profile odbseed up -d   # EA from PDB archive
-   docker compose --profile odbdemo up -d   # complex EA demo
-   docker compose --profile odbenc up -d    # EA demo with TDE
+   docker compose --profile odbrepo up -d   # OraDBA demo via SQL scripts
+   docker compose --profile odbseed up -d   # OraDBA demo from PDB archive
+   docker compose --profile odbdemo up -d   # complex OraDBA demo
+   docker compose --profile odbenc up -d    # OraDBA demo with TDE
    ```
 
    > Podman users can simply alias `docker` to `podman`.

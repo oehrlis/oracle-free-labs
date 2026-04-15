@@ -93,19 +93,19 @@ help: ## Show this help message
 	@grep -hE '^(up|down|logs|bash|sql|reset)-labdb:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbrepo (EA repository via SQL scripts):$(COLOR_RESET)"
+	@echo -e "$(COLOR_BOLD)Lab: odbrepo (OraDBA demo via SQL scripts):$(COLOR_RESET)"
 	@grep -hE '^(up|down|logs|bash|sql|reset)-odbrepo:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbseed (EA repository from PDB archive):$(COLOR_RESET)"
+	@echo -e "$(COLOR_BOLD)Lab: odbseed (OraDBA demo from PDB archive):$(COLOR_RESET)"
 	@grep -hE '^(up|down|logs|bash|sql|reset)-odbseed:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbdemo (complex EA demo from PDB archive):$(COLOR_RESET)"
+	@echo -e "$(COLOR_BOLD)Lab: odbdemo (complex OraDBA demo from PDB archive):$(COLOR_RESET)"
 	@grep -hE '^(up|down|logs|bash|sql|reset)-odbdemo:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbenc (EA demo with TDE via SQL scripts):$(COLOR_RESET)"
+	@echo -e "$(COLOR_BOLD)Lab: odbenc (OraDBA demo with TDE via SQL scripts):$(COLOR_RESET)"
 	@grep -hE '^(up|down|logs|bash|sql|reset)-odbenc:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
@@ -325,7 +325,7 @@ reset-labdb: ## Full reset of labdb (destructive!)
 
 # -- odbrepo -------------------------------------------------------------------
 .PHONY: up-odbrepo
-up-odbrepo: ## Start odbrepo (EA repository via SQL scripts)
+up-odbrepo: ## Start odbrepo (OraDBA demo via SQL scripts)
 	$(MAKE) --no-print-directory up SERVICE=odbrepo
 
 .PHONY: down-odbrepo
@@ -350,7 +350,7 @@ reset-odbrepo: ## Full reset of odbrepo (destructive!)
 
 # -- odbseed -------------------------------------------------------------------
 .PHONY: up-odbseed
-up-odbseed: ## Start odbseed (EA repository from PDB archive)
+up-odbseed: ## Start odbseed (OraDBA demo from PDB archive)
 	$(MAKE) --no-print-directory up SERVICE=odbseed
 
 .PHONY: down-odbseed
@@ -375,7 +375,7 @@ reset-odbseed: ## Full reset of odbseed (destructive!)
 
 # -- odbdemo -------------------------------------------------------------------
 .PHONY: up-odbdemo
-up-odbdemo: ## Start odbdemo (complex EA demo from PDB archive)
+up-odbdemo: ## Start odbdemo (complex OraDBA demo from PDB archive)
 	$(MAKE) --no-print-directory up SERVICE=odbdemo
 
 .PHONY: down-odbdemo
@@ -400,7 +400,7 @@ reset-odbdemo: ## Full reset of odbdemo (destructive!)
 
 # -- odbenc --------------------------------------------------------------------
 .PHONY: up-odbenc
-up-odbenc: ## Start odbenc (EA demo with TDE via SQL scripts)
+up-odbenc: ## Start odbenc (OraDBA demo with TDE via SQL scripts)
 	$(MAKE) --no-print-directory up SERVICE=odbenc
 
 .PHONY: down-odbenc

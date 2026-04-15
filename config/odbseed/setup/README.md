@@ -1,7 +1,7 @@
-# EA Repository Setup
+# OraDBA Demo Setup
 
 This folder contains setup scripts that are executed once during container
-initialization to prepare the environment for the EA repository. The scripts
+initialization to prepare the environment for the OraDBA demo. The scripts
 must be run in the specified order.
 
 ## Scripts in Use
@@ -12,7 +12,7 @@ must be run in the specified order.
 
 - **01_drop_pdb_freepdb1.sql**  
   Drops the default pluggable database `FREEPDB1` if it exists.  
-  This avoids conflicts before creating the EA repository PDB.
+  This avoids conflicts before creating the OraDBA demo PDB.
 
 - **10_create_pdb_from_archive.sql**  
   Creates the pluggable database `ODBSEED` from a PDB archive.  
@@ -26,4 +26,4 @@ must be run in the specified order.
   `config/common/data/pdbarch` before starting the container.
 - File names are numbered to enforce execution order.
 - Additional setup scripts can be added as needed to extend or customize the
-  EA repository environment.
+  OraDBA demo environment.

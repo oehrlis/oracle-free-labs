@@ -1,7 +1,7 @@
-# EA Demo Setup
+# OraDBA Demo Setup
 
 This folder contains setup scripts that are executed once during container
-initialization to prepare the environment for the EA demo repository. The
+initialization to prepare the environment for the OraDBA demo repository. The
 scripts must be run in the specified order.
 
 ## Scripts in Use
@@ -12,7 +12,7 @@ scripts must be run in the specified order.
 
 - **01_drop_pdb_freepdb1.sql**  
   Drops the default pluggable database `FREEPDB1` if it exists.  
-  This avoids conflicts before creating the EA demo PDB.
+  This avoids conflicts before creating the OraDBA demo PDB.
 
 - **10_create_pdb_odbdemo.sql**  
   Creates the pluggable database `ODBDEMO` from `PDB$SEED` if it does not
@@ -35,7 +35,7 @@ scripts must be run in the specified order.
   Create USERS tablespace in PDB LABPDB1 and set it as the default database tablespace.
 
 - **20_setup_ea_baseline_odbdemo.sql**  
-  Applies the PDB-scoped security baseline for the EA demo repository.
+  Applies the PDB-scoped security baseline for the OraDBA demo repository.
 
 - **21_setup_ea_schema_odbdemo.sql**  
   Creates the schema for `ODBDEMO`, including users, roles, and required objects.
@@ -54,4 +54,4 @@ scripts must be run in the specified order.
 - Scripts in this folder run automatically during the first container startup.
 - File names are numbered to enforce execution order.
 - Additional setup scripts can be added as needed to extend or customize the
-  EA demo repository environment.
+  OraDBA demo repository environment.

@@ -10,6 +10,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `reset-cdbfree` target (was missing from per-service targets)
+
+### Changed
+
+- All "EA" references (Enterprise Architect / EA Sparx) replaced with "OraDBA demo"
+  throughout `README.md`, `CLAUDE.md`, `docker-compose.yml`, `Makefile`, all
+  `config/*/setup/README.md` and `config/*/startup/README.md` files, and three
+  SQL setup scripts in `config/odbdemo/` and `config/odbenc/`
 - `make down` without `SERVICE`: stops all six services sequentially
 - `make reset` without `SERVICE`: resets all six services with a single
   confirmation prompt (destructive - removes containers, volumes, and `data/`)
@@ -71,8 +78,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `odbdemo` service: complex EA demo from PDB archive
-- `odbseed` service: minimal EA repo from PDB archive
+- `odbdemo` service: complex OraDBA demo from PDB archive
+- `odbseed` service: minimal OraDBA demo from PDB archive
 - Unified audit policy scripts (`create_audit_policies.sql`,
   `enable_audit_policies.sql`, `init_audit_config.sql`)
 - TDE wallet scripts (`define_wallet_pwd.sql`, `define_wallet_root_base.sql`)
@@ -82,7 +89,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `odbrepo` service: EA repository created via SQL scripts
+- `odbrepo` service: OraDBA demo created via SQL scripts
 - `config/common/scripts/` shared utilities:
   `create_pdb.sql`, `create_pdb_from_archive.sql`, `clone_pdb.sql`,
   `create_scott.sql`, `create_tvd_hr.sql`, `lock_all_users.sql`
