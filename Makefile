@@ -85,8 +85,28 @@ help: ## Show this help message
 	@grep -hE '^(up|down|ps|logs|bash|sql|reset):.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab Services (per service):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-(cdbfree|labdb|odbrepo|odbseed|odbdemo|odbenc):.*?## ' $(MAKEFILE_LIST) | \
+	@echo -e "$(COLOR_BOLD)Lab: cdbfree (plain Oracle 26ai Free):$(COLOR_RESET)"
+	@grep -hE '^(up|down|logs|bash|sql|reset)-cdbfree:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo -e "$(COLOR_BOLD)Lab: labdb (empty DB for labs):$(COLOR_RESET)"
+	@grep -hE '^(up|down|logs|bash|sql|reset)-labdb:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo -e "$(COLOR_BOLD)Lab: odbrepo (EA repository via SQL scripts):$(COLOR_RESET)"
+	@grep -hE '^(up|down|logs|bash|sql|reset)-odbrepo:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo -e "$(COLOR_BOLD)Lab: odbseed (EA repository from PDB archive):$(COLOR_RESET)"
+	@grep -hE '^(up|down|logs|bash|sql|reset)-odbseed:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo -e "$(COLOR_BOLD)Lab: odbdemo (complex EA demo from PDB archive):$(COLOR_RESET)"
+	@grep -hE '^(up|down|logs|bash|sql|reset)-odbdemo:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo -e "$(COLOR_BOLD)Lab: odbenc (EA demo with TDE via SQL scripts):$(COLOR_RESET)"
+	@grep -hE '^(up|down|logs|bash|sql|reset)-odbenc:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Build:$(COLOR_RESET)"
@@ -190,13 +210,17 @@ up: ## Start a service by profile: make up SERVICE=labdb
 	docker compose --profile "$(SERVICE)" up -d
 
 .PHONY: down
-down: ## Stop a service by profile: make down SERVICE=labdb
+down: ## Stop a service: make down SERVICE=labdb  (omit SERVICE to stop all)
 	@if [[ -z "$(SERVICE)" ]]; then \
-		echo "Error: SERVICE is required. Example: make down SERVICE=labdb"; \
-		echo "Available: $(SERVICES)"; \
-		exit 1; \
+		echo -e "$(COLOR_BOLD)Stopping all services...$(COLOR_RESET)"; \
+		for svc in $(SERVICES); do \
+			echo -e "ℹ️  Stopping $$svc..."; \
+			docker compose --profile "$$svc" down || true; \
+		done; \
+		echo "✅ All services stopped"; \
+	else \
+		docker compose --profile "$(SERVICE)" down; \
 	fi
-	docker compose --profile "$(SERVICE)" down
 
 .PHONY: ps
 ps: ## Show status of all running lab containers
@@ -227,16 +251,23 @@ sql: ## Open sqlplus in a container: make sql SERVICE=labdb
 	docker compose exec "$(SERVICE)" sqlplus / as sysdba
 
 .PHONY: reset
-reset: ## Full reset of a service (destructive!): make reset SERVICE=labdb
+reset: ## Full reset (destructive!): make reset SERVICE=labdb  (omit SERVICE to reset ALL)
 	@if [[ -z "$(SERVICE)" ]]; then \
-		echo "Error: SERVICE is required. Example: make reset SERVICE=labdb"; \
-		exit 1; \
+		read -rp "⚠️  This will destroy ALL data for ALL services. Continue? [y/N] " confirm; \
+		[[ "$$confirm" == [yY] ]] || { echo "Aborted."; exit 1; }; \
+		for svc in $(SERVICES); do \
+			echo -e "ℹ️  Resetting $$svc..."; \
+			docker compose --profile "$$svc" down -v || true; \
+			rm -rf "data/$$svc/"; \
+		done; \
+		echo "✅ All services reset complete"; \
+	else \
+		read -rp "⚠️  This will destroy ALL data for service '$(SERVICE)'. Continue? [y/N] " confirm; \
+		[[ "$$confirm" == [yY] ]] || { echo "Aborted."; exit 1; }; \
+		docker compose --profile "$(SERVICE)" down -v; \
+		rm -rf "data/$(SERVICE)/"; \
+		echo "✅ Service $(SERVICE) reset complete"; \
 	fi
-	@read -rp "⚠️  This will destroy ALL data for service '$(SERVICE)'. Continue? [y/N] " confirm; \
-	[[ "$$confirm" == [yY] ]] || { echo "Aborted."; exit 1; }
-	docker compose --profile "$(SERVICE)" down -v
-	rm -rf "data/$(SERVICE)/"
-	@echo "✅ Service $(SERVICE) reset complete"
 
 # ==============================================================================
 # Lab Services - Per Service (explicit targets for autocomplete)
@@ -262,6 +293,10 @@ bash-cdbfree: ## Open bash shell in cdbfree
 .PHONY: sql-cdbfree
 sql-cdbfree: ## Open sqlplus in cdbfree
 	$(MAKE) --no-print-directory sql SERVICE=cdbfree
+
+.PHONY: reset-cdbfree
+reset-cdbfree: ## Full reset of cdbfree (destructive!)
+	$(MAKE) --no-print-directory reset SERVICE=cdbfree
 
 # -- labdb ---------------------------------------------------------------------
 .PHONY: up-labdb

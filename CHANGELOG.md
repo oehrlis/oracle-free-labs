@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `reset-cdbfree` target (was missing from per-service targets)
+- `make down` without `SERVICE`: stops all six services sequentially
+- `make reset` without `SERVICE`: resets all six services with a single
+  confirmation prompt (destructive - removes containers, volumes, and `data/`)
+- Help output reorganized: each service (`cdbfree`, `labdb`, `odbrepo`,
+  `odbseed`, `odbdemo`, `odbenc`) has its own labeled section
+
 ## [1.0.0] - 2026-04-15
 
 ### Added
