@@ -7,6 +7,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- `docker-publish.yml` GitHub Actions workflow - publishing the Oracle Free
+  image is not permitted; removed to prevent accidental pushes to GHCR
+
 ### Added
 
 - `reset-cdbfree` target (was missing from per-service targets)
