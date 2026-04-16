@@ -81,33 +81,21 @@ help: ## Show this help message
 	@grep -hE '^(lint|fmt)[a-zA-Z_-]*:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab Services (generic):$(COLOR_RESET)"
+	@echo -e "$(COLOR_BOLD)Lab Services (use SERVICE=<name> or per-service shortcut):$(COLOR_RESET)"
 	@grep -hE '^(up|down|ps|logs|bash|sql|reset):.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: cdbfree (plain Oracle 26ai Free):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-cdbfree:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo -e "  $(COLOR_BOLD)Available services$(COLOR_RESET) (each supports: up | down | logs | bash | sql | reset)"
+	@printf "  $(COLOR_YELLOW)%-10s  %-6s  %s$(COLOR_RESET)\n" "SERVICE" "PORT" "Description"
+	@echo   "  ----------  ------  ----------------------------------------------------"
+	@echo   "  cdbfree     1526    Plain Oracle 26ai Free, common scripts only"
+	@echo   "  labdb       1527    Empty DB for labs, full setup/startup scripts"
+	@echo   "  odbrepo     1528    OraDBA demo created via SQL scripts"
+	@echo   "  odbseed     1529    OraDBA demo from PDB archive"
+	@echo   "  odbdemo     1530    Complex OraDBA demo from PDB archive"
+	@echo   "  odbenc      1531    OraDBA demo with TDE via SQL scripts"
 	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: labdb (empty DB for labs):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-labdb:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbrepo (OraDBA demo via SQL scripts):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-odbrepo:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbseed (OraDBA demo from PDB archive):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-odbseed:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbdemo (complex OraDBA demo from PDB archive):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-odbdemo:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo -e "$(COLOR_BOLD)Lab: odbenc (OraDBA demo with TDE via SQL scripts):$(COLOR_RESET)"
-	@grep -hE '^(up|down|logs|bash|sql|reset)-odbenc:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo   "  Shortcut: make up-labdb  |  make logs-odbdemo  |  make reset-odbenc"
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Build:$(COLOR_RESET)"
 	@grep -hE '^(build)[a-zA-Z_-]*:.*?## ' $(MAKEFILE_LIST) | \

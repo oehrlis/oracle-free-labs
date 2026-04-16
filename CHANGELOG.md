@@ -7,6 +7,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-04-16
+
+### Changed
+
+- `Makefile`: consolidated `make help` lab services section - replaced six
+  per-service sections (36 lines) with a single compact service table;
+  per-service shortcut targets (`up-<svc>`, `down-<svc>`, etc.) remain for
+  shell autocomplete but no longer clutter the help output
+
 ## [1.0.1] - 2026-04-16
 
 ### Added
