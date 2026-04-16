@@ -7,26 +7,32 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-04-16
+
+### Added
+
+- `config/common/scripts/demo-security-26ai/` - new demo scripts for Oracle
+  AI Database 26ai security labs (SQL Firewall, MFA, environment
+  check/cleanup/prepare scripts)
+- `doc/DOAG2025-Oracle-Container-Labs_Manuskript_v1.0.md` and matching
+  `.yml` metadata - DOAG 2025 conference manuscript source
+- `artefacts/DOAG2025-Oracle-Container-Labs_Manuskript_v1.0.pdf` - generated
+  PDF artefact for DOAG 2025
+
+### Changed
+
+- `build/Dockerfile`: default `DB_IMAGE` changed from `latest-lite` to
+  `latest`; switched package manager from `microdnf` to `dnf`; added
+  `oracle-epel-release-el8` and OCI region mirror fix for offline builds;
+  added `/opt/oracle/local` directory creation; oradba tools now installed
+  via `oradba_install.sh --update-profile`
+- `Makefile`: `make bash` now opens a login shell (`bash -l`) so `.bash_profile`
+  is sourced and oradba/BasEnv tools are available
+
 ### Removed
 
 - `docker-publish.yml` GitHub Actions workflow - publishing the Oracle Free
   image is not permitted; removed to prevent accidental pushes to GHCR
-
-### Added
-
-- `reset-cdbfree` target (was missing from per-service targets)
-
-### Changed
-
-- All "EA" references (Enterprise Architect / EA Sparx) replaced with "OraDBA demo"
-  throughout `README.md`, `CLAUDE.md`, `docker-compose.yml`, `Makefile`, all
-  `config/*/setup/README.md` and `config/*/startup/README.md` files, and three
-  SQL setup scripts in `config/odbdemo/` and `config/odbenc/`
-- `make down` without `SERVICE`: stops all six services sequentially
-- `make reset` without `SERVICE`: resets all six services with a single
-  confirmation prompt (destructive - removes containers, volumes, and `data/`)
-- Help output reorganized: each service (`cdbfree`, `labdb`, `odbrepo`,
-  `odbseed`, `odbdemo`, `odbenc`) has its own labeled section
 
 ## [1.0.0] - 2026-04-15
 
@@ -127,6 +133,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.0.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.3.0...v0.4.0

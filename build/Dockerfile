@@ -15,22 +15,39 @@
 #              at http://www.apache.org/licenses/
 # ------------------------------------------------------------------------------
 
-ARG DB_IMAGE=container-registry.oracle.com/database/free:latest-lite
-
+ARG DB_IMAGE=container-registry.oracle.com/database/free:latest
 FROM ${DB_IMAGE}
-
-LABEL org.opencontainers.image.title="oracle-free-labs" \
-      org.opencontainers.image.description="Extended Oracle AI Database Free for OraDBA labs" \
-      org.opencontainers.image.authors="Stefan Oehrli <stefan.oehrli@oradba.ch>" \
-      org.opencontainers.image.source="https://github.com/oehrlis/oracle-free-labs" \
-      org.opencontainers.image.licenses="Apache-2.0"
 
 USER root
 
-# Install additional tools: rlwrap (for sqlplus history), less, oradba init
-RUN microdnf install -y rlwrap less tar gzip && \
-    microdnf clean all && \
-    rm -rf /var/cache/yum /tmp/*.rpm
+# Fix OCI region mirror resolution: $ociregion/$ocidomain do not resolve in
+# container builds outside OCI. Affects all *.repo files (oracle-linux-ol8.repo,
+# oraclelinux-developer-ol8.repo, uek-ol8.repo, virt-ol8.repo).
+# sed must run twice: once before oracle-epel-release-el8 (fixes existing repos),
+# once after (fixes the EPEL repo file dropped by the package install).
+# Double sed is required for multi-arch (amd64 + arm64) — no arch-specific URLs.
+RUN sed -i \
+        's|baseurl=https://yum\$ociregion\.\$ocidomain/|baseurl=https://yum.oracle.com/|g' \
+        /etc/yum.repos.d/*.repo && \
+    dnf install -y oracle-epel-release-el8 && \
+    sed -i \
+        's|baseurl=https://yum\$ociregion\.\$ocidomain/|baseurl=https://yum.oracle.com/|g' \
+        /etc/yum.repos.d/*.repo && \
+    dnf install -y rlwrap less curl && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf
 
+# Create /opt/oracle/local as root before switching to oracle user
+# (oradba_install.sh requires the parent directory to exist)
+RUN mkdir -p /opt/oracle/local && chown oracle:oinstall /opt/oracle/local
+
+# Install oradba tools as oracle user with profile update
 USER oracle
-# - EOF ------------------------------------------------------------------------
+RUN curl -fsSL \
+        https://github.com/oehrlis/oradba/releases/latest/download/oradba_install.sh \
+        -o /tmp/oradba_install.sh && \
+    chmod +x /tmp/oradba_install.sh && \
+    /tmp/oradba_install.sh --update-profile && \
+    rm -f /tmp/oradba_install.sh
+
+# EOF -------------------------------------------------------------------------

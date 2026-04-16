@@ -240,7 +240,7 @@ bash: ## Open bash shell in a container: make bash SERVICE=labdb
 		echo "Error: SERVICE is required. Example: make bash SERVICE=labdb"; \
 		exit 1; \
 	fi
-	docker compose exec "$(SERVICE)" bash
+	docker compose exec "$(SERVICE)" bash -l
 
 .PHONY: sql
 sql: ## Open sqlplus in a container: make sql SERVICE=labdb
