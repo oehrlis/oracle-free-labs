@@ -21,6 +21,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`labdb`, `odbrepo`, `odbseed`, `odbdemo`, `odbenc`): wrapper that calls the common
   setup script on every container start
 
+### Documentation
+
+- `doc/demo_overlay.md`: new guide for the demo/engineering overlay workflow;
+  covers the docker-compose.override.yml mechanism, five override patterns
+  (script mount, custom tnsnames, extra env vars, version-specific image, combined),
+  TNS_ADMIN and wallet persistence context, and a suggested talks repo structure
+  with demo runbook template
+- `doc/README.md`, `doc/service_setup.md`, `README.md`: linked to new guide;
+  fixed pre-existing lint issues in service_setup.md
+- `.markdownlint.json`: added project lint config (line_length 120, MD024
+  siblings_only, MD033 and MD060 disabled)
+
 ### Changed
 
 - `build/Dockerfile`: creates `/opt/oracle/network/admin -> /opt/oracle/dbconfig/FREE`
