@@ -198,6 +198,9 @@ It includes step by step guides and practical examples to help you get the most 
 - [Service Setup](doc/service_setup.md)  
   Walkthrough for configuring and starting each service, including database containers and scripts
 
+- [Demo and Engineering Overlays](doc/demo_overlay.md)  
+  Extend the lab with demo scripts and config from an external repo using `docker-compose.override.yml`
+
 - [Install BasEnv](doc/install_basenv.md)  
   Install BasEnv inside the container to enable advanced tooling and scripting
 

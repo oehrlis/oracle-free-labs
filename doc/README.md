@@ -9,6 +9,7 @@ Each topic is covered in a dedicated Markdown file for modular use.
 |-------|-------------|
 | [Setup Lab Environment](setup_lab_environment.md) | Prepare host, install prerequisites, configure environment |
 | [Service Setup](service_setup.md) | Walkthrough for configuring and starting each service |
+| [Demo and Engineering Overlays](demo_overlay.md) | Extend the lab with demo scripts and config from external repos |
 | [Install BasEnv](install_basenv.md) | Optional installation of BasEnv for a richer DBA environment |
 | [Interactive Shell Access](interactive_shell.md) | Open a shell in a container, run scripts, start SQL*Plus |
 | [SQL Access](sql_developer.md) | Connect via SQL Developer or SQL*Plus, run SQL scripts |
@@ -19,7 +20,6 @@ Each topic is covered in a dedicated Markdown file for modular use.
 | [Miscellaneous DBA Tasks](misc_dba_tasks.md) | Handy DBA tasks such as checking status, restarting, creating users |
 | [Troubleshooting](troubleshooting.md) | Common issues and how to resolve them |
 | [Decommission a Container](decommission_service.md) | Stop and remove a container service and clean up persistent data |
-
 
 ## Architecture Diagram
 

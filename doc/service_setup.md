@@ -1,37 +1,38 @@
 # Service Setup - Walkthrough
 
-This document describes how to configure and start the services in the environment.  
-It explains the role of docker-compose, environment variables, configuration and data folders, and the individual database containers.
+This document describes how to configure and start the services in the environment.
+It explains the role of docker-compose, environment variables, configuration and data folders, and the individual
+database containers.
 
 ## First time setup (quick start)
 
 1. Build and start a service (example: cdbfree)
 
-  ```bash
+   ```bash
    docker compose --profile cdbfree up -d
-  ```
+   ```
 
-2. Check logs until database is ready
+1. Check logs until database is ready
 
-  ```bash
-  docker logs -f cdbfree
-  ```
+   ```bash
+   docker logs -f cdbfree
+   ```
 
-  Look for
+   Look for
 
-  ```text
-  #########################
-  DATABASE IS READY TO USE!
-  #########################
-  ```
+   ```text
+   #########################
+   DATABASE IS READY TO USE!
+   #########################
+   ```
 
-3. Connect via SQL\*Plus
+1. Connect via SQL\*Plus
 
-  ```bash
-  sqlplus sys@localhost:1526/FREEPDB1 as sysdba
-  ```
+   ```bash
+   sqlplus sys@localhost:1526/FREEPDB1 as sysdba
+   ```
 
-4. Access OEM Express in browser
+1. Access OEM Express in browser
 
    ```text
    http://localhost:5506/em
@@ -41,7 +42,8 @@ It explains the role of docker-compose, environment variables, configuration and
 
 All services are orchestrated using docker-compose.
 
-- A base service definition (x-db-service) defines common settings for Oracle database containers (image, memory, environment variables, ulimits, restart policy).
+- A base service definition (x-db-service) defines common settings for Oracle database containers
+  (image, memory, environment variables, ulimits, restart policy).
 - Individual services extend this base and add their own bind mounts and setup scripts.
 - Data and configuration are mapped into the containers using bind mounts, keeping containers stateless and reproducible.
 
@@ -350,6 +352,7 @@ docker compose --profile odbenc logs -f
 ## Links
 
 - [Setup Lab Environment](setup_lab_environment.md)
+- [Demo and Engineering Overlays](demo_overlay.md)
 - [Interactive Shell Access](interactive_shell.md)
 - [SQL Access](sql_developer.md)
 - [Troubleshooting](troubleshooting.md)
