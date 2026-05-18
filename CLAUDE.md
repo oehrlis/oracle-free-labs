@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Container-based lab environment for **Oracle AI Database 26ai Free** using Docker Compose. Provides six independent services, each representing a different Oracle database configuration for labs and training. See `docker-compose.yml` and `.env.example` for full configuration.
+Container-based lab environment for **Oracle AI Database 26ai Free** using Docker Compose.
+Provides six independent services, each representing a different Oracle database configuration for labs and training.
+See `docker-compose.yml` and `.env.example` for full configuration.
 
 ## Service Management
 
@@ -45,7 +47,8 @@ Each service (except `cdbfree`) has two script phases mounted read-only into the
 - **Setup** (`config/<service>/setup/`) - runs once on first container start, alphabetical order
 - **Startup** (`config/<service>/startup/`) - runs on every container start after DB opens
 
-Scripts use numeric prefixes to control execution order (`00_`, `10_`, `20_`). Shared utilities live in `config/common/scripts/` (mounted to `/opt/oracle/common/scripts` in every service except `cdbfree`).
+Scripts use numeric prefixes to control execution order (`00_`, `10_`, `20_`).
+Shared utilities live in `config/common/scripts/` (mounted to `/opt/oracle/common/scripts` in every service except `cdbfree`).
 
 ### SQL Script Conventions
 
@@ -62,10 +65,27 @@ Scripts use numeric prefixes to control execution order (`00_`, `10_`, `20_`). S
 - `create_audit_policies.sql` - standardized audit framework
 - `csenc_master.sql` / `csenc_swkeystore.sql` - TDE master key and software keystore
 - `create_scott.sql` / `create_tvd_hr.sql` - demo schemas (SCOTT, HR)
+- `setup_network_wallet.sh` - startup script: redirects Oracle wallet to bind-mounted
+  `dbconfig/FREE/wallet/`; validates `/opt/oracle/network/admin` symlink; skips for cdbfree
+
+### TNS_ADMIN and Network
+
+Named services (`labdb`, `odbrepo`, `odbseed`, `odbdemo`, `odbenc`) set
+`TNS_ADMIN=/opt/oracle/network/admin`, which resolves via a Dockerfile symlink to
+`/opt/oracle/dbconfig/FREE/`. This directory is bind-mounted and persistent.
+`cdbfree` uses Oracle's default network paths (no explicit dbconfig mount).
+
+### Demo and Engineering Overlays
+
+`docker-compose.override.yml` is gitignored. External repos (talks, demo) provide
+this file and symlink it into the repo root. It adds mounts, env vars, or image
+overrides without modifying the core compose file. Template: `docker-compose.override.yml.example`.
 
 ### Data Persistence
 
-All persistent Oracle files live under `data/` (gitignored). PDB archive files (`.pdb`) used by `odbseed`/`odbdemo` go in `config/common/data/pdbarch/` (tracked in git).
+All persistent Oracle files live under `data/` (gitignored). PDB archive files (`.pdb`) used by
+`odbseed`/`odbdemo` go in `config/common/data/pdbarch/` (tracked in git).
+Wallet files are stored in `data/<service>/dbconfig/FREE/wallet/` (redirected by startup script).
 
 ## Documentation
 
@@ -79,10 +99,22 @@ scripts/generate_pdf.sh <docname>
 # Writes: artefacts/<docname>.pdf
 ```
 
+## Build
+
+```bash
+make build                                    # oracle-free-labs:<DB_BASE_TAG> (default 23.9.0.0)
+make build DB_BASE_IMAGE=...free:23.7.0.0     # oracle-free-labs:23.7.0.0
+```
+
+`DB_BASE_IMAGE` in `.env` controls the Oracle base version. `BUILD_IMAGE` and
+`DB_IMAGE` are auto-derived; `DB_IMAGE` is exported so `docker compose` picks it up
+via Make without an explicit `.env` entry.
+
 ## Lint
 
 ```bash
-markdownlint doc/
+markdownlint doc/       # uses .markdownlint.json (line_length 120, MD033/MD060 off)
+make lint               # shell + yaml + markdown
 ```
 
 ## Secrets
