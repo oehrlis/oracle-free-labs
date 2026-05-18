@@ -23,9 +23,17 @@
 # see git revision history with git log for more information on changes
 # ------------------------------------------------------------------------------
 
+# - Environment for named services (adds TNS_ADMIN for network/admin symlink) --
+x-env-named: &env-named
+  - TZ=${TZ}
+  - ORACLE_PWD=${ORACLE_PWD}
+  - ORACLE_SID=${DB_ORACLE_SID}
+  - ORACLE_PDB=${ORACLE_PDB}
+  - TNS_ADMIN=/opt/oracle/network/admin
+
 # - Reusable base --------------------------------------------------------------
 x-db-service: &db-base
-  image: ${DB_IMAGE}
+  image: ${DB_IMAGE:-oracle-free-labs:latest}
   shm_size: ${DB_SHM_SIZE}
   environment:
     - TZ=${TZ}
@@ -67,6 +75,7 @@ services:
     container_name: labdb
     hostname: labdb
     profiles: ["labdb"]
+    environment: *env-named
     volumes:
       - ./data/labdb:/opt/oracle/oradata
       - ./data/labdb/dbconfig:/opt/oracle/dbconfig
@@ -85,6 +94,7 @@ services:
     container_name: odbrepo
     hostname: odbrepo
     profiles: ["odbrepo"]
+    environment: *env-named
     volumes:
       - ./data/odbrepo:/opt/oracle/oradata
       - ./data/odbrepo/dbconfig:/opt/oracle/dbconfig
@@ -103,6 +113,7 @@ services:
     container_name: odbseed
     hostname: odbseed
     profiles: ["odbseed"]
+    environment: *env-named
     volumes:
       - ./data/odbseed:/opt/oracle/oradata
       - ./data/odbseed/dbconfig:/opt/oracle/dbconfig
@@ -121,6 +132,7 @@ services:
     container_name: odbdemo
     hostname: odbdemo
     profiles: ["odbdemo"]
+    environment: *env-named
     volumes:
       - ./data/odbdemo:/opt/oracle/oradata
       - ./data/odbdemo/dbconfig:/opt/oracle/dbconfig
@@ -139,6 +151,7 @@ services:
     container_name: odbenc
     hostname: odbenc
     profiles: ["odbenc"]
+    environment: *env-named
     volumes:
       - ./data/odbenc:/opt/oracle/oradata
       - ./data/odbenc/dbconfig:/opt/oracle/dbconfig

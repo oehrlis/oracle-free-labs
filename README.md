@@ -1,15 +1,18 @@
 # Oracle AI Database 26ai Free OraDBA Lab Environment
 
-This repository delivers a **container-based lab environment** for *Oracle AI Database Free 26ai*, designed for testing, training, and engineering use cases within the **OraDBA Lab Environment**.
-It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle AI Database instances — with or without OraDBA demo labs — using **Docker** or **Podman**. The setup is optimized for **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
+This repository delivers a **container-based lab environment** for *Oracle AI Database Free 26ai*, designed for testing,
+training, and engineering use cases within the **OraDBA Lab Environment**.
+It comes with preconfigured services, scripts, and supporting files that make it easy to set up and run Oracle AI
+Database instances - with or without OraDBA demo labs - using **Docker** or **Podman**. The setup is optimized for
+**reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
 
 ## Requirements
 
 Before starting, ensure you have the following:
 
 - Docker or Podman installed and configured  
-- Oracle AI Database container images (e.g. Oracle AI Database 26ai Free)  
-  See [Oracle AI Database 26ai Free Container Image Documentation](https://container-registry.oracle.com/ords/ocr/ba/database/free)  
+- Oracle AI Database container images (e.g. Oracle AI Database 26ai Free),
+  see the [Oracle Free container registry](https://container-registry.oracle.com/ords/ocr/ba/database/free)
 - Preconfigured PDBs with OraDBA demo labs require the following PDB archives.
   They must be placed in `config/common/data/pdbarch` on the host, which is mounted into the container at `/opt/oracle/data/pdbarch/`.
   These archives are **mandatory** if the services `odbseed` and `odbrepo` are used:
@@ -21,19 +24,20 @@ Before starting, ensure you have the following:
 
 ```text
 oracle-free-labs/
-├── scripts/            # local helper scripts (PDF generation, container tooling)
-├── build/              # Dockerfile and build context for extended Oracle Free image
-├── config/             # scenario configs
-│   ├── common/         # shared assets (scripts, datapump dir, templates)
-│   ├── labdb/          # empty lab/test DB
-│   ├── odbrepo/         # OraDBA demo via SQL scripts
-│   ├── odbseed/         # OraDBA demo from PDB archive
-│   └── odbdemo/         # complex OraDBA demo from PDB archive
-├── data/               # persisted DB files (gitignored)
-├── doc/                # documentation and notes (detailed use cases to follow)
-├── docker-compose.yml  # main compose file (with profiles)
-├── .env.example        # environment variable defaults
-└── README.md           # this file
+├── scripts/                          # local helper scripts (PDF generation, container tooling)
+├── build/                            # Dockerfile and build context for extended Oracle Free image
+├── config/                           # scenario configs
+│   ├── common/                       # shared assets (scripts, datapump dir, templates)
+│   ├── labdb/                        # empty lab/test DB
+│   ├── odbrepo/                      # OraDBA demo via SQL scripts
+│   ├── odbseed/                      # OraDBA demo from PDB archive
+│   └── odbdemo/                      # complex OraDBA demo from PDB archive
+├── data/                             # persisted DB files (gitignored)
+├── doc/                              # documentation and notes (detailed use cases to follow)
+├── docker-compose.yml                # main compose file (with profiles)
+├── docker-compose.override.yml.example  # template for demo/engineering overlays
+├── .env.example                      # environment variable defaults
+└── README.md                         # this file
 ```
 
 Shared configuration and scripts are located under `config/common/`.
@@ -69,7 +73,20 @@ This environment includes several containerized database services, each with a d
    # Edit .env to set ORACLE_PWD, ports, image tag etc.
    ```
 
-3. **Start a scenario via Makefile (recommended)**
+3. **Build the extended image (optional)**
+
+   The extended image adds oradba tools, rlwrap, and correct `network/admin`
+   symlinks on top of the Oracle Free base. Set `DB_BASE_IMAGE` in `.env` to
+   target a specific Oracle version:
+
+   ```bash
+   make build                                                    # oracle-free-labs:23.9.0.0 (default)
+   make build DB_BASE_IMAGE=...free:23.7.0.0                     # oracle-free-labs:23.7.0.0
+   ```
+
+   To use a service without building, set `DB_IMAGE` in `.env` to the raw Oracle Free image.
+
+4. **Start a scenario via Makefile (recommended)**
 
    ```bash
    make up-labdb       # start labdb service
@@ -89,7 +106,7 @@ This environment includes several containerized database services, each with a d
 
    Run `make help` for a full list of targets.
 
-4. **Start a scenario directly (Docker or Podman)**
+5. **Start a scenario directly (Docker or Podman)**
 
    ```bash
    docker compose --profile cdbfree up -d   # plain Oracle Free
@@ -102,7 +119,7 @@ This environment includes several containerized database services, each with a d
 
    > Podman users can simply alias `docker` to `podman`.
 
-5. **Stop a scenario**
+6. **Stop a scenario**
 
    ```bash
    docker compose --profile odbrepo down -v
@@ -114,6 +131,35 @@ This environment includes several containerized database services, each with a d
 - The `data/` folder is **gitignored** by default.
 - Each scenario has its own subfolder: `data/labdb`, `data/odbrepo`, `data/odbseed`, `data/odbdemo`.
 - PDB archives must be placed in `config/data/pdbarch/` and are mapped into `/opt/oracle/data/pdbarch/` inside the container.
+- The Oracle wallet directory is automatically redirected to `data/<service>/dbconfig/FREE/wallet/`
+  so it survives container resets (handled by `config/common/scripts/setup_network_wallet.sh`).
+
+## Demo and Engineering Overlays
+
+This repository provides the core lab infrastructure. Demo scripts, talks content, and
+engineering-specific configuration live in **separate repositories** and are layered on top
+via Docker Compose's native override mechanism - without modifying the core files here.
+
+### How it works
+
+Docker Compose automatically merges `docker-compose.override.yml` when present.
+The file is gitignored in this repo, so it can be freely provided by an external repo (e.g. a talks repo):
+
+```bash
+# Activate a demo overlay from a talks repo (symlink or copy)
+ln -sf ../talks/demos/nf26ai-security/docker-compose.override.yml .
+make up SERVICE=labdb
+```
+
+A documented template with common patterns (extra mounts, custom tnsnames, wallet,
+version-specific image) is provided in `docker-compose.override.yml.example`.
+
+### TNS_ADMIN
+
+For all named services (`labdb`, `odbrepo`, `odbseed`, `odbdemo`, `odbenc`),
+`TNS_ADMIN` is set to `/opt/oracle/network/admin`, which points to the
+bind-mounted `dbconfig/FREE/` directory. This means `tnsnames.ora`, `sqlnet.ora`,
+and the wallet are in the persistent `data/<service>/dbconfig/FREE/` area on the host.
 
 ## Configuration
 
@@ -125,6 +171,9 @@ Configuration is managed through a combination of environment variables and moun
   - `ORACLE_PDB` - Default pluggable database
   - `ORACLE_PWD` - Password for `SYS`, `SYSTEM`, and `PDBADMIN`
   - `ENABLE_ARCHIVELOG` - Enable or disable ARCHIVELOG mode
+  - `DB_BASE_IMAGE` - Oracle Free source image for `make build`
+    (e.g. `container-registry.oracle.com/database/free:23.9.0.0`);
+    `BUILD_IMAGE` and `DB_IMAGE` are automatically derived from this value
 
 - **Configuration Folders**:
 

@@ -1,0 +1,89 @@
+# ------------------------------------------------------------------------------
+# OraDBA - Oracle Database Infrastructure and Security, 5630 Muri, Switzerland
+# ------------------------------------------------------------------------------
+# Name.......: docker-compose.override.yml.example
+# Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
+# Editor.....: Stefan Oehrli
+# Date.......: 2026.05.18
+# Revision...: v1.0.0
+# Purpose....: Example override file for demo- and engineering-specific
+#              configuration that should NOT live in the core lab repo.
+# Notes......: Copy or symlink this file as docker-compose.override.yml
+#              in the oracle-free-labs root. Docker Compose picks it up
+#              automatically - no extra -f flag required.
+#
+#              Typical workflow (talks / demo repo):
+#
+#                cd oracle-free-labs/
+#                ln -sf ../talks/demos/nf26ai-security/docker-compose.override.yml .
+#                make up SERVICE=labdb
+#
+# Reference..: https://github.com/oehrlis/oracle-free-labs
+# License....: Apache License Version 2.0, January 2004 as shown
+#              at http://www.apache.org/licenses/
+# ------------------------------------------------------------------------------
+# Modified...:
+#   see git revision history with git log for more information on changes
+# ------------------------------------------------------------------------------
+
+# Override file is merged with docker-compose.yml by Docker Compose.
+# Only list what you want to ADD or CHANGE - everything else is inherited.
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Pattern 1: Mount demo scripts from an external repo (read-only).
+  # The scripts are placed in a directory the container can see, but they
+  # are NOT auto-executed - run them manually after the DB is up.
+  # ---------------------------------------------------------------------------
+  # labdb:
+  #   volumes:
+  #     - ../talks/demos/nf26ai-security/scripts:/opt/oracle/custom:ro
+
+  # ---------------------------------------------------------------------------
+  # Pattern 2: Provide a custom tnsnames.ora / sqlnet.ora from the demo repo.
+  # TNS_ADMIN=/opt/oracle/network/admin already points to dbconfig/FREE for
+  # named services. To use a custom tnsnames instead, mount it directly:
+  # ---------------------------------------------------------------------------
+  # labdb:
+  #   volumes:
+  #     - ../talks/demos/nf26ai-security/tns:/opt/oracle/network/admin:ro
+  #   environment:
+  #     - TZ=${TZ}
+  #     - ORACLE_PWD=${ORACLE_PWD}
+  #     - ORACLE_SID=${ORACLE_SID:-FREE}
+  #     - ORACLE_PDB=${ORACLE_PDB}
+  #     - TNS_ADMIN=/opt/oracle/network/admin
+
+  # ---------------------------------------------------------------------------
+  # Pattern 3: Persist wallet under a path visible from the host.
+  # By default setup_network_wallet.sh redirects the wallet to dbconfig/FREE/wallet
+  # (already bind-mounted). Use this only when you need a completely separate
+  # wallet root outside the dbconfig tree.
+  # ---------------------------------------------------------------------------
+  # labdb:
+  #   volumes:
+  #     - ../talks/demos/nf26ai-security/wallet:/opt/oracle/dbconfig/FREE/wallet
+
+  # ---------------------------------------------------------------------------
+  # Pattern 4: Override the DB image for version-specific engineering.
+  # Build the target image first: make build DB_BASE_IMAGE=...free:23.7.0.0
+  # ---------------------------------------------------------------------------
+  # labdb:
+  #   image: oracle-free-labs:23.7.0.0
+
+  # ---------------------------------------------------------------------------
+  # Pattern 5: Combined demo setup - scripts + TNS + extra env vars.
+  # ---------------------------------------------------------------------------
+  # labdb:
+  #   volumes:
+  #     - ../talks/demos/nf26ai-security/scripts:/opt/oracle/custom:ro
+  #   environment:
+  #     - TZ=${TZ}
+  #     - ORACLE_PWD=${ORACLE_PWD}
+  #     - ORACLE_SID=${ORACLE_SID:-FREE}
+  #     - ORACLE_PDB=${ORACLE_PDB}
+  #     - TNS_ADMIN=/opt/oracle/network/admin
+  #     - DEMO_NAME=NF26ai-Security
+
+# - EOF ------------------------------------------------------------------------

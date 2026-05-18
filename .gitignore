@@ -51,10 +51,11 @@ data/*/.FREE.created
 !config/common/data/pdbarch/
 !config/common/data/pdbarch/.gitignore
 
-# - Local environment files ----------------------------------------------------
+# - Local environment files and local overrides --------------------------------
 .env
 .env.local
 *.log
+docker-compose.override.yml
 
 # - OS junk --------------------------------------------------------------------
 .DS_Store

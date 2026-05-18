@@ -7,6 +7,35 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-18
+
+### Added
+
+- `docker-compose.override.yml.example`: template for demo- and engineering-specific
+  configuration without modifying core compose files; documents patterns for custom
+  script mounts, tnsnames, wallet redirect, and version-specific images
+- `config/common/scripts/setup_network_wallet.sh`: idempotent startup script that
+  redirects the Oracle wallet to `dbconfig/FREE/wallet/` (bind-mounted, persistent)
+  and validates the `network/admin` symlink; skips silently for `cdbfree`
+- `config/<service>/startup/01_setup_network_wallet.sh` for all five named services
+  (`labdb`, `odbrepo`, `odbseed`, `odbdemo`, `odbenc`): wrapper that calls the common
+  setup script on every container start
+
+### Changed
+
+- `build/Dockerfile`: creates `/opt/oracle/network/admin -> /opt/oracle/dbconfig/FREE`
+  symlink so `TNS_ADMIN` resolves correctly for named services without manual setup
+- `docker-compose.yml`: adds `x-env-named` YAML anchor with `TNS_ADMIN=/opt/oracle/network/admin`;
+  all five named services use this anchor; `cdbfree` retains Oracle default network paths;
+  compose image uses `${DB_IMAGE:-oracle-free-labs:latest}` as fallback for direct use
+- `Makefile`: introduces `DB_BASE_IMAGE` as the single variable controlling the Oracle
+  Free base version; `BUILD_IMAGE` (e.g. `oracle-free-labs:23.9.0.0`) and `DB_IMAGE`
+  are auto-derived; `DB_IMAGE` is exported so docker compose picks up the correct image
+  when invoked via make - no need to set `DB_IMAGE` separately in `.env`
+- `.env.example`: replaced explicit `DB_IMAGE` with `DB_BASE_IMAGE`; `DB_IMAGE` is
+  now auto-derived from `DB_BASE_IMAGE` via make, eliminating the redundant version entry
+- `.gitignore`: `docker-compose.override.yml` added to local overrides section
+
 ## [1.0.2] - 2026-04-16
 
 ### Changed
@@ -142,6 +171,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.1.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.2...v1.1.0
+[1.0.2]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.4.0...v0.5.0

@@ -15,7 +15,7 @@
 #              at http://www.apache.org/licenses/
 # ------------------------------------------------------------------------------
 
-ARG DB_IMAGE=container-registry.oracle.com/database/free:latest
+ARG DB_IMAGE=container-registry.oracle.com/database/free:23.9.0.0
 FROM ${DB_IMAGE}
 
 USER root
@@ -41,7 +41,17 @@ RUN sed -i \
 # (oradba_install.sh requires the parent directory to exist)
 RUN mkdir -p /opt/oracle/local && chown oracle:oinstall /opt/oracle/local
 
+# Create /opt/oracle/network/admin symlink for named services.
+# Resolves at runtime when the dbconfig bind mount is attached; dangling
+# until then, which is harmless. cdbfree uses Oracle's own $ORACLE_HOME/network/admin.
+RUN mkdir -p /opt/oracle/network && \
+    ln -sf /opt/oracle/dbconfig/FREE /opt/oracle/network/admin && \
+    chown -h oracle:oinstall /opt/oracle/network
+
 # Install oradba tools as oracle user with profile update
+# Pass --build-arg ORADBA_CACHEBUST=$(date +%s) to force a fresh download
+# without invalidating the dnf layers above.
+ARG ORADBA_CACHEBUST=0
 USER oracle
 RUN curl -fsSL \
         https://github.com/oehrlis/oradba/releases/latest/download/oradba_install.sh \

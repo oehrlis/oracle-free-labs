@@ -50,8 +50,13 @@ BUMP_SCRIPT := $(SCRIPT_DIR)/bump_version.sh
 
 # -- Docker variables ----------------------------------------------------------
 -include .env
-BUILD_IMAGE ?= oracle-free-labs:latest
-REGISTRY    ?= ghcr.io/oehrlis
+DB_BASE_IMAGE      ?= container-registry.oracle.com/database/free:23.9.0.0
+_DB_BASE_TAG       := $(lastword $(subst :, ,$(DB_BASE_IMAGE)))
+BUILD_IMAGE        ?= oracle-free-labs:$(_DB_BASE_TAG)
+DB_IMAGE           ?= $(BUILD_IMAGE)
+export DB_IMAGE
+REGISTRY           ?= ghcr.io/oehrlis
+DOCKER_BUILD_ARGS  ?=
 
 # -- Tool detection ------------------------------------------------------------
 SHELLCHECK   := $(shell PATH="$(PATH)" command -v shellcheck 2>/dev/null)
@@ -427,8 +432,16 @@ build: ## Build extended Oracle Free image from build/Dockerfile
 	@if [[ ! -f "$(BUILD_DIR)/Dockerfile" ]]; then \
 		echo "Error: $(BUILD_DIR)/Dockerfile not found"; exit 1; \
 	fi
-	docker build -t "$(BUILD_IMAGE)" -f "$(BUILD_DIR)/Dockerfile" "$(BUILD_DIR)"
+	docker build $(DOCKER_BUILD_ARGS) --build-arg DB_IMAGE="$(DB_BASE_IMAGE)" -t "$(BUILD_IMAGE)" -f "$(BUILD_DIR)/Dockerfile" "$(BUILD_DIR)"
 	@echo "✅ Image built: $(BUILD_IMAGE)"
+
+.PHONY: build-refresh
+build-refresh: ## Rebuild only the oradba_install.sh layer (dnf layers stay cached)
+	$(MAKE) --no-print-directory build DOCKER_BUILD_ARGS="--build-arg ORADBA_CACHEBUST=$$(date +%s)"
+
+.PHONY: build-no-cache
+build-no-cache: ## Build image without Docker layer cache (forces fresh oradba_install.sh download)
+	$(MAKE) --no-print-directory build DOCKER_BUILD_ARGS=--no-cache
 
 .PHONY: build-push
 build-push: build ## Build and push extended image to registry
