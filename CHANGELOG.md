@@ -7,6 +7,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-18
+
+### Added
+
+- `data/cdbfree/README.md`, `data/labdb/README.md`, `data/odbenc/README.md`: added
+  missing per-service README files explaining folder purpose and structure
+
+### Fixed
+
+- `data/odbseed/README.md`, `data/odbrepo/README.md`, `data/odbdemo/README.md`:
+  restored accidentally deleted per-service README files
+- `Makefile` `reset` target: now restores `README.md` via `git restore` after
+  wiping `data/<service>/` so README files survive a full or per-service reset
+
 ## [1.1.0] - 2026-05-18
 
 ### Added

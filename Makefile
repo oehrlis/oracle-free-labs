@@ -256,6 +256,7 @@ reset: ## Full reset (destructive!): make reset SERVICE=labdb  (omit SERVICE to 
 			echo -e "ℹ️  Resetting $$svc..."; \
 			docker compose --profile "$$svc" down -v || true; \
 			rm -rf "data/$$svc/"; \
+			git restore "data/$$svc/README.md" 2>/dev/null || true; \
 		done; \
 		echo "✅ All services reset complete"; \
 	else \
@@ -263,6 +264,7 @@ reset: ## Full reset (destructive!): make reset SERVICE=labdb  (omit SERVICE to 
 		[[ "$$confirm" == [yY] ]] || { echo "Aborted."; exit 1; }; \
 		docker compose --profile "$(SERVICE)" down -v; \
 		rm -rf "data/$(SERVICE)/"; \
+		git restore "data/$(SERVICE)/README.md" 2>/dev/null || true; \
 		echo "✅ Service $(SERVICE) reset complete"; \
 	fi
 
