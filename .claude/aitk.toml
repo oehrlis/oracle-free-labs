@@ -3,5 +3,5 @@ profiles = [
     "base",
 ]
 link_mode = "symlink"
-initialized_at = "2026-08-24T14:35:48Z"
+initialized_at = "2026-08-24T14:38:28Z"
 aitk_version = "3.2.0"
