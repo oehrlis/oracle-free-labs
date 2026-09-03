@@ -8,12 +8,14 @@
 # Revision...: v0.1.0
 # Purpose....: Docker Compose file for Oracle Free 23ai OraDBA Lab services
 # Notes......: Defines profiles for the following services:
-#              - cdbfree  : plain Oracle 23ai Free Edition
-#              - labdb    : empty database for labs/tests
-#              - odbrepo  : OraDBA demo created via SQL scripts
-#              - odbseed  : OraDBA demo created from PDB archive
-#              - odbdemo  : complex OraDBA demo from PDB archive
-#              - odbenc   : complex OraDBA demo with TDE via SQL scripts
+#              - cdbfree    : plain Oracle 23ai Free Edition
+#              - labdb      : empty database for labs/tests
+#              - odbrepo    : OraDBA demo created via SQL scripts
+#              - odbseed    : OraDBA demo created from PDB archive
+#              - odbdemo    : complex OraDBA demo from PDB archive
+#              - odbenc     : complex OraDBA demo with TDE via SQL scripts
+#              - odbencprod : TDE restore test - Prod DB (TDE, encrypted TS)
+#              - odbencdev  : TDE restore test - Dev DB (own keystore)
 #
 # Reference..: https://github.com/oehrlis/oracle-free-labs
 # License....: Apache License Version 2.0, January 2004 as shown
@@ -126,7 +128,7 @@ services:
       - "${ODBSEED_LISTENER_PORT}:1521"
       - "${ODBSEED_OEM_EXPRESS_PORT}:5500"
 
-  # - Complex OraDBA LAB from PDB archive ---------------------------------------
+  # - Complex OraDBA LAB from PDB archive --------------------------------------
   odbdemo:
     <<: *db-base
     container_name: odbdemo
@@ -163,4 +165,50 @@ services:
     ports:
       - "${ODBENC_LISTENER_PORT}:1521"
       - "${ODBENC_OEM_EXPRESS_PORT}:5500"
+
+  # - TDE restore verification test - Prod DB (TDE, encrypted tablespace) ------
+  odbencprod:
+    <<: *db-base
+    container_name: odbencprod
+    hostname: odbencprod
+    profiles: ["odbencprod"]
+    environment: *env-named
+    volumes:
+      - ./data/odbencprod:/opt/oracle/oradata
+      - ./data/odbencprod/dbconfig:/opt/oracle/dbconfig
+      - ./data/odbencprod/logs:/opt/oracle/scripts/logs   # <-- writable logs
+      - ${COMMON_DATA_HOST}:/opt/oracle/data
+      - ./config/common/scripts:/opt/oracle/common/scripts:ro
+      - ./config/odbencprod/setup:/opt/oracle/scripts/setup:ro
+      - ./config/odbencprod/startup:/opt/oracle/scripts/startup:ro
+      - ./data/xchange:/opt/oracle/xchange        # shared exchange dir
+    ports:
+      - "${ODBENCPROD_LISTENER_PORT:-1532}:1521"
+    deploy:
+      resources:
+        limits:
+          memory: ${ODBENCPROD_DB_MEM:-3g}
+
+  # - TDE restore verification test - Dev/target DB (own keystore) -------------
+  odbencdev:
+    <<: *db-base
+    container_name: odbencdev
+    hostname: odbencdev
+    profiles: ["odbencdev"]
+    environment: *env-named
+    volumes:
+      - ./data/odbencdev:/opt/oracle/oradata
+      - ./data/odbencdev/dbconfig:/opt/oracle/dbconfig
+      - ./data/odbencdev/logs:/opt/oracle/scripts/logs    # <-- writable logs
+      - ${COMMON_DATA_HOST}:/opt/oracle/data
+      - ./config/common/scripts:/opt/oracle/common/scripts:ro
+      - ./config/odbencdev/setup:/opt/oracle/scripts/setup:ro
+      - ./config/odbencdev/startup:/opt/oracle/scripts/startup:ro
+      - ./data/xchange:/opt/oracle/xchange        # shared exchange dir
+    ports:
+      - "${ODBENCDEV_LISTENER_PORT:-1533}:1521"
+    deploy:
+      resources:
+        limits:
+          memory: ${ODBENCDEV_DB_MEM:-3g}
 # - EOF ------------------------------------------------------------------------
