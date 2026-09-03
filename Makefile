@@ -42,7 +42,7 @@ BUILD_DIR  := build
 DOC_DIR    := doc
 
 # -- Services ------------------------------------------------------------------
-SERVICES := cdbfree labdb odbrepo odbseed odbdemo odbenc
+SERVICES := cdbfree labdb odbrepo odbseed odbdemo odbenc odbencprod odbencdev
 
 # -- Scripts -------------------------------------------------------------------
 PDF_SCRIPT  := $(SCRIPT_DIR)/generate_pdf.sh
@@ -99,6 +99,8 @@ help: ## Show this help message
 	@echo   "  odbseed     1529    OraDBA demo from PDB archive"
 	@echo   "  odbdemo     1530    Complex OraDBA demo from PDB archive"
 	@echo   "  odbenc      1531    OraDBA demo with TDE via SQL scripts"
+	@echo   "  odbencprod  1532    TDE restore verification - Prod DB (ARCHIVELOG, TDE)"
+	@echo   "  odbencdev   1533    TDE restore verification - Dev/target DB (own keystore)"
 	@echo ""
 	@echo   "  Shortcut: make up-labdb  |  make logs-odbdemo  |  make reset-odbenc"
 	@echo ""
@@ -421,6 +423,56 @@ sql-odbenc: ## Open sqlplus in odbenc
 .PHONY: reset-odbenc
 reset-odbenc: ## Full reset of odbenc (destructive!)
 	$(MAKE) --no-print-directory reset SERVICE=odbenc
+
+# -- odbencprod ----------------------------------------------------------------
+.PHONY: up-odbencprod
+up-odbencprod: ## Start odbencprod (TDE restore verification - Prod DB)
+	$(MAKE) --no-print-directory up SERVICE=odbencprod
+
+.PHONY: down-odbencprod
+down-odbencprod: ## Stop odbencprod
+	$(MAKE) --no-print-directory down SERVICE=odbencprod
+
+.PHONY: logs-odbencprod
+logs-odbencprod: ## Follow logs for odbencprod
+	$(MAKE) --no-print-directory logs SERVICE=odbencprod
+
+.PHONY: bash-odbencprod
+bash-odbencprod: ## Open bash shell in odbencprod
+	$(MAKE) --no-print-directory bash SERVICE=odbencprod
+
+.PHONY: sql-odbencprod
+sql-odbencprod: ## Open sqlplus in odbencprod
+	$(MAKE) --no-print-directory sql SERVICE=odbencprod
+
+.PHONY: reset-odbencprod
+reset-odbencprod: ## Full reset of odbencprod (destructive!)
+	$(MAKE) --no-print-directory reset SERVICE=odbencprod
+
+# -- odbencdev -----------------------------------------------------------------
+.PHONY: up-odbencdev
+up-odbencdev: ## Start odbencdev (TDE restore verification - Dev/target DB)
+	$(MAKE) --no-print-directory up SERVICE=odbencdev
+
+.PHONY: down-odbencdev
+down-odbencdev: ## Stop odbencdev
+	$(MAKE) --no-print-directory down SERVICE=odbencdev
+
+.PHONY: logs-odbencdev
+logs-odbencdev: ## Follow logs for odbencdev
+	$(MAKE) --no-print-directory logs SERVICE=odbencdev
+
+.PHONY: bash-odbencdev
+bash-odbencdev: ## Open bash shell in odbencdev
+	$(MAKE) --no-print-directory bash SERVICE=odbencdev
+
+.PHONY: sql-odbencdev
+sql-odbencdev: ## Open sqlplus in odbencdev
+	$(MAKE) --no-print-directory sql SERVICE=odbencdev
+
+.PHONY: reset-odbencdev
+reset-odbencdev: ## Full reset of odbencdev (destructive!)
+	$(MAKE) --no-print-directory reset SERVICE=odbencdev
 
 # ==============================================================================
 # Build

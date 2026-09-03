@@ -18,34 +18,29 @@
 # ------------------------------------------------------------------------------
 
 # - Runtime database data (never commit) ---------------------------------------
-# Ignore only the top-level data directory contents
-/data/*
+# Deny by default, allow by exception. The previous pattern set ignored only
+# named subtrees (dbconfig, FREE), so anything else a service wrote - RMAN
+# backup pieces under data/xchange, wallet copies, wallet_pwd.txt - was tracked.
+# A datafile or a keystore in version control is not recoverable by deleting it
+# later, so this list must stay a whitelist.
+/data/**
 
-# Keep a top-level README
+# Documentation and the directory markers a fresh clone needs
 !/data/README.md
-
-# Keep service subfolders and their README.md files
 !/data/*/
 !/data/*/README.md
-
-# Keep nested dbconfig and FREE directories (but not their contents by default)
 !/data/*/dbconfig/
-!/data/*/FREE/
+!/data/*/dbconfig/.gitkeep
+!/data/*/dbconfig/README.md
 
-# Still ignore actual DB files inside those
-/data/*/dbconfig/*
-/data/*/FREE/*
-data/*/.FREE.created
-
-# Keep the dbconfig/FREE directory itself - the image symlinks
-# /opt/oracle/network/admin (TNS_ADMIN) to it. Without it DBCA fails
-# with DBT-60127 on a fresh clone.
+# The image symlinks /opt/oracle/network/admin (TNS_ADMIN) to
+# /opt/oracle/dbconfig/FREE. Without that directory the bind mount creates an
+# empty dbconfig, the symlink dangles and DBCA aborts with DBT-60127.
 !/data/*/dbconfig/FREE/
 !/data/*/dbconfig/FREE/.gitkeep
 
-# Allow .gitkeep or README.md inside ignored dirs
-!/data/*/dbconfig/.gitkeep
-!/data/*/dbconfig/README.md
+# Oracle datafile directory of each service
+!/data/*/FREE/
 !/data/*/FREE/.gitkeep
 !/data/*/FREE/README.md
 

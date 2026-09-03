@@ -7,6 +7,49 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `odbencprod` / `odbencdev` services (ports 1532 / 1533) plus
+  `config/odbencprod/` and `config/odbencdev/`: two-container lab for the TDE
+  restore verification test. No OEM Express port is mapped and the memory limit
+  is 3g per service so both can run in parallel on an 8 GB Docker VM.
+- Shared exchange mount `data/xchange` at `/opt/oracle/xchange` for RMAN backup
+  sets, wallet copies and evidence sets.
+- `scripts/tde-verify/block_fingerprint.py`: block level ciphertext
+  fingerprinting, comparison, clear-text scan, hex needle search and block
+  hexdump for datafile header analysis.
+- `scripts/tde-verify/tde_evidence.sh`: collects and compares labelled evidence
+  sets (V$ key chain snapshots plus per-datafile fingerprints and a manifest).
+- `scripts/tde-verify/tde_clone.sh`: runs one clone variant of the test
+  (plain RESTORE, RESTORE AS ENCRYPTED USING KEY with and without the source
+  master key, DUPLICATE AS ENCRYPTED).
+- `config/common/scripts/ssenc_keyproof.sql`: key chain evidence snapshot
+  including `MASTERKEYID`, `ENCRYPTEDKEY`, `KEY_VERSION` and `ORIGIN`, which
+  `ssenc_info.sql` does not report.
+- `config/common/scripts/csenc_canary.sql` / `ssenc_canary.sql`: canary table
+  with a known clear-text marker and its physical block range, plus the read
+  back used for the master key withdrawal test.
+- `config/common/scripts/ssenc_filehdr.sql`: Oracle side `file_hdrs` and block
+  dump as a second source next to the host side analysis.
+- `doc/tde-restore-as-encrypted.md`: test protocol.
+- `doc/tde-key-architecture.md`: Mermaid diagrams of the key hierarchy, measured
+  against the lab rather than drawn illustratively.
+
+### Fixed
+
+- `config/common/scripts/csenc_swkeystore.sql`: the conditional backup of
+  `wallet_pwd.txt` was written as a `HOST` command spanning three lines with
+  backslash continuation. SQL*Plus does not support that, so `/bin/sh` received a
+  truncated `if` and failed, after which SQL*Plus tried to execute the remaining
+  shell lines and reported SP2-0734 / SP2-0042. The container entrypoint then
+  printed `DATABASE SETUP WAS NOT SUCCESSFUL` even though the keystore had been
+  created correctly. Now a single line.
+- `data/<service>/dbconfig/FREE/`: added `.gitkeep` files and the matching
+  `.gitignore` exceptions. The image symlinks `/opt/oracle/network/admin`
+  (`TNS_ADMIN`) to `/opt/oracle/dbconfig/FREE`; without that directory the bind
+  mount created an empty `dbconfig`, the symlink dangled and DBCA aborted with
+  DBT-60127 on a fresh clone.
+
 ## [1.1.1] - 2026-05-18
 
 ### Added
