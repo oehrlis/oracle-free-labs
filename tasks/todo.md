@@ -507,3 +507,243 @@ Anlauf 2, `BACKUP LOCATION` ohne Target-Verbindung:
 Konsequenz: Variante C ist nur auf einem frischen odbencdev messbar und wird im
 Gruene-Wiese-Lauf als erste Variante gefahren, bevor irgendein Restore das Ziel
 veraendert.
+
+## Gruene-Wiese-Lauf 2026-09-03 (Abnahmelauf)
+
+Vollstaendiger Neuaufbau aus dem committeten Stand, ohne Zwischenkorrekturen.
+
+### Startzustand - fehlerfrei
+
+| Service | Setup-Skripte | Meldung | ORA/SP2/DBT-Zeilen | checkDBStatus.sh |
+|---|---|---|---|---|
+| odbencprod | 12 | DATABASE IS READY TO USE | 0 | exit 0 |
+| odbencdev | 2 | DATABASE IS READY TO USE | 0 | exit 0 |
+
+Beide Container `healthy`. Zwei Defekte waren dafuer noch zu beheben, siehe
+Commit `74d8de0`: das Reset-Target stellte nur die README wieder her und
+verwarf die `.gitkeep`-Marker, und `odbencdev` meldete einen Setup-Fehler, weil
+der Entrypoint-Healthcheck eine offene User-PDB verlangt.
+
+### Baseline odbencprod
+
+- DBID 1515072404, ARCHIVELOG, PDB ODBENCPROD
+- MEK CDB con_id 1: AX6Pmn3ZnEskqh9sLfCA4yE... ORIGIN LOCAL
+- MEK PDB con_id 4: AQHQDfbAHEU1kpgFJFfaj5g... ORIGIN LOCAL
+- Tablespace USERS: AES256, KEY_VERSION 1,
+  MASTERKEYID 01D00DF6C01C45359298052457DA8F98,
+  gewrappter TEK E36623ECEAF2AA7D0AE19D6AE59E0D9E8CEFEF94BC4F6A2B1FC726E8EC1F934F
+- Canary SCOTT.CANARY_TDE: 313 Bloecke, Bereich 979-1407
+- Kontrollgruppe SCOTT.CANARY_PLAIN_TAB: 313 Bloecke, Bereich 779-1279
+- Klartext-Scan: 313 Treffer in der unverschluesselten Kontrolldatei ab Block 779,
+  0 Treffer in der verschluesselten
+- gewrappter TEK physisch bei Offset 8977, Block 1 Byte 785
+- MASTERKEYID physisch bei Offset 9025, Block 1 Byte 833
+- RMAN Backup nach /opt/oracle/xchange/backup,
+  Autobackup cf_c-1515072404-20260903-02
+- odbencdev vor den Varianten: DBID 1515074205, eigener MEK
+  AfWleiW/Okw2uSymAnITWic... ORIGIN LOCAL, FREEPDB1 READ WRITE,
+  FREEPDB1-Wallet OPEN_NO_MASTER_KEY
+
+### Reproduzierbarkeit gegen den ersten Lauf
+
+Strukturell deckungsgleich, obwohl die Datenbanken unabhaengig neu erzeugt wurden:
+
+| Groesse | Erster Lauf | Gruene Wiese |
+|---|---|---|
+| Canary-Bloecke USERS | 313, Bereich 979-1407 | 313, Bereich 979-1407 |
+| Canary-Bloecke Kontrolle | 313, Bereich 779-1279 | 313, Bereich 779-1279 |
+| Klartext-Treffer Kontrolle | 313 ab Block 779 | 313 ab Block 779 |
+| Offset gewrappter TEK | 8977, Block 1 Byte 785 | 8977, Block 1 Byte 785 |
+| Offset MASTERKEYID | 9025, Block 1 Byte 833 | 9025, Block 1 Byte 833 |
+
+Die Schluesselwerte selbst sind naturgemaess neu. Dass Blockbereiche und
+Header-Offsets bitgenau uebereinstimmen, belegt den deterministischen Aufbau -
+der deterministische Canary-Payload war dafuer die Voraussetzung.
+
+### Querschnittsbefund - transportierte Keystores und Auto-Login
+
+In drei Varianten unabhaengig aufgetreten, gehoert in die Praesentation:
+
+1. `csenc_swkeystore.sql` erzeugt ein **LOCAL** Auto-Login-Keystore. Das ist an
+   den erzeugenden Host gebunden. Nach dem Transport steht
+   `v$encryption_wallet` auf CLOSED mit WALLET_TYPE UNKNOWN, Zugriff scheitert
+   mit ORA-28365. Betrifft auch den SEPS-Store `tde_seps`.
+2. Ein per Passwort geoeffneter Keystore ueberlebt keinen Instanz-Neustart.
+   Genau daran scheiterten `RESTORE ... AS ENCRYPTED` und
+   `DUPLICATE ... AS ENCRYPTED`: beide starten die Instanz ueber eigene
+   Memory-Scripts mehrfach neu, danach ist der Keystore zu und es kommt
+   ORA-28365 aus `DBMS_BACKUP_RESTORE.RESTORESETDATAFILE`.
+3. Die mitgebrachte `cwallet.sso` blockiert die Neuerzeugung eines lokalen
+   Auto-Login-Keystores mit ORA-46630 "Keystore cannot be created at location".
+
+Vorgehen, das im Lab funktioniert:
+
+```sql
+-- fremde cwallet.sso beiseite legen, ewallet.p12 mit den Schluesseln behalten
+-- dann auf dem Zielhost neu erzeugen:
+ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE
+  FROM KEYSTORE '/opt/oracle/dbconfig/FREE/wallet/tde' IDENTIFIED BY <pwd>;
+```
+
+Konsequenz fuer den Kunden: beim Klon einer TDE-Datenbank ist der Keystore
+nicht einfach kopierbar. Die Schluesseldatei `ewallet.p12` wandert, die
+Auto-Login-Datei muss am Ziel neu erzeugt werden. Wer das uebersieht, sieht
+ORA-28365 an einer Stelle, die nach einem Backup-Problem aussieht.
+
+### Ergebnis Variante C - DUPLICATE ... AS ENCRYPTED (gemessen 2026-09-03)
+
+Erste `AS ENCRYPTED`-Variante, die bei verschluesselter Quelle ueberhaupt
+durchlaeuft. Voraussetzung war ein auf dem Zielhost neu erzeugtes
+Auto-Login-Keystore, siehe Querschnittsbefund oben.
+
+Ablauf: `DUPLICATE DATABASE TO FREE BACKUP LOCATION '/opt/oracle/xchange/backup'
+NOFILENAMECHECK AS ENCRYPTED` gegen eine unberuehrte Auxiliary-Instanz,
+`FROM ACTIVE DATABASE` scheiterte an ORA-17627/ORA-01017 und wurde nicht
+weiterverfolgt.
+
+- Lauf endet mit "database opened" und "Finished Duplicate Db"
+- Klon traegt eine **neue DBID** 1515081178 gegen 1515072404 in der Quelle -
+  DUPLICATE erzeugt eine eigenstaendige Datenbank, keine Kopie
+- Datafile 20 und 21 wurden verarbeitet
+- Canary 5000 Zeilen, 5000 Marker-Treffer, lesbar
+- Klartext-Scan im Klon: 0 Treffer, weiterhin verschluesselt
+
+Schluessellage im Klon, PDB ODBENCPROD:
+
+| Tablespace | TS# | KEY_VERSION | gewrappter TEK |
+|---|---|---|---|
+| SYSTEM | 0 | 0 | 566B2C9C...69CE |
+| SYSAUX | 1 | 0 | 566B2C9C...69CE |
+| UNDOTBS1 | 2 | 0 | 566B2C9C...69CE |
+| AUDIT_DATA | 5 | 0 | 566B2C9C...69CE |
+| CANARY_PLAIN | 7 | 0 | 566B2C9C...69CE |
+| USERS | 6 | 0 | E36623EC...934F |
+
+In der Quelle ist nur USERS verschluesselt, mit demselben TEK
+E36623EC...934F und KEY_VERSION 1.
+
+Auswertung: `AS ENCRYPTED` hat die fuenf zuvor **unverschluesselten** Tablespaces
+neu verschluesselt, alle unter dem gemeinsamen Database Key 566B2C9C...69CE.
+Der bereits verschluesselte USERS behielt seinen Original-TEK aus der Quelle.
+Genau das sagt der Doku-Wortlaut "...that are not encrypted" - hier am
+Verhalten belegt statt nur zitiert.
+
+Blockvergleich des USERS-Datafiles gegen die Prod-Baseline:
+
+| Kategorie | identisch | geaendert |
+|---|---|---|
+| Header-Bloecke 0-1 | 1 | 1 |
+| Canary-Datenbloecke (313) | 313 | 0 |
+| Canary-Bereich ohne Daten | 54 | 62 |
+| vor dem Canary-Bereich (2-978) | 904 | 73 |
+| nach dem Canary-Bereich (1408+) | 0 | 1153 |
+| Gesamt | 1272 | 1289 |
+
+Alle 313 Bloecke mit Nutzdaten byteidentisch. Die abweichenden Bloecke sind
+wieder die leeren, die RMAN Backup Optimization nicht sichert und beim Restore
+neu schreibt.
+
+MEKs im Klon: beide aus der Quelle, AX6Pmn3ZnEskqh9sLfCA4yE... con_id 1 und
+AQHQDfbAHEU1kpgFJFfaj5g... con_id 4, jeweils ORIGIN LOCAL.
+MASTERKEYID unveraendert 01D00DF6C01C45359298052457DA8F98.
+
+Bewertung: fuer die Anforderung "keine Rueckschluesse auf Prod" untauglich,
+solange der Tablespace bereits in der Quelle verschluesselt war. Fuer eine
+unverschluesselte Quelle ist es dagegen das passende Werkzeug - dann entsteht
+im Ziel nachweislich neues Schluesselmaterial.
+
+### Messmatrix vollstaendig
+
+| Variante | Canary-Bloecke identisch | TEK USERS | Ergebnis |
+|---|---|---|---|
+| A normaler RESTORE | 313 von 313 | unveraendert | laeuft, haengt am Prod-MEK |
+| B1 AS ENCRYPTED mit Prod-MEK | - | - | ORA-00600 kcbtse_encdec_tbsblk_1 |
+| B2 AS ENCRYPTED ohne Prod-MEK | - | - | ORA-19870 plus ORA-28374 |
+| C DUPLICATE AS ENCRYPTED | 313 von 313 | unveraendert | laeuft, neue DBID, TEK bleibt |
+| D AS DECRYPTED plus SET KEY plus OFFLINE ENCRYPT | 313 von 313 | unveraendert | MEK neu, Chiffrat identisch |
+| Positivkontrolle neuer Tablespace | 134 von 501 im Bereich | neu | TEK-Wechsel nachweisbar |
+
+Kernaussage: kein RMAN-basierter Weg erneuert den Tablespace-Encryption-Key
+eines bereits verschluesselten Tablespace. Neues Schluesselmaterial entsteht nur
+ueber einen neuen verschluesselten Tablespace, laut Doku zusaetzlich ueber
+ONLINE REKEY, das in Free nicht verfuegbar ist.
+
+### Algorithmus-Test AES192 - die Mechanik hinter allen Nullbefunden
+
+Idee Stefan 2026-09-03: einen anderen Algorithmus erzwingen. Wenn AES192 statt
+AES256 greift, muss der TEK zwingend neu sein, weil die Schluessellaenge
+abweicht. Kein Deutungsspielraum mehr.
+
+Gefundener Hebel, dokumentierter Parameter ohne Unterstrich, in 26ai vorhanden:
+
+- `tablespace_encryption_default_algorithm`, Default AES256, ISSYS_MODIFIABLE
+  IMMEDIATE, ISPDB_MODIFIABLE TRUE
+- `tablespace_encryption_default_cipher_mode`, Default XTS
+- `_tablespace_encryption_default_algorithm` aus aelteren Releases existiert in
+  26ai nicht mehr
+
+Kernbefund - der Datafile-Header behaelt den Schluessel-Handle:
+
+- `ALTER TABLESPACE USERS ENCRYPTION OFFLINE USING 'AES192' ENCRYPT` scheitert
+  mit ORA-28340 "A different encryption algorithm has been chosen for the table
+  or tablespace" - auch dann, wenn der Tablespace zuvor vollstaendig
+  entschluesselt wurde
+- Nach dem Decrypt ist der Tablespace echt entschluesselt: ENCRYPTED NO, keine
+  Zeile in `v$encrypted_tablespaces`, Canary mit 313 Treffern im Klartext im
+  Datafile auffindbar
+- **Der alte gewrappte TEK liegt danach weiterhin im Header, am selben Offset
+  8977.** Der Decrypt raeumt die Datenbloecke ab, nicht den Schluessel-Handle.
+- Neuverschluesseln ohne `USING` ergibt wieder AES256 mit demselben TEK
+  E36623EC...934F, KEY_VERSION 2
+- Damit ist erklaert, warum in allen Varianten der TEK ueberlebt
+
+Was funktioniert - ein neuer Tablespace, mit dem Beweis in der Schluessellaenge:
+
+| Tablespace | Alg | signifikante Bytes | = Bit |
+|---|---|---|---|
+| USERS aus Prod | AES256 | 32 | 256 |
+| NEW_AES192 (Parameter-Default) | AES192 | 24 | 192 |
+| NEW_EXPL192 (explizit USING) | AES192 | 24 | 192 |
+| NEW_EXPL128 (explizit USING) | AES128 | 16 | 128 |
+
+Die kuerzeren Schluessel sind im RAW(32)-Feld mit Nullbytes aufgefuellt. Damit
+ist neues Schluesselmaterial nicht nur plausibel, sondern an der Laenge ablesbar.
+
+Nebenbefund - XTS ist an AES256 gebunden:
+
+- `ALTER SYSTEM SET tablespace_encryption_default_algorithm='AES192'` scheitert
+  bei aktivem XTS mit ORA-38134 "not supported by currently specified default
+  cipher mode XTS"
+- AES192 und AES128 erfordern CFB. Wer auf AES192 wechselt, verlaesst XTS.
+  Gehoert in die Kundenempfehlung, XTS ist der modernere Modus.
+- Achtung bei der Messung: CDB\$ROOT und PDB koennen unterschiedliche Werte
+  haben. Ein Ausgangswert aus CDB\$ROOT und ein Setzen in der PDB fuehrt zu
+  falschen Schluessen.
+
+### _db_discard_lost_masterkey - Teilergebnis
+
+- `SCOPE=MEMORY` wird abgelehnt: ORA-02097 mit ORA-28355 "failed to initialize
+  security module". Der Parameter wird beim Init des Security-Moduls gelesen,
+  nicht zur Laufzeit.
+- Mit `SCOPE=SPFILE` plus Neustart: SPFILE-Wert TRUE, Laufzeit-Wert FALSE. Im
+  Alert Log erscheint er beim Start als `_db_discard_lost_masterkey= TRUE`.
+  Deutung: ein Einmal-Flag, das beim Start konsumiert und zurueckgesetzt wird.
+  Im ersten Versuch blieb er TRUE, weil die Datenbank dort nicht oeffnete - das
+  Flag wurde nie verbraucht. Das erklaert beide Beobachtungen.
+- Der AES192-Versuch scheiterte weiter mit ORA-28340. Die Vorbedingung war aber
+  nicht erfuellt: 9 verschluesselte Tablespaces im CDB, davon SYSTEM, SYSAUX und
+  UNDOTBS1 aus Variante C, die sich nicht offline entschluesseln lassen.
+- Offen: Test an einem Klon, in dem nur USERS verschluesselt ist, sodass nach
+  dem Decrypt tatsaechlich nichts mehr verschluesselt ist.
+
+### Oracle bestaetigt den Hauptbefund selbst
+
+Im Alert Log nach `ADMINISTER KEY MANAGEMENT SET KEY`:
+
+```text
+KZTDE: Set Master Key: Tablespace key rewrap done
+```
+
+Oracle nennt es woertlich **rewrap**. Ein Master-Key-Wechsel wickelt den
+Tablespace-Key neu ein, mehr nicht. Das ist die Bestaetigung der Blockmessung
+aus der Datenbank selbst statt aus einer Sekundaerquelle.
