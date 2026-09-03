@@ -28,9 +28,6 @@ where Prod and Dev use separate keystores.
 - **00_common_db_config.sql**
   Basic instance configuration. Sets parameters that require a restart.
 
-- **01_drop_pdb_freepdb1.sql**
-  Drops the default pluggable database `FREEPDB1` if it exists.
-
 - **10_config_tde_odbencdev.sql**
   Configures TDE: sets WALLET_ROOT, creates software keystore, creates an
   independent master encryption key. Restarts the database twice.
@@ -42,3 +39,16 @@ where Prod and Dev use separate keystores.
 - No demo schemas, no audit policies, no Oracle directories.
 - The `data/xchange` bind mount (`/opt/oracle/xchange`) provides access to
   RMAN backup sets and wallet exports from `odbencprod`.
+
+## Why FREEPDB1 is kept
+
+The default pluggable database is deliberately **not** dropped here, unlike in
+the other services. The container entrypoint gates its readiness on
+`checkPDBOpen`, which runs `SELECT DISTINCT open_mode FROM v$pdbs` and requires
+at least one PDB in `READ WRITE`. A CDB with no user PDB is a case the health
+check does not model, so the container would print
+`DATABASE SETUP WAS NOT SUCCESSFUL` although the database is fully functional.
+
+Keeping `FREEPDB1` costs nothing for this service: as a restore target it
+receives the source control file and the source datafiles, after which its own
+pluggable database is irrelevant.
