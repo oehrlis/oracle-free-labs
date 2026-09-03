@@ -1,6 +1,7 @@
 # Folder: bin
 
-This folder contains **utility scripts** used for initializing and managing the project structure. These scripts help maintain consistency, automate setup, and simplify documentation generation.
+This folder contains **utility scripts** used for initializing and managing the project structure.
+These scripts help maintain consistency, automate setup, and simplify documentation generation.
 
 ## Included Scripts
 

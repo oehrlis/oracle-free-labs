@@ -33,10 +33,10 @@ See [Service Setup](service_setup.md) for container details.
 | odbseed | localhost | 1529 | ODBSEED      | sys  | Oracle123 | SYSDBA |
 | odbdemo | localhost | 1530 | ODBDEMO      | sys  | Oracle123 | SYSDBA |
 
-Adjust ports and service names if you changed defaults in `.env`.  
+Adjust ports and service names if you changed defaults in `.env`.
 
-3. Test and save the connection.  
-4. Connect and start working with the database.  
+1. Test and save the connection.
+2. Connect and start working with the database.
 
 ### Optional: Use tnsnames.ora in SQL Developer
 

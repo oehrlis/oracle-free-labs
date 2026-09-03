@@ -1,6 +1,7 @@
 # Interactive Shell Access
 
-This guide explains how to access a shell inside a running container for interactive work, troubleshooting, and DBA tasks. You can open a shell, run scripts, or start SQL\*Plus directly.
+This guide explains how to access a shell inside a running container for interactive work,
+troubleshooting, and DBA tasks. You can open a shell, run scripts, or start SQL\*Plus directly.
 
 ## Requirements
 

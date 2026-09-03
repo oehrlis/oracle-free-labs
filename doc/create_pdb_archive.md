@@ -80,8 +80,8 @@ It validates the source PDB, closes it, packages the archive, and reopens it.
 - Host path: `config/common/scripts/create_pdb_archive.sql`
 - Mapped inside the container as:
 
-  * `/opt/oracle/common/scripts/create_pdb_archive.sql` for labpdb1, odbrepo, odbseed, odbdemo
-  * `/opt/oracle/scripts/create_pdb_archive.sql` for cdbfree
+  - `/opt/oracle/common/scripts/create_pdb_archive.sql` for labpdb1, odbrepo, odbseed, odbdemo
+  - `/opt/oracle/scripts/create_pdb_archive.sql` for cdbfree
 
 ### Usage
 

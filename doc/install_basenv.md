@@ -1,6 +1,9 @@
 # Install DB*Star BasEnv in the Container
 
-DB*Star Toolbox (formerly Trivadis BasEnv) provides shell environments, helper scripts, and conventions that simplify command line administration on Oracle DB servers. It can also be installed into this container for convenient interactive work. The installer additionally applies basic OS packages via `dnf` and deploys OraDBA utility scripts from [oehrlis/oradba](https://github.com/oehrlis/oradba).
+DB*Star Toolbox (formerly Trivadis BasEnv) provides shell environments, helper scripts, and conventions
+that simplify command line administration on Oracle DB servers. It can also be installed into this
+container for convenient interactive work. The installer additionally applies basic OS packages via `dnf`
+and deploys OraDBA utility scripts from [oehrlis/oradba](https://github.com/oehrlis/oradba).
 
 ## Requirements
 
@@ -79,7 +82,8 @@ Install with a specific BasEnv package
 
 ## Example Installation
 
-Below you find an example how to install BasEnv in container service **odbdemo** executing the engine **docker** and the default BasEnv package from `artefacts/`
+Below you find an example how to install BasEnv in container service **odbdemo** executing the engine
+**docker** and the default BasEnv package from `artefacts/`
 
 ```code
 bin/install_oradba_init.sh odbdemo
@@ -149,12 +153,15 @@ sqh
 
 ## Notes and tips
 
-- BasEnv package zip is required only if you want DB\*Star features inside the container. The rest of the initialization still works without it.
-- The installer tries to keep memory footprint low when installing OS tools. If repositories are limited, some optional tools like `rlwrap` may be skipped.
+- BasEnv package zip is required only if you want DB\*Star features inside the container. The rest of
+  the initialization still works without it.
+- The installer tries to keep memory footprint low when installing OS tools. If repositories are limited,
+  some optional tools like `rlwrap` may be skipped.
 - If `/opt/oracle/oradata/dbconfig/basenv/etc` already exists from a previous run, it is reused and not overwritten.
 - Symlink handling
 
-  - Any symlinks found inside `/opt/oracle/local/dba/etc` are replaced with their target file content before the directory is moved to the persisted location
+  - Any symlinks found inside `/opt/oracle/local/dba/etc` are replaced with their target file content
+    before the directory is moved to the persisted location
   - This avoids broken links after the relocation
 
 ## Troubleshooting

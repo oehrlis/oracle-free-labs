@@ -1,7 +1,8 @@
 # Reset Passwords
 
 This guide explains how to reset Oracle database user passwords inside the container.  
-You can use the helper script `setPassword.sh` for system accounts (SYS, SYSTEM, PDBADMIN) or SQL*Plus for application users such as TVD_HR.
+You can use the helper script `setPassword.sh` for system accounts (SYS, SYSTEM, PDBADMIN) or SQL*Plus
+for application users such as TVD_HR.
 
 ## Default password
 
@@ -13,7 +14,8 @@ ORACLE_PWD=Oracle123
 
 This initializes the SYS, SYSTEM, and PDBADMIN accounts with the same password.
 
-Recommendation: do not rely on this default for production-like environments. Instead set passwords explicitly with `setPassword.sh` after the container is started.
+Recommendation: do not rely on this default for production-like environments. Instead set passwords
+explicitly with `setPassword.sh` after the container is started.
 
 ## Reset SYS, SYSTEM, PDBADMIN
 

@@ -27,6 +27,7 @@ set -euo pipefail
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 SCRIPT_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 SCRIPT_BASE="$(dirname "${SCRIPT_BIN_DIR}")"
+export SCRIPT_BASE
 VERBOSE=""
 DEBUG=""
 DRY_RUN=""

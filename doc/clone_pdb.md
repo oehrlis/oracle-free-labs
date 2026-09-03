@@ -104,8 +104,8 @@ It validates the source, prevents overwriting existing targets, and saves state 
 - Host path: `config/common/scripts/clone_pdb.sql`
 - Mapped inside the container as:
 
-  * `/opt/oracle/common/scripts/clone_pdb.sql` for labpdb1, odbrepo, odbseed, odbdemo
-  * `/opt/oracle/scripts/clone_pdb.sql` for cdbfree
+  - `/opt/oracle/common/scripts/clone_pdb.sql` for labpdb1, odbrepo, odbseed, odbdemo
+  - `/opt/oracle/scripts/clone_pdb.sql` for cdbfree
 
 ### Usage
 
@@ -126,7 +126,8 @@ sqlplus / as sysdba @/opt/oracle/common/scripts/clone_pdb.sql FREEPDB1 LABPDB1
 Notes
 
 - With OMF the script does not need FILE\_NAME\_CONVERT
-- If your environment requires explicit paths, adapt the script to accept a third argument for FILE\_NAME\_CONVERT or set a default base path
+- If your environment requires explicit paths, adapt the script to accept a third argument for
+  FILE\_NAME\_CONVERT or set a default base path
 - Logs are written under the service logs directory (`./data/<service>/logs/`)
 
 ## Tips

@@ -1,11 +1,13 @@
 # Setup Lab Environment
 
 This guide explains how to set up the Oracle AI Database Free 26ai Lab Environment using Docker or Podman.  
-The environment provides containerized services for Oracle AI Database Free 26ai and preconfigured OraDBA Lab repositories to support testing, training, and engineering scenarios.
+The environment provides containerized services for Oracle AI Database Free 26ai and preconfigured OraDBA
+Lab repositories to support testing, training, and engineering scenarios.
 
 ## Quickstart
 
-If you want the fast path, copy and run the following block. It clones the repo, prepares environment variables, and starts the default profile with Docker.  
+If you want the fast path, copy and run the following block. It clones the repo, prepares environment
+variables, and starts the default profile with Docker.  
 For Podman, replace `docker compose` with `podman-compose` or alias `docker=podman`.
 
 ```bash
@@ -74,10 +76,10 @@ cd oracle-free-labs
 
 2. Edit `.env` to adjust key settings.
 
-  - `ORACLE_PWD` password for SYS, SYSTEM, PDBADMIN
-  - `ORACLE_SID` container database SID, default `FREE`
-  - `ORACLE_PDB` default PDB, e.g. `FREEDB1`, `LABPDB1`, `ODBSEED`, `ODBREPO`, `ODBDEMO`
-  - `ENABLE_ARCHIVELOG` enable or disable ARCHIVELOG mode
+- `ORACLE_PWD` password for SYS, SYSTEM, PDBADMIN
+- `ORACLE_SID` container database SID, default `FREE`
+- `ORACLE_PDB` default PDB, e.g. `FREEDB1`, `LABPDB1`, `ODBSEED`, `ODBREPO`, `ODBDEMO`
+- `ENABLE_ARCHIVELOG` enable or disable ARCHIVELOG mode
 
 You can also set or reset core account passwords later.
 

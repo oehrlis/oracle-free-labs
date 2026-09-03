@@ -22,22 +22,30 @@ Each subfolder corresponds to a service profile defined in `docker-compose.yml`.
   [Read more »](odbseed/README.md)
 
 - **odbdemo/**  
-  Configuration for the **odbdemo** service - sets up a complex OraDBA Lab from a PDB archive with additional setup steps.  
+  Configuration for the **odbdemo** service - complex OraDBA Lab from a PDB archive.  
   [Read more »](odbdemo/README.md)
 
 - **odbenc/**  
-  Configuration for the **odbenc** service - sets up a complex OraDBA Lab with TDE using SQL scripts.
+  Configuration for the **odbenc** service - OraDBA Lab with TDE using SQL scripts.  
   [Read more »](odbenc/README.md)
 
-## 🛠 Conventions
+- **odbencprod/**  
+  Configuration for the **odbencprod** service - TDE restore verification, Prod DB.  
+  [Read more »](odbencprod/README.md)
 
-- **setup/** - Scripts executed once on container initialization (schema creation, PDB restore).  
-- **startup/** - Scripts executed each time the container starts (ACLs, grants, jobs).  
+- **odbencdev/**  
+  Configuration for the **odbencdev** service - TDE restore verification, Dev/target DB.  
+  [Read more »](odbencdev/README.md)
+
+## Conventions
+
+- **setup/** - Scripts executed once on container initialization (schema creation, PDB restore).
+- **startup/** - Scripts executed each time the container starts (ACLs, grants, jobs).
 - **common/** is always mounted for all services.
 
-## 🔒 Notes
+## Notes
 
-- Avoid storing large PDB archives in Git - place them locally in the corresponding config folder.  
-- Keep setup scripts **numbered** (e.g. `01_create_schema.sql`, `10_restore_pdb.sql`) to control execution order.  
+- Avoid storing large PDB archives in Git - place them locally in the corresponding config folder.
+- Keep setup scripts **numbered** (e.g. `01_create_schema.sql`, `10_restore_pdb.sql`) to control
+  execution order.
 - Git ignores sensitive or bulky runtime data (see project `.gitignore`).
-
