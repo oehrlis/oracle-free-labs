@@ -37,6 +37,12 @@
 /data/*/FREE/*
 data/*/.FREE.created
 
+# Keep the dbconfig/FREE directory itself - the image symlinks
+# /opt/oracle/network/admin (TNS_ADMIN) to it. Without it DBCA fails
+# with DBT-60127 on a fresh clone.
+!/data/*/dbconfig/FREE/
+!/data/*/dbconfig/FREE/.gitkeep
+
 # Allow .gitkeep or README.md inside ignored dirs
 !/data/*/dbconfig/.gitkeep
 !/data/*/dbconfig/README.md
