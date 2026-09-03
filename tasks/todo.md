@@ -333,3 +333,177 @@ nachweis fuer das Protokoll.
 - [ ] Phasen 1 bis 6 vollstaendig durchlaufen, ausschliesslich ueber die Skripte
 - [ ] Messwerte gegen die hier dokumentierten vergleichen
 - [ ] Erst danach gilt das Protokoll als abgenommen
+
+### Ergebnisse Varianten B und der Entschluesselungspfad (gemessen 2026-09-03)
+
+Variante B2 - AS ENCRYPTED USING KEY ohne Prod-MEK im Ziel-Keystore:
+
+- `RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_mek>'` scheitert mit
+  ORA-19870 plus ORA-28374 "typed master key not found in wallet"
+- Aussage: RMAN braucht den Quell-MEK, um die verschluesselten Quellbloecke
+  ueberhaupt zu lesen. Ein RMAN-Klon ohne Transfer des Prod-Schluessels
+  existiert nicht.
+
+Variante B1 - AS ENCRYPTED USING KEY mit Prod-MEK und neu erzeugtem Ziel-MEK:
+
+- Ziel-Keystore enthielt beide Prod-Schluessel plus einen neuen, per
+  `ADMINISTER KEY MANAGEMENT CREATE KEY` erzeugten Schluessel
+- Das erste Backup-Set mit den unverschluesselten CDB-Datafiles wurde
+  erfolgreich restauriert, Laufzeit 5:45 gegenueber 3 Sekunden bei einem
+  normalen Restore. Auf unverschluesselten Quelldateien leistet AS ENCRYPTED
+  also echte Blockarbeit - der dokumentierte Fall funktioniert und ist messbar.
+- Sobald RMAN das bereits verschluesselte Datafile 20 erreicht:
+  ORA-00600 [kcbtse_encdec_tbsblk_1], [4], [2], [806], [18], [806], [20], ...
+- Deterministisch: dreimal reproduziert, mit und ohne `FORCE`, identische
+  Argumente. Keystore war jeweils offen (WALLET_TYPE PASSWORD).
+
+Entschluesselungspfad - RESTORE ... FORCE AS DECRYPTED:
+
+- Funktioniert bei verschluesselter Quelle. `FORCE` ist zwingend: ohne
+  FORCE ueberspringt die Restore-Optimierung genau die Datafiles, die schon
+  auf Stand sind - der Lauf sieht erfolgreich aus und sagt nichts.
+- Danach `DBA_TABLESPACES.ENCRYPTED = NO`, `V$ENCRYPTED_TABLESPACES` leer,
+  Canary lesbar, und der Klartext-Marker ist mit 313 Treffern im Datafile
+  auffindbar - die Bloecke sind echt entschluesselt.
+- Die DB oeffnet trotzdem nicht ohne den Prod-MEK. Alert Log:
+  `KZTDE:kztsmptc: Missing Key ID: AbyhIcXQQk+...`,
+  `Active database master key not found in the wallet!`,
+  `mkid bca121c5d0424f9788162b2b3ac8dc56` - der aktive CDB-Master-Key.
+  Tablespaces zu entschluesseln bricht die Abhaengigkeit also nicht.
+- `ADMINISTER KEY MANAGEMENT SET KEY ... CONTAINER=ALL` dreht den
+  CDB-Database-Key auf einen dev-eigenen MEK (BCA121C5...DC56 nach
+  6E930457...BFB3), scheitert aber mit ORA-46663, weil PDB$SEED keinen
+  Schluessel hat. SET KEY in der PDB dreht deren Key auf 8252C3B0...BCA7.
+
+Kernbefund - der TEK ueberlebt jeden dieser Wege:
+
+- Nach `AS DECRYPTED` plus `SET KEY` plus `ALTER TABLESPACE USERS ENCRYPTION
+  OFFLINE ENCRYPT` sind die 313 Canary-Datenbloecke **byteidentisch zu Prod**.
+  Gewrappter TEK und MASTERKEYID sind neu, Prods Werte physisch nicht mehr im
+  Datafile - aber das Chiffrat der Daten ist dasselbe.
+- Kontrolliert wiederholt: offline DECRYPT (Marker mit 313 Treffern im
+  Klartext nachgewiesen), dann offline ENCRYPT - erneut byteidentisch zu Prod,
+  KEY_VERSION 3 dann 5, gewrappter TEK unveraendert 8FBDA2A8...3E41.
+- Identisches Chiffrat bei identischem Inhalt und identischer Blockadresse
+  bedeutet identischer TEK. Der Tablespace-Key uebersteht den
+  Konvertierungszyklus, nur seine Verpackung wechselt.
+
+Positivkontrolle - erkennt die Methode einen TEK-Wechsel ueberhaupt?
+
+- Zwei frische verschluesselte Tablespaces CTRL_ENC_A und CTRL_ENC_B in Prod,
+  identische DDL, identischer Canary-Inhalt, beide belegen Bloecke 779-1279
+  mit 313 Bloecken, gewrappte TEKs 6B6A512A... und F29E623B... unter demselben MEK
+- 367 von 501 Bloecken im Bereich unterscheiden sich. Die Methode ist also
+  sensitiv fuer einen TEK-Wechsel, und der Nullbefund oben ist keine Blindheit
+  des Messverfahrens.
+
+### Offener Pruefpunkt - _db_discard_lost_masterkey
+
+Hinweis Stefan 2026-09-03. Der Hidden Parameter `_db_discard_lost_masterkey`
+verwirft die Master-Key-Handles aus den Datafile-Headern und adressiert damit
+genau den oben gemessenen Zustand: nichts mehr verschluesselt, aber der aktive
+Master Key aus der Quelle blockiert das Oeffnen.
+
+Bedingungen, die im Protokoll und in der Praesentation mitstehen muessen:
+
+- Hidden Parameter, in einer MOS Note dokumentiert, Einsatz nur nach Freigabe
+  durch Oracle Support - nicht nach Gutduenken setzen
+- fachlich nur zulaessig, wenn tatsaechlich kein verschluesseltes Objekt mehr
+  existiert, also nach vollstaendigem AS DECRYPTED
+- `ssenc_info.sql` fragt den Parameter bereits in der Hidden-Parameter-Liste ab
+
+- [ ] Als eigene Variante messen: AS DECRYPTED, dann Master-Key-Handles
+      verwerfen, dann in Dev von Null auf verschluesseln. Erwartung, die zu
+      pruefen ist: dann entsteht neues TEK-Material, weil kein alter
+      Schluesselhandle mehr im Header steht - der Blockvergleich muesste
+      abweichen wie in der Positivkontrolle.
+
+### Recherche-Korrekturen 2026-09-03
+
+Zwei Punkte, die dokumentierte Annahmen im Protokoll korrigieren:
+
+1. `TDE_CONFIGURATION` unterscheidet UNITED und ISOLATED nicht ueber seinen Wert.
+   Beide nutzen `KEYSTORE_CONFIGURATION=FILE`. Der Moduswechsel laeuft laut
+   Oracle 26ai "Administering United Mode" ueber
+   `ADMINISTER KEY MANAGEMENT ISOLATE KEYSTORE ... FROM ROOT KEYSTORE` in der PDB
+   und zurueck ueber `UNITE KEYSTORE`. Die Praxisbeobachtung, dass ein in der PDB
+   gesetztes `TDE_CONFIGURATION` ein eigenes Keystore-File erzeugt, ist damit
+   nicht belegt und im Lab zu messen.
+2. `_db_discard_lost_masterkey` ist laut asanga-pradeep-Blog kein Mittel, eine DB
+   zu oeffnen, sondern erlaubt ein `ADMINISTER KEY MANAGEMENT SET KEY`, obwohl der
+   referenzierte Schluessel fehlt. Dort verwendet als
+   `ALTER SYSTEM SET "_db_discard_lost_masterkey"=true SCOPE=MEMORY`.
+   Mein Labortest war deshalb falsch angesetzt: ich habe nur `ALTER DATABASE OPEN`
+   versucht, kein `SET KEY`.
+   Der Blog dokumentiert ausserdem die Alert-Log-Warnung "replacing lost SYSAUX key
+   with new database key due to prior wallet deletion. Encrypted blocks in SYSAUX
+   tablespace would appear corrupted, since the original key is replaced" und
+   berichtet bei wiederholtem Einsatz echte Korruptionen, ORA-01595 und ORA-28304.
+
+Weitere belegte Punkte fuer das Protokoll:
+
+- Dokumentierter Weg bei ORA-28374 ist `MERGE KEYSTORE` aus einem Backup-Wallet,
+  alternativ `IMPORT KEYS`. Quelle: Oracle 26ai, ORA-28374 Troubleshooting.
+- `ONLINE REKEY` ist das einzige dokumentierte Verfahren fuer neues
+  Tablespace-Key-Material, seit 12.2.0.1. OFFLINE-Operationen sind laut Doku
+  nicht fuer Rekeying vorgesehen.
+- In UNITED Mode braucht jede PDB einen eigenen MEK. Ein Weg, PDB-Tablespace-Keys
+  direkt mit dem CDB-Root-MEK zu wrappen, ist nicht belegt. Nur eine Non-CDB hat
+  naturgemaess einen einzigen MEK.
+- Der asanga-pradeep-Blog bestaetigt indirekt unseren Befund zum normalen Restore:
+  bereits verschluesselte Bloecke werden beim RMAN-Backup unveraendert
+  durchgereicht, nur unverschluesselte erhalten Backup-Verschluesselung.
+- MOS-Notes zu `_db_discard_lost_masterkey` sind nicht frei einsehbar. Genannt
+  werden in einer Sekundaerquelle 1301365.1, 1228046.1, 1241925.1 ohne Inhalt.
+  Dass Oracle Support eine Freigabe verlangt, ist oeffentlich nicht belegt und
+  bleibt eine Vorgabe aus der Praxis.
+
+### Zusaetzliche Messpunkte fuer den Gruene-Wiese-Lauf
+
+- [ ] `_db_discard_lost_masterkey` richtig testen: nach `FORCE AS DECRYPTED` und
+      nachgewiesen leerem `V$ENCRYPTED_TABLESPACES` den Parameter mit
+      `SCOPE=MEMORY` setzen und dann `ADMINISTER KEY MANAGEMENT SET KEY`
+      ausfuehren, nicht nur `ALTER DATABASE OPEN`. Alert Log auf die
+      SYSAUX-Warnung pruefen und sie im Protokoll zitieren.
+- [ ] UNITED gegen ISOLATED messen: in der PDB `TDE_CONFIGURATION` setzen und
+      pruefen, ob ein eigenes Keystore-File entsteht. Gegenprobe mit
+      `ADMINISTER KEY MANAGEMENT ISOLATE KEYSTORE`. Damit ist der Widerspruch
+      zwischen Praxisbeobachtung und Primaerdoku entschieden.
+- [ ] Variante C `DUPLICATE ... AS ENCRYPTED` nachholen, sie fehlt noch komplett.
+- [ ] `MERGE KEYSTORE` als dokumentierten Weg einmal durchspielen, damit die
+      Empfehlung an den Kunden nicht nur zitiert, sondern gezeigt ist.
+
+### Variante C - Vorversuche und Fallstricke (2026-09-03)
+
+Zwei Anlaeufe, beide nicht bis zu einem Messergebnis gekommen. Die Fallstricke sind
+festgehalten, damit der Gruene-Wiese-Lauf nicht darueber stolpert.
+
+Anlauf 1, `FROM ACTIVE DATABASE`:
+
+- `ORA-12514: Service FREE is not registered` - der Servicename lautet
+  `FREE.oradba.ch`, weil `common_db_config.sql` `db_domain='oradba.ch'` setzt.
+  Registriert sind laut lsnrctl: FREE.oradba.ch, FREEXDB.oradba.ch,
+  odbencprod.oradba.ch und der PDB-GUID-Service. Ein `tnsping` auf
+  `odbencprod:1521/FREE` meldet trotzdem OK - es prueft nur die Adresse, nicht
+  den Service. Nicht darauf verlassen.
+- Mit korrektem Servicenamen stand die Target-Verbindung, dann scheiterte die
+  Rueckverbindung der Auxiliary-Instanz zum Target:
+  `RMAN-06136 ... ORA-17629: cannot connect to the remote database server`,
+  `ORA-17627: ORA-01017: invalid credential or not authorized`.
+  Die SYS-Passwoerter beider Container sind nachweislich identisch (Vergleich
+  per Hash ohne Ausgabe des Werts), die Ursache ist damit nicht das Passwort
+  selbst. Offen.
+
+Anlauf 2, `BACKUP LOCATION` ohne Target-Verbindung:
+
+- `DUPLICATE DATABASE TO FREE BACKUP LOCATION '/opt/oracle/xchange/backup'
+  NOFILENAMECHECK AS ENCRYPTED` startet, meldet erwartete RMAN-05158-Warnungen
+  zu Pfadkonflikten und bricht dann ab mit
+  `RMAN-03015 ... RMAN-06136: ORA-01507: database not mounted`.
+- Ursache ist der Zustand des Ziels, nicht die Klausel: odbencdev trug zu diesem
+  Zeitpunkt Prods Controlfile, hatte ein OPEN RESETLOGS hinter sich und ein
+  veraendertes SPFILE. DUPLICATE erwartet eine unberuehrte Auxiliary-Instanz.
+
+Konsequenz: Variante C ist nur auf einem frischen odbencdev messbar und wird im
+Gruene-Wiese-Lauf als erste Variante gefahren, bevor irgendein Restore das Ziel
+veraendert.
