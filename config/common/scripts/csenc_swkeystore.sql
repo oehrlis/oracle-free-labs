@@ -47,9 +47,13 @@ HOST mkdir -p &wallet_root/tde_seps
 
 -- store wallet password (with backup if file exists) --------------------------
 PROMPT == Store the wallet password in &wallet_root/wallet_pwd.txt
-HOST if [ -e &wallet_root/wallet_pwd.txt ]; then \
-  cp &wallet_root/wallet_pwd.txt &wallet_root/wallet_pwd_$(date +%Y%m%d%H%M).bck; \
-  fi
+-- Single line on purpose: SQL*Plus does not support backslash continuation for
+-- HOST. Split over lines, /bin/sh receives a truncated 'if' and fails with
+-- "syntax error: unexpected end of file", after which SQL*Plus tries to run the
+-- remaining shell lines as SQL*Plus commands (SP2-0734 / SP2-0042). That in turn
+-- makes the container entrypoint report DATABASE SETUP WAS NOT SUCCESSFUL even
+-- though the keystore was created correctly.
+HOST if [ -e &wallet_root/wallet_pwd.txt ]; then cp &wallet_root/wallet_pwd.txt &wallet_root/wallet_pwd_$(date +%Y%m%d%H%M).bck; fi
 HOST echo &1 > &wallet_root/wallet_pwd.txt
 HOST chmod 600 &wallet_root/wallet_pwd.txt
 
