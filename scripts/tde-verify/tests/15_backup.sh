@@ -43,7 +43,12 @@ FORCE_YES=${FORCE_YES:-"FALSE"}
 source "${SCRIPT_DIR}/lib.sh"
 
 # Autobackup format kept in sync with tde_clone.sh
-CF_FORMAT="${XCHANGE_CONTAINER}/backup/cf_%F"
+BACKUP_DIR="${XCHANGE_CONTAINER}/backup"
+# %F is only valid in the controlfile autobackup format. Used in a plain
+# BACKUP ... FORMAT clause it fails with ORA-19715. The autobackup is triggered
+# by BACKUP DATABASE PLUS ARCHIVELOG anyway and picks up the configured format,
+# so no explicit controlfile backup is needed here.
+CF_FORMAT="${BACKUP_DIR}/cf_%F"
 
 # ------------------------------------------------------------------------------
 # usage
@@ -107,13 +112,32 @@ main() {
 CONFIGURE CONTROLFILE AUTOBACKUP ON;
 CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '${CF_FORMAT}';
 RUN {
-  ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '${BACKUP_DIR}/%U';
   BACKUP DATABASE PLUS ARCHIVELOG;
-  BACKUP CURRENT CONTROLFILE FORMAT '${CF_FORMAT}';
   RELEASE CHANNEL c1;
 }
 EXIT
 " | docker exec -i "${PROD_SERVICE}" rman target /
+
+        # Without FORMAT on the channel the pieces silently land in
+        # $ORACLE_HOME/dbs instead of the exchange mount, and every later clone
+        # step would then catalog an empty directory. Verify rather than assume.
+        local piece_count cf_count
+        piece_count=$(docker exec "${PROD_SERVICE}" bash -c \
+            "find ${BACKUP_DIR} -maxdepth 1 -type f ! -name 'cf_*' 2>/dev/null | wc -l" | tr -d ' ')
+        cf_count=$(docker exec "${PROD_SERVICE}" bash -c \
+            "find ${BACKUP_DIR} -maxdepth 1 -name 'cf_*' 2>/dev/null | wc -l" | tr -d ' ')
+        lib_info "backup pieces in ${BACKUP_DIR}: ${piece_count}, controlfile autobackups: ${cf_count}"
+        if [[ "${piece_count}" -lt 1 ]]; then
+            lib_err "no backup pieces in ${BACKUP_DIR}"
+            lib_err "the channel FORMAT is missing or wrong - the clone steps would catalog nothing"
+            return 1
+        fi
+        if [[ "${cf_count}" -lt 1 ]]; then
+            lib_err "no controlfile autobackup in ${BACKUP_DIR}"
+            lib_err "RESTORE CONTROLFILE FROM AUTOBACKUP would fail in the clone steps"
+            return 1
+        fi
     else
         lib_info "DRY-RUN: would run RMAN backup in ${PROD_SERVICE}"
         lib_info "  CONFIGURE CONTROLFILE AUTOBACKUP FORMAT: ${CF_FORMAT}"
