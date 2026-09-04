@@ -827,3 +827,68 @@ EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba >/dev/null 2>&1 || {
     }
     lib_info "db_create_file_dest set to ${base} in ${svc}"
 }
+
+# ------------------------------------------------------------------------------
+# Function: get_dbid
+# Purpose.: Read the DBID of a container database
+# Args....: $1  container name
+# Returns.: 0 on success, 1 if the value could not be read
+# Output..: the DBID
+# Depends.: docker, sqlplus
+# Example.: get_dbid odbencprod
+# ------------------------------------------------------------------------------
+get_dbid() {
+    local svc="$1" dbid
+    dbid=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 100 TRIMSPOOL ON
+SELECT dbid FROM v\$database;
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
+        | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+    if [[ -z "${dbid}" ]]; then
+        lib_err "could not read the DBID from ${svc}"
+        return 1
+    fi
+    printf '%s\n' "${dbid}"
+}
+
+# ------------------------------------------------------------------------------
+# Function: ensure_independent_dev_cdb
+# Purpose.: Make sure the dev container is a CDB of its own, not a restore of
+#           the source
+# Args....: none
+# Returns.: 0 dev is independent, 1 it could not be made independent
+# Output..: what was found and what was done about it
+# Depends.: docker, sqlplus, reset_service, wait_for_ready
+# Example.: ensure_independent_dev_cdb
+# Notes...: The RMAN variants leave odbencdev as a restore of odbencprod - same
+#           DBID, same file paths, and a CDB temp file that no longer verifies
+#           after the RESETLOGS cycles (ORA-01187 on data file 1025 when a PDB
+#           is opened). For the PDB transport cases that is not a cosmetic
+#           problem: P2, P7 and P8 claim to plug into a *foreign* CDB, and a
+#           restore of the source is not one. Resetting is therefore part of
+#           the method, not a workaround. Only resets when the DBIDs actually
+#           match, so a clean dev container is left alone.
+# ------------------------------------------------------------------------------
+ensure_independent_dev_cdb() {
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would compare the DBIDs of ${PROD_SERVICE} and ${DEV_SERVICE}"
+        return 0
+    fi
+    local dbid_prod dbid_dev
+    dbid_prod=$(get_dbid "${PROD_SERVICE}") || return 1
+    dbid_dev=$(get_dbid "${DEV_SERVICE}")   || return 1
+    if [[ "${dbid_prod}" != "${dbid_dev}" ]]; then
+        lib_info "dev CDB is independent (DBID ${dbid_dev} vs prod ${dbid_prod})"
+        return 0
+    fi
+    lib_warn "dev carries the same DBID as prod (${dbid_dev}) - it is a restore of the source"
+    lib_warn "resetting ${DEV_SERVICE}: a restore of the source cannot stand in for a foreign CDB"
+    reset_service "${DEV_SERVICE}"
+    wait_for_ready "${DEV_SERVICE}"
+    dbid_dev=$(get_dbid "${DEV_SERVICE}") || return 1
+    if [[ "${dbid_prod}" == "${dbid_dev}" ]]; then
+        lib_err "dev still carries prod DBID ${dbid_dev} after the reset"
+        return 1
+    fi
+    lib_info "dev CDB rebuilt, DBID now ${dbid_dev} (prod ${dbid_prod})"
+}

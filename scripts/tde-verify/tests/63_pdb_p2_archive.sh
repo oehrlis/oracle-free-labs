@@ -188,6 +188,11 @@ EXIT
 SQL
 '
 
+    # The RMAN variants leave dev as a restore of prod - same DBID, and a CDB
+    # temp file that no longer verifies. P2/P7/P8 claim a foreign CDB, so this
+    # is part of the method rather than a workaround.
+    ensure_independent_dev_cdb
+
     # Phase 3: Drop PDBCLONE_P2 in dev if it exists (idempotency)
     step_header "Phase 3: Prepare dev - drop ${CLONE_P2_PDB} if exists"
     sqlplus_dev "
