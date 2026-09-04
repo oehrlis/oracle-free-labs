@@ -301,6 +301,64 @@ SQL
 }
 
 # ------------------------------------------------------------------------------
+# Function: ensure_autologin
+# Purpose.: Give the target its own auto-login keystore after the clone
+# Args....: none
+# Returns.: 0 keystore open, 1 otherwise
+# Output..: the resulting v$encryption_wallet rows
+# Depends.: docker, sqlplus
+# Example.: ensure_autologin
+# Notes...: A transported keystore carries the source cwallet.sso, which is a
+#           LOCAL auto-login file bound to the host that created it. It does not
+#           open here, and it also blocks creating a new one with ORA-46630. The
+#           password-based open done before the restore does not survive the
+#           instance restart that OPEN RESETLOGS performs, so without this the
+#           first query after the clone fails with ORA-28365. Move the foreign
+#           .sso aside, keep ewallet.p12 with the keys, create the auto-login
+#           locally.
+# ------------------------------------------------------------------------------
+ensure_autologin() {
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        log_info "DRY-RUN: would recreate the auto-login keystore on the target"
+        return 0
+    fi
+    if ! docker exec "${TARGET}" test -s "${WALLET_DIR}/wallet_pwd.txt"; then
+        log_warn "no ${WALLET_DIR}/wallet_pwd.txt - cannot recreate auto-login"
+        return 0
+    fi
+
+    log_info "recreating the auto-login keystore on the target host"
+    docker exec "${TARGET}" bash -c '
+W='"${WALLET_DIR}"'
+mkdir -p '"${XCHANGE}"'/sso_foreign
+mv "${W}"/tde/cwallet*.sso '"${XCHANGE}"'/sso_foreign/ 2>/dev/null
+PW=$(cat "${W}/wallet_pwd.txt")
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+WHENEVER SQLERROR CONTINUE
+SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
+ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE KEYSTORE IDENTIFIED BY "${PW}" CONTAINER=ALL;
+ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE FROM KEYSTORE "'"'"'${W}/tde'"'"'" IDENTIFIED BY "${PW}";
+COLUMN status FORMAT A14
+COLUMN wallet_type FORMAT A16
+SELECT con_id, status, wallet_type FROM v$encryption_wallet ORDER BY con_id;
+EXIT
+SQL
+'
+    local closed
+    closed=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$encryption_wallet WHERE status <> 'OPEN' AND status <> 'OPEN_NO_MASTER_KEY';
+EXIT" | docker exec -i "${TARGET}" sqlplus -S / as sysdba 2>/dev/null \
+        | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+    if [[ "${closed:-1}" != "0" ]]; then
+        log_error "target keystore is still not open after recreating the auto-login"
+        log_error "every query on encrypted data would fail with ORA-28365"
+        return 1
+    fi
+    log_info "target keystore open via local auto-login"
+}
+
+# ------------------------------------------------------------------------------
 # Function: last_archived_sequence
 # Purpose.: Highest archived log sequence known to the restored control file
 # Args....: none
@@ -391,9 +449,13 @@ EXIT
     run_sqlplus "
 WHENEVER SQLERROR CONTINUE
 ALTER DATABASE OPEN RESETLOGS;
+ALTER PLUGGABLE DATABASE ALL OPEN;
 SELECT dbid, name, open_mode, log_mode FROM v\$database;
 EXIT
 "
+    # OPEN RESETLOGS restarts the instance, which closes a password-opened
+    # keystore. Without this the first query after the clone hits ORA-28365.
+    ensure_autologin
 }
 
 # ------------------------------------------------------------------------------
