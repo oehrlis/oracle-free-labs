@@ -139,7 +139,7 @@ main() {
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 -- READ WRITE and then OFFLINE: offline conversion needs the tablespace offline,
--- otherwise it fails with ORA-28440 "file is in use".
+-- otherwise it fails with ORA-28440, file is in use.
 ALTER TABLESPACE USERS READ WRITE;
 ALTER TABLESPACE USERS OFFLINE NORMAL;
 ALTER TABLESPACE USERS ENCRYPTION OFFLINE DECRYPT;
