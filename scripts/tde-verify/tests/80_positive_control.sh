@@ -162,10 +162,11 @@ ALTER TABLESPACE CTRL_ENC_B READ ONLY;
 SELECT tablespace_name, status, encrypted FROM dba_tablespaces
   WHERE tablespace_name IN ('CTRL_ENC_A','CTRL_ENC_B')
   ORDER BY 1;
-SELECT RAWTOHEX(encryptedkey) AS wrapped_tek, name
-  FROM v\$encrypted_tablespaces
-  WHERE name IN ('CTRL_ENC_A','CTRL_ENC_B')
-  ORDER BY name;
+SELECT RAWTOHEX(et.encryptedkey) AS wrapped_tek, t.name
+  FROM v\$encrypted_tablespaces et, v\$tablespace t
+  WHERE et.ts# = t.ts# AND et.con_id = t.con_id
+  AND t.name IN ('CTRL_ENC_A','CTRL_ENC_B')
+  ORDER BY t.name;
 EXIT
 "
 

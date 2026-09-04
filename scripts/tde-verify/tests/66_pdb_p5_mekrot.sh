@@ -116,7 +116,7 @@ ORDER BY creation_time;
 SELECT RAWTOHEX(masterkeyid) AS masterkeyid_before,
        RAWTOHEX(encryptedkey) AS encryptedkey_before,
        key_version
-FROM v\$encrypted_tablespaces WHERE name='${CLONE_TS_ENC}';
+FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT
 "
 
@@ -155,7 +155,7 @@ ORDER BY creation_time;
 SELECT RAWTOHEX(masterkeyid) AS masterkeyid_after,
        RAWTOHEX(encryptedkey) AS encryptedkey_after,
        key_version
-FROM v\$encrypted_tablespaces WHERE name='${CLONE_TS_ENC}';
+FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT
 "
 

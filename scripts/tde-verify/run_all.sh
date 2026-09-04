@@ -194,6 +194,24 @@ read_state() {
 }
 
 # ------------------------------------------------------------------------------
+# Function: log_line
+# Purpose.: Append one line to the run log, recreating it if it went missing
+# Args....: $*  the line to append
+# Returns.: 0 always
+# Output..: nothing on stdout
+# Depends.: none
+# Example.: log_line "START [10] 10_baseline.sh"
+# Notes...: Step 00 clears data/xchange, which is where the run log lives. Every
+#           later append would then fail with "No such file or directory" and the
+#           run would finish without a protocol. Recreating on demand keeps the
+#           protocol intact across the reset instead of losing it silently.
+# ------------------------------------------------------------------------------
+log_line() {
+    mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "${LOG_FILE}"
+}
+
+# ------------------------------------------------------------------------------
 # Function: check_gate
 # Purpose.: Verify the prerequisite state key is present; abort if not
 # Args....: $1 gate_key (may be empty)
@@ -257,12 +275,12 @@ run_step() {
     # Check gate (skip if dry-run, gates still checked)
     if ! check_gate "${gate_key}" "${gate_desc}" "${script}"; then
         STEP_RESULT["${nr}"]="GATE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') GATE  [${nr}] ${script}: gate '${gate_desc}' violated" >> "${LOG_FILE}"
+        log_line "GATE  [${nr}] ${script}: gate '${gate_desc}' violated"
         return 1
     fi
 
     if [[ ! -x "${script_path}" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR [${nr}] ${script}: not executable" >> "${LOG_FILE}"
+        log_line "ERROR [${nr}] ${script}: not executable"
         STEP_RESULT["${nr}"]="ERROR"
         return 1
     fi
@@ -291,12 +309,13 @@ run_step() {
     echo "  Script: ${script_path}"
     echo "  Time:   $(date '+%Y-%m-%d %H:%M:%S')"
     echo "========================================================================"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') START [${nr}] ${script}" >> "${LOG_FILE}"
+    log_line "START [${nr}] ${script}"
 
     local t_start t_end elapsed step_exit=0
     t_start=$(date '+%s')
 
     # Run script, tee to log
+    mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
     "${script_path}" "${args[@]}" 2>&1 | tee -a "${LOG_FILE}" || step_exit=$?
 
     t_end=$(date '+%s')
@@ -305,10 +324,10 @@ run_step() {
 
     if [[ "${step_exit}" -eq 0 ]]; then
         STEP_RESULT["${nr}"]="PASS"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') END   [${nr}] ${script}: PASS (${elapsed}s)" >> "${LOG_FILE}"
+        log_line "END   [${nr}] ${script}: PASS (${elapsed}s)"
     else
         STEP_RESULT["${nr}"]="FAIL"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') END   [${nr}] ${script}: FAIL (exit ${step_exit}, ${elapsed}s)" >> "${LOG_FILE}"
+        log_line "END   [${nr}] ${script}: FAIL (exit ${step_exit}, ${elapsed}s)"
     fi
 
     return "${step_exit}"

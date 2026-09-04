@@ -113,7 +113,7 @@ SELECT RAWTOHEX(masterkeyid) AS masterkeyid,
        RAWTOHEX(encryptedkey) AS encryptedkey,
        key_version, encryptionalg
 FROM v\$encrypted_tablespaces
-WHERE name='${CLONE_TS_ENC}';
+WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT
 "
 
