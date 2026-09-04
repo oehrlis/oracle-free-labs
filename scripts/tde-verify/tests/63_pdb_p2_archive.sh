@@ -136,6 +136,11 @@ EXIT" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
         fi
     fi
 
+    # UNPLUG refuses to overwrite an existing archive (ORA-65288), so a retried
+    # step would fail on the leftover from the previous attempt.
+    step_header "Remove a leftover PDB archive if present"
+    lib_run in_prod "rm -f ${ARCHIVE_PATH}; ls -la ${ARCHIVE_PATH} 2>/dev/null || echo 'no leftover archive'"
+
     # The transport secret takes double quotes. Measured with a syntax probe
     # against a non-existent PDB: single quotes give ORA-00922, double quotes
     # get through to ORA-65011. Same for WITH SECRET on EXPORT/IMPORT KEYS,

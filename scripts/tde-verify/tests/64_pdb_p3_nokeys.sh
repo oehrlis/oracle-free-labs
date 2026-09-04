@@ -108,6 +108,11 @@ main() {
         [[ "${_reply}" == [yY] ]] || { lib_warn "aborted by user"; exit 1; }
     fi
 
+    # UNPLUG refuses to overwrite an existing archive (ORA-65288), so a retried
+    # step would fail on the leftover from the previous attempt.
+    step_header "Remove a leftover PDB archive if present"
+    lib_run in_prod "rm -f ${ARCHIVE_PATH}; ls -la ${ARCHIVE_PATH} 2>/dev/null || echo 'no leftover archive'"
+
     # Phase 1: UNPLUG PDBCLONE without ENCRYPT USING
     # PDBs are created in both containers here; without OMF every
     # CREATE PLUGGABLE DATABASE fails with ORA-65016.
