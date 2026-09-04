@@ -179,7 +179,10 @@ SQL
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE DATABASE LINK '"${DB_LINK}"'
-  CONNECT TO "'"${CLONE_USER}"'" IDENTIFIED BY "'"${CLONE_PWD}"'"
+  -- The user name must not be quoted. Step 61 creates it unquoted, so Oracle
+  -- stores C##CLONE in upper case; "c##clone" would name a different,
+  -- non-existent user and the link fails with ORA-01017.
+  CONNECT TO '"${CLONE_USER}"' IDENTIFIED BY "'"${CLONE_PWD}"'"
   USING '"'"'(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST='"${PROD_HOST}"')(PORT='"${PROD_PORT}"'))(CONNECT_DATA=(SERVICE_NAME='"${PROD_SERVICE_NAME}"')))'"'"';
 SELECT '"'"'DB link test'"'"' AS link_status FROM dual@'"${DB_LINK}"';
 EXIT
