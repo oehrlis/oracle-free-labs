@@ -185,7 +185,12 @@ echo 'fresh keystore directory created: '\${ks_dir}
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '"'"'${WALLET_DIR_CONTAINER}/tde'"'"' IDENTIFIED BY "${KSPWD}";
+-- No path: WALLET_ROOT is configured, so Oracle derives WALLET_ROOT/tde
+-- itself. Passing an explicit path fails with ORA-46633 - and the path in
+-- this single-quoted section would have been expanded inside the container,
+-- where WALLET_DIR_CONTAINER does not exist. Same syntax the repo uses in
+-- config/common/scripts/csenc_swkeystore.sql.
+ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "${KSPWD}";
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
 -- Set CDB master key first (PDB key will follow after discard step).
 -- No CONTAINER=ALL here: it also targets PDB$SEED, which is not open for
