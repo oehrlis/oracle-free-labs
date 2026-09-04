@@ -33,6 +33,15 @@ scripts/tde-verify/
     ├── 40_variant_c.sh    Variant C: DUPLICATE ... AS ENCRYPTED
     ├── 50_variant_d.sh    Variant D: AS DECRYPTED + SET KEY + OFFLINE ENCRYPT
     ├── 60_variant_f.sh    Variant F: chain-breaking path - the only way to get new TEK
+    ├── 61_pdb_testbed.sh  PDB testbed: PDBCLONE + CLONE_ENC/CLONE_PLAIN + c##clone user
+    ├── 62_pdb_p1_local.sh P1: local clone in same CDB (reference case)
+    ├── 63_pdb_p2_archive.sh P2: unplug with ENCRYPT USING, plug into dev CDB
+    ├── 64_pdb_p3_nokeys.sh P3: unplug without key export - negative test
+    ├── 65_pdb_p4_remote.sh P4: remote clone via DB link + EXPORT/IMPORT KEYS
+    ├── 66_pdb_p5_mekrot.sh P5: MEK rotation in target after P2 or P4
+    ├── 67_pdb_p6_rekey.sh P6: ONLINE REKEY in target after P2 or P4
+    ├── 68_pdb_p7_origin.sh P7: ORIGIN comparison IMPORTED vs LOCAL
+    ├── 69_pdb_p8_keyver.sh P8: KEY_VERSION after plug-in to foreign CDB
     ├── 70_variant_g.sh    Variant G: ALTER TABLESPACE ENCRYPTION ONLINE REKEY
     ├── 80_positive_control.sh  Two fresh encrypted tablespaces prove method sensitivity
     └── 90_withdrawal_test.sh   Key withdrawal: remove prod MEK, read canary
@@ -51,6 +60,15 @@ scripts/tde-verify/
 | 40 | `40_variant_c.sh` | DUPLICATE ... AS ENCRYPTED - must run on pristine Auxiliary (step resets dev first) | step 15 |
 | 50 | `50_variant_d.sh` | RESTORE AS DECRYPTED FORCE + SET KEY + OFFLINE ENCRYPT - TEK survives (identical ciphertext) | step 15 |
 | 60 | `60_variant_f.sh` | RESTORE + OFFLINE DECRYPT + fresh keystore + discard lost MEK handles + SET KEY + ENCRYPT - new TEK | step 15 |
+| 61 | `61_pdb_testbed.sh` | Create PDBCLONE with CLONE_ENC (AES256) and CLONE_PLAIN, canary rows, c##clone user | none |
+| 62 | `62_pdb_p1_local.sh` | Local clone PDBCLONE_P1 in same CDB - reference: TEK identical, ORIGIN=LOCAL | step 61 |
+| 63 | `63_pdb_p2_archive.sh` | Unplug PDBCLONE with ENCRYPT USING, plug PDBCLONE_P2 into dev - expect TEK preserved, ORIGIN=IMPORTED | step 61 |
+| 64 | `64_pdb_p3_nokeys.sh` | Unplug without key export, plug PDBCLONE_P3 into dev - negative test, expect ORA-28374 | step 61 |
+| 65 | `65_pdb_p4_remote.sh` | Remote clone PDBCLONE_P4 via DB link (c##clone) + EXPORT/IMPORT KEYS - ORIGIN=IMPORTED | step 61 |
+| 66 | `66_pdb_p5_mekrot.sh` | MEK rotation in target PDB - expect re-wrap only (blocks identical) | step 63 or 65 |
+| 67 | `67_pdb_p6_rekey.sh` | ONLINE REKEY in target PDB - expect new TEK, blocks differ | step 63 or 65 |
+| 68 | `68_pdb_p7_origin.sh` | ORIGIN comparison: IMPORTED (formal import) vs LOCAL (copied keystore) | step 63 or 65 |
+| 69 | `69_pdb_p8_keyver.sh` | KEY_VERSION after plug-in to foreign CDB (doc: resets to 0) | step 63 or 65 |
 | 70 | `70_variant_g.sh` | ONLINE REKEY on clone - new TEK, different ciphertext | step 15 |
 | 80 | `80_positive_control.sh` | Two fresh encrypted tablespaces prove method detects TEK difference | none |
 | 90 | `90_withdrawal_test.sh` | Remove prod MEK from dev keystore, restart, read canary | none |
@@ -63,6 +81,11 @@ is not met, it stops and shows the command to resume:
 - Steps 15, 20, 30, 35, 40, 50, 60, 70: require `BACKUP_READY=TRUE` in the state
   file (written by step 15). Missing: run step 15 first.
 - Steps 20-70 also require `SOURCE_DBID` (written by step 10).
+- Steps 62-65 (PDB P1-P4): require `PDBCLONE_READY=TRUE` (written by step 61).
+  These steps can run independently of the RMAN series; both odbencprod and
+  odbencdev must be running and healthy.
+- Steps 66-69 (PDB P5-P8): require `PDB_TARGET_READY=TRUE` (written by step 63
+  or step 65). Run step 63 (P2) or step 65 (P4) before these steps.
 
 State file: `data/xchange/evidence/lab_state.env`.
 
@@ -141,6 +164,13 @@ data/xchange/evidence/
 ├── variant_c/                  Step 40
 ├── variant_d/                  Step 50
 ├── variant_f/                  Step 60
+├── pdb_baseline/               Step 61: PDBCLONE/CLONE_ENC key chain + fingerprints
+├── pdb_p1_local/               Step 62: PDBCLONE_P1 in prod
+├── pdb_p2_archive/             Step 63: PDBCLONE_P2 in dev (archive plug-in)
+├── pdb_p3_nokeys/              Step 64: negative test evidence
+├── pdb_p4_remote/              Step 65: PDBCLONE_P4 in dev (remote clone)
+├── pdb_p5_mekrot/              Step 66: after MEK rotation
+├── pdb_p6_rekey/               Step 67: after ONLINE REKEY
 ├── variant_g/                  Step 70
 ├── ctrl_enc_a/                 Step 80: positive control tablespace A
 ├── ctrl_enc_b/                 Step 80: positive control tablespace B
@@ -169,3 +199,62 @@ Measured results from the Gruene-Wiese-Lauf (2026-09-03):
 | F: chain-breaking path | 0/313 identical | NEW TEK | independent |
 | G: ONLINE REKEY | 2560/2561 differ | NEW TEK | independent |
 | Positive control | 367/501 differ | different | confirms method sensitivity |
+
+## PDB clone test series (steps 61-69)
+
+The PDB clone series answers a different question than the RMAN restore variants: what
+happens to TDE key provenance when a PDB moves between CDBs via cloning or archive
+transport?
+
+### Variants
+
+<!-- markdownlint-disable MD013 -->
+| Variant | Step | Transport method | Key transport | Expected ORIGIN |
+|---|---|---|---|---|
+| Testbed | 61 | n/a | n/a | LOCAL (native) |
+| P1 | 62 | Local clone (same CDB) | Shared keystore | LOCAL |
+| P2 | 63 | Archive plug-in (ENCRYPT USING) | Bundled in archive | IMPORTED |
+| P3 | 64 | Archive plug-in (plain) | None | n/a - negative test |
+| P4 | 65 | Remote clone via DB link | Explicit EXPORT/IMPORT | IMPORTED |
+| P5 | 66 | MEK rotation in target | n/a | IMPORTED (unchanged) |
+| P6 | 67 | ONLINE REKEY in target | n/a | IMPORTED (new TEK) |
+| P7 | 68 | ORIGIN comparison | n/a | informational |
+| P8 | 69 | KEY_VERSION after plug-in | n/a | informational |
+<!-- markdownlint-restore -->
+
+### Key findings
+
+- **P1 (local clone)**: the clone shares the CDB keystore, so `v$encryption_keys.ORIGIN`
+  stays `LOCAL` and the ENCRYPTEDKEY (wrapped TEK) is identical to the source.
+- **P2 (archive with key transport)**: `UNPLUG INTO ... ENCRYPT USING '<secret>'` bundles
+  the key. After `CREATE PLUGGABLE DATABASE ... USING ... DECRYPT USING '<secret>'`,
+  `ORIGIN=IMPORTED` - the key provenance is visible in the data dictionary.
+- **P3 (archive without key transport)**: the PDB plugs in but the encrypted tablespace
+  is inaccessible. Expected errors: ORA-28374 (key missing), ORA-28365, or ORA-65025.
+  This step exits 0 - the error is the result.
+- **P4 (remote clone via DB link)**: `CREATE PLUGGABLE DATABASE ... FROM pdb@db_link`
+  creates the PDB; a subsequent explicit `EXPORT KEYS / IMPORT KEYS` moves the key.
+  Result: `ORIGIN=IMPORTED`, same as P2 but using a different transport path.
+- **P5 (MEK rotation)**: `ADMINISTER KEY MANAGEMENT SET KEY` re-wraps the TEK under a
+  new MEK. MASTERKEYID changes, ENCRYPTEDKEY changes, but block ciphertext is unchanged.
+- **P6 (ONLINE REKEY)**: `ALTER TABLESPACE ... ENCRYPTION ONLINE REKEY` creates a new TEK
+  and rewrites all data blocks in a new datafile. KEY_VERSION increases; block ciphertext
+  differs from pdb_baseline (genuine re-encryption).
+- **Transported LOCAL keystore**: a `cwallet.sso` carried over from another host is bound
+  to that host's identity. It opens read-only but blocks `CREATE LOCAL AUTO_LOGIN KEYSTORE`
+  with ORA-46630. The fix is to move the foreign `.sso` aside and regenerate auto-login
+  at the target.
+- **KEY_VERSION after plug-in**: Oracle documentation states KEY_VERSION may reset to 0
+  after a PDB is plugged into a different CDB. Step 69 measures the actual value.
+
+### Service name
+
+The service name for `tnsping`, SQL\*Net connections, and DB link targets is
+`FREE.oradba.ch`, not `FREE`. `tnsping FREE` succeeds even when the full service name
+is wrong - do not use it as a connectivity proof.
+
+### c##clone user
+
+The remote clone (P4) uses a dedicated common user `c##clone` with
+`CREATE SESSION` and `CREATE PLUGGABLE DATABASE ... CONTAINER=ALL`. This user is
+created in step 61 and dropped/recreated idempotently on each testbed run.
