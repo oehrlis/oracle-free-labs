@@ -187,8 +187,11 @@ sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '"'"'${WALLET_DIR_CONTAINER}/tde'"'"' IDENTIFIED BY "${KSPWD}";
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
--- Set CDB master key first (PDB key will follow after discard step)
-ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP CONTAINER=ALL;
+-- Set CDB master key first (PDB key will follow after discard step).
+-- No CONTAINER=ALL here: it also targets PDB$SEED, which is not open for
+-- writing, and the statement then fails with ORA-46663. The key is set per
+-- container, matching the intent of this phase.
+ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP;
 SELECT con_id, key_id, keystore_type, origin FROM v\$encryption_keys ORDER BY con_id;
 EXIT
 SQL
