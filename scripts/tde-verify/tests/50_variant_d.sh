@@ -102,6 +102,18 @@ main() {
 
     local dbid
     dbid=$(read_state "SOURCE_DBID")
+    # The named autobackup of the source. FROM AUTOBACKUP would take the newest
+    # one, and after any earlier clone that is the target's own control file -
+    # the target carries the source DBID after a restore, so its autobackups
+    # land in the same cf_c-<dbid>-* namespace. Recovery then asks for sequence 1
+    # of that new incarnation and fails with RMAN-06054.
+    local cf_piece
+    cf_piece=$(read_state "BACKUP_CF_PIECE")
+    if [[ -z "${cf_piece}" ]]; then
+        lib_err "BACKUP_CF_PIECE is unset - run step 15 first"
+        return 1
+    fi
+    lib_info "control file autobackup: ${cf_piece}"
 
     # Reset odbencdev
     step_header "Reset odbencdev"
@@ -167,7 +179,7 @@ SET DBID ${dbid};
 RUN {
   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
   SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '${XCHANGE_CONTAINER}/backup/cf_%F';
-  RESTORE CONTROLFILE FROM AUTOBACKUP;
+  RESTORE CONTROLFILE FROM '${XCHANGE_CONTAINER}/backup/${cf_piece}';
   ALTER DATABASE MOUNT;
   RELEASE CHANNEL c1;
 }
@@ -241,6 +253,13 @@ EXIT
     # offline encryption fail with ORA-28365.
     step_header "Reopen the keystore after RESETLOGS"
     ensure_autologin_for "${DEV_SERVICE}"
+
+    # Keep the target from writing its own autobackups next to the source's.
+    step_header "Redirect the target's control file autobackup"
+    rman_dev "
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
+EXIT
+"
 
     # Phase 3: SET KEY to a dev-own MEK
     # Per container, not CONTAINER=ALL: PDB$SEED has no master key, so
