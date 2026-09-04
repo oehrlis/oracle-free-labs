@@ -215,7 +215,7 @@ SQL
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET '"'"''"${P4_KEY_SECRET}"''"'"'
+ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET "'"${P4_KEY_SECRET}"'"
   TO '"'"''"${KEYS_FILE}"''"'"'
   FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
   WITH IDENTIFIER IN
@@ -233,7 +233,7 @@ SQL
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET '"'"''"${P4_KEY_SECRET}"''"'"'
+ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET "'"${P4_KEY_SECRET}"'"
   FROM '"'"''"${KEYS_FILE}"''"'"'
   FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
   WITH BACKUP;
