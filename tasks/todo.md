@@ -1277,3 +1277,41 @@ Reihenfolge fuer das Runbook: Tablespaces entschluesseln und pruefen
 **Instanz neu starten** -> `CREATE KEYSTORE` -> `SET KEYSTORE OPEN` ->
 `SET KEY` je Container -> `_db_discard_lost_masterkey` in der PDB
 (`SCOPE=MEMORY`) -> `SET KEY` in der PDB -> `OFFLINE ENCRYPT`.
+
+### Gemessen: der Database Key ist die wirksame Ebene (2026-09-04)
+
+| | Variante D | Variante F |
+|---|---|---|
+| MEK | neu (`SET KEY`) | neu (frischer Keystore) |
+| Database Key | unveraendert | erneuert (`_db_discard_lost_masterkey`) |
+| Operation | `OFFLINE ENCRYPT` | `OFFLINE ENCRYPT` |
+| Canary-Chiffrat | 313 identisch / 0 abweichend | 0 identisch / 313 abweichend |
+
+Dieselbe Anweisung, entgegengesetztes Ergebnis, eine einzige veraenderte
+Variable. Die MEK-Rotation allein aendert das Chiffrat nachweislich nicht;
+neues Tablespace-Schluesselmaterial entsteht erst, wenn der Database Key des
+Containers erneuert wird. Oracle dokumentiert nur zwei Ebenen - diese Messung
+ist die Grundlage fuer die dritte in `doc/tde-key-architecture.md`.
+
+### Nebenbefund: ORA-28374 beim CDB-weiten SET KEY
+
+Nach dem Austausch des Keystores scheitert `ADMINISTER KEY MANAGEMENT SET KEY`
+in `CDB$ROOT` mit `ORA-28374: typed master key not found in wallet`. Die CDB
+verweist weiter auf Prods MEK-ID. Eine Datenbank, die ihren MEK verloren hat,
+kann nicht einfach einen neuen annehmen - genau dafuer existiert
+`_db_discard_lost_masterkey`, und der ist nur in der PDB setzbar. Das ist eine
+zweite, unabhaengige empirische Widerlegung der Kundeneinwand-Logik "wir
+tauschen einfach den Schluessel aus".
+
+### Systemischer Defekt, noch offen: `sqlplus | grep` verschluckt Fehlerstatus
+
+`sqlplus -S / as sysdba <<SQL | grep -viE "identified by"` liefert den
+Exit-Status von **grep**, nicht von sqlplus. Ein fehlgeschlagenes SQL-Statement
+beendet den sqlplus-Lauf mit `WHENEVER SQLERROR EXIT SQL.SQLCODE`, der Status
+geht in der Pipe aber verloren - `set -e` greift nicht, und der Schritt laeuft
+weiter. Genau so blieb das ORA-28374 oben ohne Folge.
+
+Betroffen ist das Muster in mehreren Skripten (`sqlplus_prod`, `sqlplus_dev`,
+alle `lib_run in_dev`/`in_prod`-Bloecke). Vor dem finalen E2E-Lauf beheben:
+`set -o pipefail` in den betroffenen Container-Skripten oder
+`${PIPESTATUS[0]}` auswerten.
