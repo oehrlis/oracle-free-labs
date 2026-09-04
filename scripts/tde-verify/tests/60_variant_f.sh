@@ -105,6 +105,14 @@ main() {
 
     local dbid
     dbid=$(read_state "SOURCE_DBID")
+    # Named source autobackup; without it the clone picks the newest one, which
+    # after any earlier clone is the target's own control file.
+    local cf_piece
+    cf_piece=$(read_state "BACKUP_CF_PIECE")
+    if [[ -z "${cf_piece}" ]]; then
+        lib_err "BACKUP_CF_PIECE is unset - run step 15 first"
+        return 1
+    fi
 
     # Reset odbencdev
     step_header "Reset odbencdev"
@@ -115,11 +123,12 @@ main() {
     # Phase 1: variant A base (RESTORE with transported prod keystore)
     step_header "Phase 1: Variant A base (RESTORE with prod keystore)"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant a --dbid ${dbid} --delete"
+        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant a --dbid ${dbid} --cf-piece ${cf_piece} --delete"
     else
         "${CLONE_SCRIPT}" \
             --variant a \
-            --dbid   "${dbid}" \
+            --dbid     "${dbid}" \
+            --cf-piece "${cf_piece}" \
             --delete \
             "${CLONE_EXTRA_ARGS[@]}"
     fi
@@ -129,9 +138,13 @@ main() {
     sqlplus_dev "
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
--- USERS must be READ WRITE to decrypt offline
+-- READ WRITE and then OFFLINE: offline conversion needs the tablespace offline,
+-- otherwise it fails with ORA-28440 "file is in use".
 ALTER TABLESPACE USERS READ WRITE;
+ALTER TABLESPACE USERS OFFLINE NORMAL;
 ALTER TABLESPACE USERS ENCRYPTION OFFLINE DECRYPT;
+ALTER TABLESPACE USERS ONLINE;
+ALTER SYSTEM CHECKPOINT;
 -- Verify: must be 0 rows
 SELECT COUNT(*) AS enc_ts_remaining FROM v\$encrypted_tablespaces;
 EXIT
@@ -206,8 +219,11 @@ SQL
     sqlplus_dev "
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
+ALTER TABLESPACE USERS OFFLINE NORMAL;
 ALTER TABLESPACE USERS ENCRYPTION OFFLINE ENCRYPT;
-SELECT tablespace_name, encrypted FROM dba_tablespaces WHERE tablespace_name='USERS';
+ALTER TABLESPACE USERS ONLINE;
+ALTER SYSTEM CHECKPOINT;
+SELECT tablespace_name, status, encrypted FROM dba_tablespaces WHERE tablespace_name='USERS';
 SELECT RAWTOHEX(masterkeyid), RAWTOHEX(encryptedkey), key_version
   FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='USERS' AND con_id=sys_context('userenv','con_id'));
 EXIT
