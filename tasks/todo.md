@@ -1146,3 +1146,33 @@ Nicht beanstandet, weil sachlich richtig: dass P2 und P3 die Quell-PDB nach dem 
 wieder zurueckstecken. Ohne das waere PDBCLONE nach dem ersten Lauf aus der Quelle
 verschwunden und P4 nicht mehr fahrbar. Die Reihe bleibt so in beliebiger Reihenfolge
 einzeln ausfuehrbar.
+
+### DBID-Identitaet je Klon-Verfahren - Hinweis Stefan 2026-09-04
+
+Fachlicher Zusammenhang, der die Autobackup-Kollision aus dem E2E-Lauf erklaert:
+
+- **RMAN RESTORE behaelt die DBID der Quelle.** Der Klon ist fuer RMAN dieselbe
+  Datenbank. Gemessen: odbencdev hatte DBID 1515139043, nach dem Restore trug es
+  Prods 1515140319.
+- **DUPLICATE erzeugt eine neue DBID.** Gemessen: Klon 1515081178 gegen Quelle
+  1515072404.
+- Wer beim Restore-Weg eine eigene DBID will, braucht `DBNEWID` (`nid`) mit neuem
+  DB-Namen und neuer DBID, oder ein manuell erzeugtes Controlfile.
+
+Konsequenzen:
+
+1. Fuer das Lab: die gleiche DBID ist die Ursache dafuer, dass das Ziel seine
+   Controlfile-Autobackups in denselben `cf_c-<DBID>-*`-Namensraum schreibt und
+   `FROM AUTOBACKUP` das falsche Piece zieht. Der `--cf-piece`-Fix behandelt das
+   korrekt, die saubere Loesung waere `nid` nach dem Restore.
+2. Fuer den Kunden, und das gehoert in den Variantenvergleich: ein Klon per
+   RESTORE ist an der DBID **nicht** von der Produktion unterscheidbar. Das
+   betrifft Backup-Kataloge, Data Guard, Monitoring und die Frage, wer welche
+   Datenbank vor sich hat. DUPLICATE liefert eine eigene Identitaet.
+
+- [ ] Variantenvergleich um die Spalte DBID erweitern: behaelt Quelle gegen neu.
+- [x] Entscheid 2026-09-04: `nid` wird **nicht** als Messvariante gefahren, der
+      Aufwand steht nicht im Verhaeltnis. Nur dokumentieren: `DBNEWID` ist der
+      Weg zu einer eigenen DBID nach einem Restore, und eine neue DBID aendert
+      Identitaet, nicht Schluesselmaterial - der TEK bleibt. Als Erwartung
+      kennzeichnen, nicht als Messung.
