@@ -115,7 +115,7 @@ EXIT
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod '
 DBPWD=$(printf "%s" "${ORACLE_PWD}")
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' ADMIN USER pdbadmin IDENTIFIED BY "${DBPWD}";
 ALTER PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' OPEN READ WRITE;
@@ -181,7 +181,7 @@ EXIT
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod '
 DBPWD=$(printf "%s" "${ORACLE_PWD}")
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 DROP USER '"${CLONE_USER}"' CASCADE;
 WHENEVER SQLERROR EXIT SQL.SQLCODE

@@ -177,7 +177,7 @@ EXIT
     # Open the prod keystore
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
 SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
@@ -231,7 +231,7 @@ EXIT
     step_header "SET KEY to dev-own MEK (rotates CDB and PDB master keys)"
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP CONTAINER=ALL;
 SELECT key_id, keystore_type, origin FROM v\$encryption_keys ORDER BY activation_time DESC;

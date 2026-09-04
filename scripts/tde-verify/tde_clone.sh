@@ -297,7 +297,7 @@ COLUMN wallet_type FORMAT A16
 SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 EXIT
 SQL
-' 2>&1 | grep -viE "identified by|password"
+' 2>&1 | grep -viE "identified by"
 }
 
 # ------------------------------------------------------------------------------
@@ -328,29 +328,41 @@ ensure_autologin() {
     fi
 
     log_info "recreating the auto-login keystore on the target host"
-    docker exec "${TARGET}" bash -c '
-W='"${WALLET_DIR}"'
-mkdir -p '"${XCHANGE}"'/sso_foreign
-mv "${W}"/tde/cwallet*.sso '"${XCHANGE}"'/sso_foreign/ 2>/dev/null
-PW=$(cat "${W}/wallet_pwd.txt")
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+    # The inner script is passed through a quoted heredoc, so nothing expands on
+    # this side. Container paths are literal and the SQL keeps its own $ escaped.
+    # Earlier attempts nested three levels of quoting and produced ORA-46604 for
+    # the keystore path and ORA-00942 for a v$ view whose name got eaten.
+    docker exec -i "${TARGET}" bash -s <<'INNER' | grep -viE "identified by"
+set -u
+W="/opt/oracle/dbconfig/FREE/wallet"
+XCH="/opt/oracle/xchange"
+mkdir -p "${XCH}/sso_foreign"
+mv "${W}"/tde/cwallet*.sso "${XCH}/sso_foreign/" 2>/dev/null || true
+PW="$(cat "${W}/wallet_pwd.txt")"
+sqlplus -S / as sysdba >/tmp/autologin.$$.log 2>&1 <<SQL
 WHENEVER SQLERROR CONTINUE
 SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE KEYSTORE IDENTIFIED BY "${PW}" CONTAINER=ALL;
-ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE FROM KEYSTORE "'"'"'${W}/tde'"'"'" IDENTIFIED BY "${PW}";
-COLUMN status FORMAT A14
+ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE FROM KEYSTORE '${W}/tde' IDENTIFIED BY "${PW}";
+COLUMN status FORMAT A20
 COLUMN wallet_type FORMAT A16
-SELECT con_id, status, wallet_type FROM v$encryption_wallet ORDER BY con_id;
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 EXIT
 SQL
-'
+grep -viE "identified by" /tmp/autologin.$$.log
+rm -f /tmp/autologin.$$.log
+INNER
+
     local closed
-    closed=$(printf '%s\n' "
-SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT COUNT(*) FROM v\$encryption_wallet WHERE status <> 'OPEN' AND status <> 'OPEN_NO_MASTER_KEY';
+    # PDB$SEED keeps a closed keystore in normal operation and holds no
+    # encrypted data, so counting it made this check fail on a healthy target.
+    closed=$(printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$encryption_wallet w
+WHERE w.status NOT IN ('OPEN','OPEN_NO_MASTER_KEY')
+AND NOT EXISTS (SELECT 1 FROM v\$pdbs p WHERE p.con_id = w.con_id AND p.name = 'PDB\$SEED');
 EXIT" | docker exec -i "${TARGET}" sqlplus -S / as sysdba 2>/dev/null \
-        | awk 'NF && /^[0-9]+$/ { print $1; exit }')
-    if [[ "${closed:-1}" != "0" ]]; then
+        | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+    if [[ -z "${closed}" || "${closed}" != "0" ]]; then
         log_error "target keystore is still not open after recreating the auto-login"
         log_error "every query on encrypted data would fail with ORA-28365"
         return 1

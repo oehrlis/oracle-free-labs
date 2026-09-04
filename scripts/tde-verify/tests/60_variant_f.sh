@@ -170,7 +170,7 @@ echo 'fresh keystore directory created: '\${ks_dir}
     # shellcheck disable=SC1078
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '"'"'${WALLET_DIR_CONTAINER}/tde'"'"' IDENTIFIED BY "${KSPWD}";
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
@@ -186,7 +186,7 @@ SQL
     # shellcheck disable=SC1078
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 ALTER SESSION SET CONTAINER='"${PROD_PDB}"';
 -- _db_discard_lost_masterkey MUST be set in the PDB with SCOPE=MEMORY

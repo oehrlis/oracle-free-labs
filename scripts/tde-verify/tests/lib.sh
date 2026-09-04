@@ -335,7 +335,7 @@ sqlplus_prod() {
     fi
     printf '%s\n' "${sql}" \
         | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba \
-        | grep -viE "identified by|password"
+        | grep -viE "identified by"
 }
 
 sqlplus_dev() {
@@ -348,7 +348,7 @@ sqlplus_dev() {
     fi
     printf '%s\n' "${sql}" \
         | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba \
-        | grep -viE "identified by|password"
+        | grep -viE "identified by"
 }
 
 # ------------------------------------------------------------------------------
