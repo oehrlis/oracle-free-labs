@@ -366,10 +366,13 @@ sqlplus_prod() {
         echo "--- end ---"
         return 0
     fi
-    local out rc
-    out=$(printf '%s\n' "${sql}" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba)
-    rc=$?
-    printf '%s\n' "${out}" | grep -viE "identified by"
+    local out rc=0
+    # "|| rc=$?" is required: under set -e the shell exits at the assignment
+    # itself when the command fails, so a plain "rc=$?" on the next line is
+    # never reached and the output is lost. The "|| true" on grep is required
+    # for the same reason - grep returns 1 when the filter matches nothing.
+    out=$(printf '%s\n' "${sql}" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba) || rc=$?
+    printf '%s\n' "${out}" | grep -viE "identified by" || true
     return ${rc}
 }
 
@@ -381,10 +384,13 @@ sqlplus_dev() {
         echo "--- end ---"
         return 0
     fi
-    local out rc
-    out=$(printf '%s\n' "${sql}" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba)
-    rc=$?
-    printf '%s\n' "${out}" | grep -viE "identified by"
+    local out rc=0
+    # "|| rc=$?" is required: under set -e the shell exits at the assignment
+    # itself when the command fails, so a plain "rc=$?" on the next line is
+    # never reached and the output is lost. The "|| true" on grep is required
+    # for the same reason - grep returns 1 when the filter matches nothing.
+    out=$(printf '%s\n' "${sql}" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba) || rc=$?
+    printf '%s\n' "${out}" | grep -viE "identified by" || true
     return ${rc}
 }
 
