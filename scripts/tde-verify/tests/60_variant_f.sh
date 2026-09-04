@@ -169,20 +169,6 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
 
     # Phase 3: Remove prod keystore, create a fresh dev keystore
     step_header "Phase 3: Remove prod keystore, create fresh dev keystore"
-    # Close the keystore first. Moving the directory does not close what is
-    # already open in memory - the CREATE would then be followed by ORA-28354
-    # on the OPEN, the block would abort, and the SET KEY for CDB$ROOT below
-    # would be skipped without the step ever turning red.
-    lib_run in_dev '
-KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
-WHENEVER SQLERROR CONTINUE
-ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
-WHENEVER SQLERROR EXIT SQL.SQLCODE
-SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
-EXIT
-SQL
-'
     lib_run in_dev "
 set -e
 ks_dir=${WALLET_DIR_CONTAINER}/tde
@@ -211,7 +197,14 @@ echo \"fresh empty keystore directory: \${ks_dir}\"
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
+WHENEVER SQLERROR CONTINUE
+-- Close only now. An auto-login keystore re-opens itself immediately while
+-- cwallet.sso is still on disk - closing before the move left the keystore
+-- OPEN/LOCAL_AUTOLOGIN, so the OPEN below failed with ORA-28354 and the
+-- SET KEY with ORA-28417. With the files gone there is nothing to re-open.
+ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE;
 WHENEVER SQLERROR EXIT SQL.SQLCODE
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 -- No path: WALLET_ROOT is configured, so Oracle derives WALLET_ROOT/tde
 -- itself. Passing an explicit path fails with ORA-46633 - and the path in
 -- this single-quoted section would have been expanded inside the container,
