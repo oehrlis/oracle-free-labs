@@ -205,13 +205,35 @@ fi
     local tek_source
     tek_source=$(read_state "SOURCE_TEK")
 
+    # Counter-proof to variant D: there the canary ciphertext was reproduced
+    # byte for byte despite a new MEK. ONLINE REKEY has to do the opposite -
+    # rewrite the blocks under new key material. ONLINE conversion preserves
+    # ROWIDs, so the canary rows sit at the same block addresses and the
+    # comparison is meaningful.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${PROD_PDB}" "CANARY_TDE") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all differing)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN"
     elif [[ "${tek_after}" != "${tek_source}" && "${tek_after}" != "${tek_before}" ]]; then
-        verdict="PASS"
-        msg="TEK changed by ONLINE REKEY (${kv_before} -> ${kv_after}), differs from prod baseline"
+        if [[ ${canary_rc} -eq 1 ]]; then
+            verdict="PASS"
+            msg="TEK changed by ONLINE REKEY (${kv_before} -> ${kv_after}) and the canary ciphertext changed with it (${canary_cmp}) - new key material, blocks rewritten"
+        elif [[ ${canary_rc} -eq 2 ]]; then
+            verdict="FAIL"
+            msg="TEK changed but the canary blocks could not be compared - no verdict possible"
+        else
+            verdict="FAIL"
+            msg="TEK changed but the canary ciphertext is unchanged (${canary_cmp}) - contradictory, a new TEK must rewrite the blocks"
+        fi
     elif [[ "${tek_after}" == "${tek_source}" ]]; then
         verdict="FAIL"
         msg="TEK still matches prod baseline after ONLINE REKEY - no new TEK generated"
