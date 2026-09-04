@@ -886,7 +886,8 @@ ensure_independent_dev_cdb() {
     if [[ "${health}" != "healthy" ]]; then
         lib_warn "dev container health is '${health}' - rebuilding ${DEV_SERVICE}"
         reset_service "${DEV_SERVICE}"
-        wait_for_ready "${DEV_SERVICE}"
+        start_service "${DEV_SERVICE}"
+        wait_for_ready "${DEV_SERVICE}" 600
         dbid_dev=$(get_dbid "${DEV_SERVICE}") || return 1
         if [[ "${dbid_prod}" == "${dbid_dev}" ]]; then
             lib_err "dev still carries prod DBID ${dbid_dev} after the rebuild"
@@ -904,7 +905,8 @@ ensure_independent_dev_cdb() {
     lib_warn "dev carries the same DBID as prod (${dbid_dev}) - it is a restore of the source"
     lib_warn "resetting ${DEV_SERVICE}: a restore of the source cannot stand in for a foreign CDB"
     reset_service "${DEV_SERVICE}"
-    wait_for_ready "${DEV_SERVICE}"
+    start_service "${DEV_SERVICE}"
+    wait_for_ready "${DEV_SERVICE}" 600
     dbid_dev=$(get_dbid "${DEV_SERVICE}") || return 1
     if [[ "${dbid_prod}" == "${dbid_dev}" ]]; then
         lib_err "dev still carries prod DBID ${dbid_dev} after the reset"
