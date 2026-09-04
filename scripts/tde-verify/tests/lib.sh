@@ -577,6 +577,15 @@ collect_evidence() {
         return 0
     fi
 
+    # Clear the set first. A retried step otherwise leaves the fingerprint of
+    # the previous attempt behind - the datafile name changes on a clone or an
+    # online rekey, so the directory ends up holding two, pairing fails, and a
+    # single-file fallback would pick an arbitrary one of them.
+    if [[ -d "${EVIDENCE_ROOT}/${label}" ]]; then
+        lib_info "clearing stale evidence set '${label}'"
+        rm -rf "${EVIDENCE_ROOT:?}/${label:?}"
+    fi
+
     lib_info "collecting evidence set '${label}' from ${svc}"
     "${EVIDENCE_SCRIPT}" \
         --service "${svc}" \
@@ -740,12 +749,17 @@ EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
         lib_err "could not determine the canary block numbers in ${svc}"
         return 2
     fi
-    fp_a=$(find "${EVIDENCE_ROOT}/${a}" -maxdepth 1 -name '*.fp' 2>/dev/null | head -1)
-    fp_b=$(find "${EVIDENCE_ROOT}/${b}" -maxdepth 1 -name '*.fp' 2>/dev/null | head -1)
-    if [[ -z "${fp_a}" || -z "${fp_b}" ]]; then
-        lib_err "missing fingerprint in evidence set ${a} or ${b}"
+    local n_a n_b
+    n_a=$(find "${EVIDENCE_ROOT}/${a}" -maxdepth 1 -name '*.fp' 2>/dev/null | wc -l | tr -d ' ')
+    n_b=$(find "${EVIDENCE_ROOT}/${b}" -maxdepth 1 -name '*.fp' 2>/dev/null | wc -l | tr -d ' ')
+    # Exactly one fingerprint per set, or the choice would be arbitrary and the
+    # comparison could silently run against a leftover from an earlier attempt.
+    if [[ "${n_a}" != "1" || "${n_b}" != "1" ]]; then
+        lib_err "evidence set ${a} holds ${n_a} fingerprints, ${b} holds ${n_b} - expected exactly one each"
         return 2
     fi
+    fp_a=$(find "${EVIDENCE_ROOT}/${a}" -maxdepth 1 -name '*.fp')
+    fp_b=$(find "${EVIDENCE_ROOT}/${b}" -maxdepth 1 -name '*.fp')
     local blockfile
     blockfile=$(mktemp)
     printf '%s\n' "${blocks}" >"${blockfile}"
