@@ -236,14 +236,28 @@ SELECT COUNT(*) AS enc_ts_count FROM v\$encrypted_tablespaces WHERE ts# = (SELEC
 EXIT
 "
 
+    # The restore ended in OPEN RESETLOGS, which restarts the instance and
+    # closes a password-opened keystore. Without this the SET KEY below and the
+    # offline encryption fail with ORA-28365.
+    step_header "Reopen the keystore after RESETLOGS"
+    ensure_autologin_for "${DEV_SERVICE}"
+
     # Phase 3: SET KEY to a dev-own MEK
-    step_header "SET KEY to dev-own MEK (rotates CDB and PDB master keys)"
+    # Per container, not CONTAINER=ALL: PDB$SEED has no master key, so
+    # CONTAINER=ALL fails with ORA-46663 "master encryption keys not created for
+    # all PDBs for REKEY" and leaves the rotation half done.
+    step_header "SET KEY to dev-own MEK (CDB\$ROOT and ${PROD_PDB} separately)"
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
-ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP CONTAINER=ALL;
-SELECT key_id, keystore_type, origin FROM v\$encryption_keys ORDER BY activation_time DESC;
+SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" WITH BACKUP;
+ALTER SESSION SET CONTAINER='"${PROD_PDB}"';
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" WITH BACKUP;
+ALTER SESSION SET CONTAINER=CDB\$ROOT;
+COLUMN key_id FORMAT A54
+SELECT key_id, origin, con_id FROM v\$encryption_keys ORDER BY con_id;
 EXIT
 SQL
 '

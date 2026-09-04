@@ -600,3 +600,66 @@ print_key_summary() {
 }
 
 # --- EOF lib.sh ---------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Function: ensure_autologin_for
+# Purpose.: Give a service its own auto-login keystore and verify it is open
+# Args....: $1  container name
+# Returns.: 0 keystore open, 1 otherwise
+# Output..: the resulting v$encryption_wallet rows
+# Depends.: docker, sqlplus
+# Example.: ensure_autologin_for odbencdev
+# Notes...: Any step that restarts the instance - OPEN RESETLOGS does, and so
+#           does DUPLICATE - loses a keystore that was opened with a password.
+#           A transported keystore also carries the source cwallet.sso, a LOCAL
+#           auto-login file bound to its creating host, which does not open here
+#           and blocks creating a new one with ORA-46630. Move the foreign one
+#           aside, keep ewallet.p12, create the auto-login locally. PDB$SEED is
+#           excluded from the check: its keystore is closed in normal operation.
+# ------------------------------------------------------------------------------
+ensure_autologin_for() {
+    local svc="$1"
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would recreate the auto-login keystore in ${svc}"
+        return 0
+    fi
+    if ! docker exec "${svc}" test -s /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt; then
+        lib_warn "no wallet_pwd.txt in ${svc} - cannot recreate the auto-login"
+        return 0
+    fi
+
+    lib_info "recreating the auto-login keystore in ${svc}"
+    docker exec -i "${svc}" bash -s <<'INNER' | grep -viE "identified by"
+set -u
+W="/opt/oracle/dbconfig/FREE/wallet"
+XCH="/opt/oracle/xchange"
+mkdir -p "${XCH}/sso_foreign"
+mv "${W}"/tde/cwallet*.sso "${XCH}/sso_foreign/" 2>/dev/null || true
+PW="$(cat "${W}/wallet_pwd.txt")"
+sqlplus -S / as sysdba >/tmp/al.$$.log 2>&1 <<SQL
+WHENEVER SQLERROR CONTINUE
+SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
+ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE KEYSTORE IDENTIFIED BY "${PW}" CONTAINER=ALL;
+ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE FROM KEYSTORE '${W}/tde' IDENTIFIED BY "${PW}";
+COLUMN status FORMAT A20
+COLUMN wallet_type FORMAT A16
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
+EXIT
+SQL
+grep -viE "identified by" /tmp/al.$$.log
+rm -f /tmp/al.$$.log
+INNER
+
+    local closed
+    closed=$(printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$encryption_wallet w
+WHERE w.status NOT IN ('OPEN','OPEN_NO_MASTER_KEY')
+AND NOT EXISTS (SELECT 1 FROM v\$pdbs p WHERE p.con_id = w.con_id AND p.name = 'PDB\$SEED');
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
+        | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+    if [[ -z "${closed}" || "${closed}" != "0" ]]; then
+        lib_err "keystore in ${svc} is not open after recreating the auto-login"
+        return 1
+    fi
+    lib_info "keystore in ${svc} open via local auto-login"
+}
