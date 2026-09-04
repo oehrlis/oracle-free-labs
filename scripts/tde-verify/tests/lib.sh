@@ -874,8 +874,19 @@ ensure_independent_dev_cdb() {
         lib_info "DRY-RUN: would compare the DBIDs of ${PROD_SERVICE} and ${DEV_SERVICE}"
         return 0
     fi
-    local dbid_prod dbid_dev health
+    local dbid_prod dbid_dev health running
     dbid_prod=$(get_dbid "${PROD_SERVICE}") || return 1
+
+    # A previous failed attempt can leave the container removed or stopped.
+    # This has to be handled here as well, because require_container runs
+    # before this helper in the calling steps - and an absent container is
+    # precisely what it would abort on.
+    running=$(docker inspect -f '{{.State.Running}}' "${DEV_SERVICE}" 2>/dev/null || echo absent)
+    if [[ "${running}" != "true" ]]; then
+        lib_warn "dev container is '${running}' - starting ${DEV_SERVICE}"
+        start_service "${DEV_SERVICE}"
+        wait_for_ready "${DEV_SERVICE}" 600
+    fi
 
     # An unhealthy dev has to be rebuilt too, and the check has to happen here
     # rather than in a precheck: the broken CDB temp file is what makes the
