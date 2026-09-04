@@ -1211,3 +1211,22 @@ Konsequenzen:
 - Zwei Defekte in der PDB-Serie vor dem ersten Lauf gefunden und behoben:
   SIGPIPE-Abbruch in der Variableninitialisierung (Schritte 63/65) und
   Secrets im Host-Prozesslisting via `docker exec bash -c` (Schritt 65).
+
+### Messwert Variante D, isoliert auf die Canary-Bloecke (2026-09-04)
+
+Runde 1 hatte fuer Variante D 1406 identische / 1155 abweichende Bloecke ueber
+das ganze Datafile gemeldet. Die Differenz stammt aus nie benutzten Bloecken,
+die RMAN nicht sichert und beim Restore neu schreibt - sie sagen nichts.
+Auf die Bloecke reduziert, die tatsaechlich Canary-Zeilen tragen:
+
+```text
+canary blocks: identical 313  differing 0  total 313
+```
+
+Ein vollstaendiger `OFFLINE DECRYPT` -> neuer MEK -> `OFFLINE ENCRYPT`-Zyklus
+reproduziert das Chiffrat der Quelle **byteweise**. Gewrappter TEK und
+MASTERKEYID sind neu, das Chiffrat ist unveraendert. Damit ist belegt, dass die
+Offline-Konversion den Database Key des Containers verwendet und kein neues
+Tablespace-Schluesselmaterial erzeugt - und dass `ENCRYPTEDKEY` aus
+`V$ENCRYPTED_TABLESPACES` als Beweismittel untauglich ist: der Wert aendert
+sich beim reinen Re-wrap genauso wie bei neuem Schluesselmaterial.
