@@ -145,7 +145,7 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 SELECT COUNT(*) FROM v\$encrypted_tablespaces;
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
         if [[ "${enc_count:-1}" -ne 0 ]]; then
             lib_err "Gate: V\$ENCRYPTED_TABLESPACES still has ${enc_count} row(s) after OFFLINE DECRYPT"
             lib_err "All tablespaces must be decrypted before discarding the master key handles"

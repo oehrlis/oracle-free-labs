@@ -110,7 +110,7 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${target_pdb};
 SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
     else
         mkid_before="DRY-RUN-MKID-BEFORE"
         tek_before="DRY-RUN-TEK-BEFORE"
@@ -151,7 +151,7 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${target_pdb};
 SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
     else
         mkid_after="DRY-RUN-MKID-AFTER"
         tek_after="DRY-RUN-TEK-AFTER"
@@ -184,6 +184,12 @@ EXIT
     write_state "PDB_P6_MKID_AFTER"  "${mkid_after}"
 
     local kv_before_int kv_after_int
+    # Falling back to 0 keeps the comparison from crashing, but a missing value
+    # means the measurement failed - say so instead of folding it into the result.
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        [[ -n "${kv_before}" ]] || lib_warn "KEY_VERSION before REKEY not measured, treating as 0"
+        [[ -n "${kv_after}"  ]] || lib_warn "KEY_VERSION after REKEY not measured, treating as 0"
+    fi
     kv_before_int="${kv_before:-0}"
     kv_after_int="${kv_after:-0}"
 

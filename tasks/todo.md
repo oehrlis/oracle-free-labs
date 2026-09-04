@@ -1176,3 +1176,22 @@ Konsequenzen:
       Weg zu einer eigenen DBID nach einem Restore, und eine neue DBID aendert
       Identitaet, nicht Schluesselmaterial - der TEK bleibt. Als Erwartung
       kennzeichnen, nicht als Messung.
+
+### Hinweise Stefan zu den offenen Schritten (2026-09-04)
+
+- **Schritt 60, `_db_discard_lost_masterkey`:** bisher nur in Single-Tenant
+  genutzt. Deckt sich mit unserer Messung, dass der Parameter in der PDB gesetzt
+  werden muss. Fuer Multitenant ist das Verhalten damit nicht durch Praxis
+  gedeckt - im Protokoll als solches kennzeichnen.
+- **Schritte 63 und 64, PDB-Archiv:** eine entladene PDB kann nicht einfach
+  wieder eingesteckt werden, sie muss dazwischen geloescht werden. Die Skripte
+  machen das bereits: `UNPLUG INTO ... .pdb`, dann
+  `DROP PLUGGABLE DATABASE ... INCLUDING DATAFILES`, dann
+  `CREATE PLUGGABLE DATABASE ... USING <archiv>`.
+  Offener Punkt, im Lauf zu belegen: bei der Endung `.pdb` erzeugt Oracle ein
+  selbsttragendes Archiv inklusive Datafiles, bei `.xml` nur das Manifest. Nur
+  im ersten Fall ist `INCLUDING DATAFILES` korrekt. Indikator ist die
+  Archivgroesse - liegt sie im GB-Bereich, sind die Datafiles enthalten.
+- **Schritt 65, Remote Clone:** braucht nur den DB-Link und den Benutzer, keine
+  weiteren Vorkehrungen. In einer Produktionsumgebung mit einer 15 TB grossen PDB
+  so durchgefuehrt. Unser Aufbau entspricht dem.

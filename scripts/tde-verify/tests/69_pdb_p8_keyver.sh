@@ -137,7 +137,7 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${CLONE_SRC_PDB};
 SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
     else
         kv_source="1"
     fi
@@ -151,7 +151,7 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${target_pdb};
 SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
     else
         kv_target="0"
     fi

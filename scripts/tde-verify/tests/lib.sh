@@ -394,7 +394,7 @@ get_dbid() {
 SELECT dbid FROM v\$database;
 EXIT" \
     | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
-    | awk 'NF && /^[0-9]+$/ { print $1; exit }'
+    | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }'
 }
 
 # ------------------------------------------------------------------------------
