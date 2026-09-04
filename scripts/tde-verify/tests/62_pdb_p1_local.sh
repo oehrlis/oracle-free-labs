@@ -91,17 +91,27 @@ main() {
     # Without OMF, CREATE PLUGGABLE DATABASE fails with ORA-65016.
     ensure_omf "${PROD_SERVICE}"
 
+    # Measured: even a local clone inside the same CDB needs the keystore
+    # password once the source has encrypted tablespaces - without the KEYSTORE
+    # clause the CREATE fails with ORA-46697, "Keystore password required".
+    # An auto-login keystore is not enough for this operation. Passed via stdin
+    # so the password never appears in the host process list.
     step_header "Clone ${CLONE_SRC_PDB} -> ${CLONE_P1_PDB} (local)"
-    sqlplus_prod "
+    # shellcheck disable=SC1078,SC1079
+    lib_run in_prod_stdin '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR CONTINUE
-ALTER PLUGGABLE DATABASE ${CLONE_P1_PDB} CLOSE IMMEDIATE;
-DROP PLUGGABLE DATABASE ${CLONE_P1_PDB} INCLUDING DATAFILES;
+ALTER PLUGGABLE DATABASE '"${CLONE_P1_PDB}"' CLOSE IMMEDIATE;
+DROP PLUGGABLE DATABASE '"${CLONE_P1_PDB}"' INCLUDING DATAFILES;
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-CREATE PLUGGABLE DATABASE ${CLONE_P1_PDB} FROM ${CLONE_SRC_PDB};
-ALTER PLUGGABLE DATABASE ${CLONE_P1_PDB} OPEN READ WRITE;
-SELECT name, open_mode FROM v\$pdbs WHERE name='${CLONE_P1_PDB}';
+CREATE PLUGGABLE DATABASE '"${CLONE_P1_PDB}"' FROM '"${CLONE_SRC_PDB}"'
+  KEYSTORE IDENTIFIED BY "${KSPWD}";
+ALTER PLUGGABLE DATABASE '"${CLONE_P1_PDB}"' OPEN READ WRITE;
+SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_P1_PDB}"''"'"';
 EXIT
-"
+SQL
+'
 
     # Query ORIGIN from the clone
     step_header "Query key chain in ${CLONE_P1_PDB}"
