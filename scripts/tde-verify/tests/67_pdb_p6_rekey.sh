@@ -193,18 +193,34 @@ EXIT
     kv_before_int="${kv_before:-0}"
     kv_after_int="${kv_after:-0}"
 
+    # Counterpart to P5: there the ciphertext had to stay identical, here it
+    # has to change. A new tablespace key that does not rewrite the blocks
+    # would be a re-wrap wearing a new KEY_VERSION. ONLINE conversion preserves
+    # ROWIDs, so the canary rows keep their block addresses.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all differing)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
-    elif [[ "${tek_after}" != "${tek_before}" ]]; then
+    elif (( kv_after_int <= kv_before_int )); then
+        verdict="FAIL"
+        msg="P6: KEY_VERSION did not increase (${kv_before_int} -> ${kv_after_int}) - ONLINE REKEY may not have executed"
+    elif [[ ${canary_rc} -eq 1 ]]; then
         verdict="PASS"
-        msg="P6: ONLINE REKEY created new TEK (KEY_VERSION ${kv_before_int} -> ${kv_after_int})"
-    elif (( kv_after_int > kv_before_int )); then
-        verdict="PASS"
-        msg="P6: KEY_VERSION increased (${kv_before_int} -> ${kv_after_int}); TEK value may appear same due to ENCRYPTEDKEY format"
+        msg="P6: ONLINE REKEY created new key material (KEY_VERSION ${kv_before_int} -> ${kv_after_int}) and rewrote the data blocks (${canary_cmp}) - the ciphertext no longer matches prod"
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="P6: KEY_VERSION increased but the canary blocks could not be compared - no verdict possible"
     else
         verdict="FAIL"
-        msg="P6: KEY_VERSION did not increase - ONLINE REKEY may not have executed"
+        msg="P6: KEY_VERSION increased (${kv_before_int} -> ${kv_after_int}) but the ciphertext is unchanged (${canary_cmp}) - that is a re-wrap, not new key material"
     fi
 
     print_key_summary "before ONLINE REKEY" "${mkid_before}" "${tek_before}" "KEY_VERSION=${kv_before}"
