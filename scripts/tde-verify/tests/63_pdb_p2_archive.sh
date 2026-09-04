@@ -107,13 +107,15 @@ main() {
 
     require_command docker
     require_container "${PROD_SERVICE}"
-    require_container "${DEV_SERVICE}"
     require_healthy   "${PROD_SERVICE}"
-    # Before the dev health requirement: the RMAN variants leave dev as a
-    # restore of prod - same DBID - and with a CDB temp file that no longer
-    # verifies, which is exactly what makes the health check fail. P2/P7/P8
-    # claim a foreign CDB, so rebuilding is part of the method.
+    # Ahead of both dev requirements. The RMAN variants leave dev as a restore
+    # of prod - same DBID - with a CDB temp file that no longer verifies, and a
+    # failed attempt can leave the container removed altogether. Those are the
+    # very states require_container and require_healthy abort on, so the repair
+    # has to come first. P2/P7/P8 claim a foreign CDB, which a restore of the
+    # source is not, so rebuilding is part of the method.
     ensure_independent_dev_cdb
+    require_container "${DEV_SERVICE}"
     require_healthy   "${DEV_SERVICE}"
     require_state "PDBCLONE_READY" "PDB testbed (run step 61 first)"
 
