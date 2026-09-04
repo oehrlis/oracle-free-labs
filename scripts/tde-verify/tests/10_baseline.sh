@@ -97,8 +97,13 @@ main() {
     # Create the canary in the encrypted USERS tablespace
     step_header "Create canary in USERS (encrypted)"
     sqlplus_prod "
-WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER SQLERROR CONTINUE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
+-- A rerun finds USERS still READ ONLY from the previous pass, and the canary
+-- insert then fails with ORA-01647. Setting it writable first keeps this step
+-- repeatable on its own, not only after a full reset in step 00.
+ALTER TABLESPACE USERS READ WRITE;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 @/opt/oracle/common/scripts/csenc_canary.sql ${CANARY_OWNER} USERS ${CANARY_MARKER} ${CANARY_ROWS} CANARY_TDE
 EXIT
 "
