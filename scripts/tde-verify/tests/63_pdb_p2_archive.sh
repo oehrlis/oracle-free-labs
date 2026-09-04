@@ -139,7 +139,7 @@ EXIT" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
     # UNPLUG refuses to overwrite an existing archive (ORA-65288), so a retried
     # step would fail on the leftover from the previous attempt.
     step_header "Remove a leftover PDB archive if present"
-    lib_run in_prod "rm -f ${ARCHIVE_PATH}; ls -la ${ARCHIVE_PATH} 2>/dev/null || echo 'no leftover archive'"
+    lib_run in_prod "if [ -f ${ARCHIVE_PATH} ]; then rm -f ${ARCHIVE_PATH} && echo 'removed leftover archive ${ARCHIVE_PATH}'; else echo 'no leftover archive at ${ARCHIVE_PATH}'; fi"
 
     # The transport secret takes double quotes. Measured with a syntax probe
     # against a non-existent PDB: single quotes give ORA-00922, double quotes
@@ -210,7 +210,12 @@ CREATE PLUGGABLE DATABASE '"${CLONE_P2_PDB}"'
   USING '"'"''"${ARCHIVE_PATH}"''"'"'
   DECRYPT USING "'"${P2_SECRET}"'"
   KEYSTORE IDENTIFIED BY "${KSPWD}"
-  COPY TEMPFILE REUSE;
+  -- No TEMPFILE REUSE when plugging into the other CDB: the temp file path
+  -- recorded in the archive is /opt/oracle/oradata/FREE/temp01.dbf, and both
+  -- containers run the same image, so REUSE tries to adopt the target CDB own
+  -- temp file and fails with ORA-01187 on data file 1025. Without the clause
+  -- Oracle creates a fresh temp file under db_create_file_dest.
+  COPY;
 ALTER PLUGGABLE DATABASE '"${CLONE_P2_PDB}"' OPEN READ WRITE;
 SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_P2_PDB}"''"'"';
 EXIT
