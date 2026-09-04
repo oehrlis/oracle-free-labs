@@ -119,6 +119,11 @@ main() {
     fi
 
     # Phase 1: Close and UNPLUG PDBCLONE with ENCRYPT USING
+    # PDBs are created in both containers here; without OMF every
+    # CREATE PLUGGABLE DATABASE fails with ORA-65016.
+    ensure_omf "${PROD_SERVICE}"
+    ensure_omf "${DEV_SERVICE}"
+
     step_header "Phase 1: UNPLUG ${CLONE_SRC_PDB} with key encryption"
     sqlplus_prod "
 WHENEVER SQLERROR EXIT SQL.SQLCODE

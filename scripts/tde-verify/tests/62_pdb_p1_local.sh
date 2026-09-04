@@ -88,6 +88,9 @@ main() {
     require_state "PDBCLONE_READY" "PDB testbed (run step 61 first)"
 
     # Clone PDBCLONE_P1 locally (idempotent: drop first)
+    # Without OMF, CREATE PLUGGABLE DATABASE fails with ORA-65016.
+    ensure_omf "${PROD_SERVICE}"
+
     step_header "Clone ${CLONE_SRC_PDB} -> ${CLONE_P1_PDB} (local)"
     sqlplus_prod "
 WHENEVER SQLERROR CONTINUE
