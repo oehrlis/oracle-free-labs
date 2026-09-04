@@ -353,13 +353,27 @@ do_compare() {
             return 1
         fi
     done
+    # Datafiles are paired by name. ONLINE REKEY writes a brand new datafile, and a
+    # rebuilt lab gives the same tablespace a different OMF name, so a strict name
+    # match would report "nothing compared" on exactly the runs that matter. When
+    # both sets hold a single datafile, pair them regardless of name and say so.
+    local count_a count_b
+    count_a=$(find "${dir_a}" -maxdepth 1 -name '*.fp' | wc -l | tr -d ' ')
+    count_b=$(find "${dir_b}" -maxdepth 1 -name '*.fp' | wc -l | tr -d ' ')
+
     for fp in "${dir_a}"/*.fp; do
         [[ -e "${fp}" ]] || continue
         base="${fp##*/}"
         counterpart="${dir_b}/${base}"
         if [[ ! -f "${counterpart}" ]]; then
-            log_warn "no counterpart for ${base} in set '${b}', skipping"
-            continue
+            if [[ "${count_a}" -eq 1 && "${count_b}" -eq 1 ]]; then
+                counterpart="$(find "${dir_b}" -maxdepth 1 -name '*.fp' | head -1)"
+                log_warn "datafile renamed between the two sets: ${base} vs ${counterpart##*/}"
+                log_warn "pairing them anyway because each set holds exactly one datafile"
+            else
+                log_warn "no counterpart for ${base} in set '${b}', skipping"
+                continue
+            fi
         fi
         found=$((found + 1))
         echo

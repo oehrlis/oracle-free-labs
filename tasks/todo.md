@@ -818,3 +818,161 @@ Auflagen, die in Protokoll und Praesentation mitstehen muessen:
 - im Fenster zwischen Schritt 2 und 6 liegen die Daten unverschluesselt
 
 - [x] `_db_discard_lost_masterkey` korrekt gemessen
+
+## Runde 2 - Klaerung, Aufbereitung, End-to-End (Plan 2026-09-04)
+
+### Korrekturen an Runde 1 - zwingend vor der Praesentation
+
+1. **ONLINE REKEY ist in Free technisch verfuegbar.** Gemessen: KEY_VERSION 3 -> 4,
+   TEK D40B030F...F03F -> A4C84E43...426B, 2560 von 2561 Bloecken geaendert (nur
+   Block 0, der OS-Dateikopf, bleibt gleich), altes Datafile physisch entfernt und
+   durch ein neues ersetzt, alte TEKs im neuen File nicht mehr auffindbar.
+   Die Licensing Restriction ist eine Lizenz- und Supportaussage, kein technischer
+   Riegel. Frueherer Protokolltext "in Free nicht pruefbar" ist falsch.
+2. **Variante C erzeugte kein neues Schluesselmaterial.** Der in Runde 1 als "neuer
+   gemeinsamer TEK" gemeldete Wert 566B2C9C...69CE ist der **Database Key der PDB in
+   der Quelle**. AS ENCRYPTED hat die fuenf unverschluesselten Tablespaces unter dem
+   bereits vorhandenen Database Key verschluesselt. Die Aussage "fuer eine
+   unverschluesselte Quelle entsteht nachweislich neues Schluesselmaterial" ist falsch.
+3. `tde_evidence.sh --compare` paart Fingerprints ueber den Dateinamen. ONLINE REKEY
+   legt ein neues Datafile an, dadurch lief der Vergleich stumm leer. Der leere Fall
+   muss laut werden und der Vergleich bei genau einem Datafile je Satz namensunabhaengig.
+
+### Drei Schluesselebenen - gemessen an odbencprod
+
+| Ebene | Wo sichtbar | Format | Wert in der Baseline | Rolle |
+|---|---|---|---|---|
+| MEK | `v$encryption_keys`, Keystore | KEY_ID base64 | CDB AX6Pmn3Z..., PDB AQHQDfbA... | wickelt die Ebenen darunter ein, liegt im Keystore |
+| Database Key | `v$database_key_info` | RAW(48), 32 Byte signifikant | CDB 61E7C128..., PDB 566B2C9C...69CE | je Container einer, existiert auch wenn SYSTEM/UNDO/TEMP unverschluesselt sind |
+| Tablespace Key | `v$encrypted_tablespaces` | RAW(32) | USERS E36623EC...934F | je verschluesselter Tablespace einer, liegt gewrappt im Datafile-Header |
+
+Offen und zu klaeren: wo genau liegt der Database Key physisch, wird er direkt vom
+MEK gewrappt, und was passiert mit ihm bei MEK-Rekey, ONLINE REKEY und Klon.
+
+### Arbeitspakete
+
+- [ ] AP1 Schluesselebenen abschliessend klaeren: MEK, Database Key, TS Key -
+      Speicherort, Wrapping-Beziehung, Verhalten bei jeder Operation. Messung plus
+      Doku-Recherche.
+- [ ] AP2 Mermaid-Grafiken: Schluesselhierarchie mit Keystore-Dateien, Varianten je
+      Diagramm, Variantenvergleich, Testumgebung, Ablaufdiagramm, Stufenmodell der
+      Unabhaengigkeit, Angriffsflaechen. Nur Mermaid, Stefan macht sie schoen.
+- [ ] AP3 Varianten tabellarisch und grafisch konsolidieren - ein Ueberblick, der
+      den Chatverlauf ersetzt.
+- [ ] AP4 Testumgebung und Testfaelle dokumentieren, inkl. Architektur und Ablauf.
+- [ ] AP5 Runbook separat und vollstaendig, fuer die manuelle Verifikation.
+- [ ] AP6 Stufenmodell kryptografische Unabhaengigkeit: welche Stufe erreicht welches
+      Verfahren, was bleibt jeweils gemeinsam.
+- [ ] AP7 Angriffsflaechen: was ist mit MEK, Database Key, TS Key aus einer Test-DB
+      hypothetisch und was real moeglich. Trennung zwingend.
+- [ ] AP8 OKV-Argumentation gegen die beiden Kundeneinwaende.
+- [ ] AP9 Praesentation im Accenture-Brand.
+- [ ] AP10 End-to-End-Lauf auf gruener Wiese, alle Varianten, protokolliert.
+
+### Abhaengigkeitsmodell MEK / Database Key / Tablespace Key - gemessen 2026-09-04
+
+Alle Werte an odbencdev gemessen, Container ODBENCPROD, UNITED Mode.
+
+Die drei Ebenen:
+
+| Ebene | View | Format | Speicherort | Anzahl |
+|---|---|---|---|---|
+| MEK | `v$encryption_keys` | KEY_ID base64 | Keystore `ewallet.p12` | je Container ein aktiver, dazu die Historie |
+| Database Key | `v$database_key_info` | RAW(48), 32 Byte signifikant | von Oracle verwaltet, vom MEK gewrappt | je Container einer |
+| Tablespace Key | `v$encrypted_tablespaces` | RAW(32) | gewrappt im Datafile-Header, bei 8K in Block 1 Byte 785 | je verschluesseltem Tablespace einer |
+
+Der zentrale, vorher unklare Punkt: **ein Tablespace hat nicht zwingend einen eigenen
+Schluessel.** Gemessen:
+
+- `ALTER TABLESPACE ... ENCRYPTION OFFLINE ENCRYPT` verschluesselt den Tablespace mit
+  dem **Database Key** des Containers. Nach Variante F trug USERS als Schluessel exakt
+  den DB-Key-Wert D40B030F...F03F.
+- `ALTER TABLESPACE ... ENCRYPTION ONLINE ENCRYPT` und `ONLINE REKEY` erzeugen einen
+  **eigenen** Tablespace Key. CANARY_PLAIN erhielt A1EBE741..., USERS nach ONLINE REKEY
+  A4C84E43...426B - beide verschieden vom DB Key.
+- `RMAN ... AS ENCRYPTED` verschluesselt zuvor unverschluesselte Tablespaces ebenfalls
+  mit dem **Database Key der Quelle**. In Variante C erhielten SYSTEM, SYSAUX, UNDOTBS1,
+  AUDIT_DATA und CANARY_PLAIN alle den Wert 566B2C9C...69CE, den DB Key der Quell-PDB.
+
+Damit deckt sich die gemessene Mechanik mit dem Doku-Wortlaut zu Online-Operationen,
+"the tablespace will have its own independent encryption keys and algorithms".
+
+Wirkung je Operation, gemessen:
+
+| Operation | MEK | Database Key | Tablespace Key | Datenbloecke |
+|---|---|---|---|---|
+| `SET KEY` MEK-Rotation | neu | neu gewrappt, Klartextschluessel gleich | neu gewrappt, KEY_VERSION unveraendert | unveraendert, 2560 von 2561 identisch, nur Header-Block 1 |
+| `ONLINE REKEY` | unveraendert | unveraendert | **neuer Schluessel**, KV plus 1 | **alle neu verschluesselt**, neues Datafile, altes entfernt |
+| `ONLINE ENCRYPT` | unveraendert | unveraendert | **neuer eigener Schluessel** | verschluesselt |
+| `OFFLINE ENCRYPT` | unveraendert | unveraendert | **uebernimmt den Database Key** | verschluesselt |
+| `OFFLINE DECRYPT` | unveraendert | unveraendert | Handle bleibt im Header stehen | entschluesselt |
+| RMAN `AS ENCRYPTED` | Quelle | Quelle | unverschluesselte TS erhalten den DB Key, verschluesselte behalten ihren | bei bereits verschluesselten unveraendert |
+
+Belege fuer die MEK-Rotation im Detail:
+
+- MEK mkid B0A4B54D...0B74 -> DEFA0240...6A3A
+- DB Key PDB gespeicherter Wert D40B030F...F03F -> 2349D6D3...9B7A, mkid folgt dem MEK
+- TS Key USERS gespeicherter Wert A4C84E43...426B -> B1DB7C22...A8BE, KEY_VERSION bleibt 4
+- Blockvergleich: 2560 von 2561 identisch, Verdict "RE-WRAP INDICATED"
+- Alert Log woertlich: "KZTDE: Set Master Key: Tablespace key rewrap done"
+
+**Read-only-Tablespaces werden bei der MEK-Rotation nicht umgewickelt.** CANARY_PLAIN
+stand auf READ ONLY und verweist danach weiter auf den alten MEK B0A4B54D...0B74,
+waehrend USERS und der DB Key auf DEFA0240...6A3A zeigen. Oracle kann den Header eines
+Read-only-Tablespace nicht schreiben. Folge: der alte MEK bleibt zwingend erforderlich,
+und genau deshalb muss die vollstaendige Schluesselhistorie im Keystore bleiben.
+Operativ relevant, weil Archiv-Tablespaces haeufig read-only sind.
+
+### Angriffsflaechen - gemessen 2026-09-04
+
+Testreihe zu den beiden Kundeneinwaenden. Alle Aussagen gemessen, nicht hergeleitet.
+
+**A1 Sind die Nutzdaten in der Produktion im Klartext auffindbar?**
+Klartext-Scan des Prod-Datafiles nach dem Canary-Marker: 0 Treffer. Im
+unverschluesselten Kontroll-Tablespace derselben Datenbank: 313 Treffer. Die
+Verschluesselung wirkt, und der Test ist falsifizierbar.
+
+**A2 Liegt der Tablespace-Key im Datafile?**
+Ja, als gewrappte Bytefolge, genau 1 Treffer bei Offset 8977 gleich Block 1 Byte 785.
+Er ist damit fuer jeden lesbar, der das Datafile hat - aber nur in mit dem MEK
+verschluesselter Form.
+
+**A3 Kann eine Test-DB ohne Prod-MEK Prod-Daten restaurieren oder lesen?**
+Nein. RMAN-Restore von Prods verschluesseltem Tablespace in die Test-DB, deren Keystore
+ausschliesslich eigene Schluessel enthaelt (Prod-MEKs: 0 von 6):
+
+```text
+ORA-19870: error while restoring backup piece .../0506atr0_5_1_1
+ORA-28374: typed master key not found in wallet
+```
+
+Der Restore bricht ab, bevor ueberhaupt gelesen wird. Die Test-DB kennt alle
+TS-Key-Werte aus ihren eigenen V$-Views - das nuetzt nichts.
+
+**A4 Verraet byteidentisches Chiffrat etwas?**
+Nach Variante A sind 313 von 313 Canary-Datenbloecken byteidentisch zur Produktion.
+Nach Variante F sind 2561 von 2561 Bloecken unterschiedlich. Was identisches Chiffrat
+tatsaechlich preisgibt, ist ein Existenz- und Aenderungsvergleich: wer Prod- und
+Test-Datafile hat, erkennt blockweise, ob sich ein Datenblock zwischen den beiden
+unterscheidet, ohne ihn zu entschluesseln. Klartext gewinnt er dadurch nicht.
+
+**Einordnung der Kundeneinwaende, ausschliesslich auf diese Messungen gestuetzt:**
+
+Einwand "man kann mit den TS-Key-Infos aus der Test die Prod entschluesseln" ist so
+nicht zutreffend. Der Tablespace-Key ist ueberall nur gewrappt verfuegbar, im
+Datafile-Header und in `v$encrypted_tablespaces`. Ohne den zugehoerigen MEK ist er
+nicht verwertbar, und der Restore scheitert bereits an ORA-28374.
+
+Der real gefaehrliche Punkt liegt anders und wird von dem Einwand verdeckt: die
+gaengige Klon-Praxis, Variante A, **kopiert den Prod-Keystore in die Non-Prod**. Damit
+liegt der Prod-MEK dort - dauerhaft, samt vollstaendiger Schluesselhistorie, und
+`ORIGIN` zeigt fuer diese Schluessel `LOCAL` statt `IMPORTED`, die Herkunft ist an den
+Views also nicht erkennbar. Wer Zugriff auf die Non-Prod hat, hat dann den
+Produktionsschluessel. Zusaetzlich gemessen: eine MEK-Rotation raeumt die Historie
+nicht ab, und Read-only-Tablespaces bleiben sogar an den alten MEK gebunden.
+
+Das ist das Argument fuer eine getrennte Schluesselhoheit: nicht weil TS-Keys leaken,
+sondern weil der Klon-Prozess den Master Key mitkopiert und ihn dort niemand mehr sieht.
+
+- [ ] Offen: Gegentest, ob eine Test-DB **mit** transportiertem Prod-Keystore Prod-Daten
+      restaurieren und lesen kann. Erwartung nach Variante A: ja. Im E2E-Lauf messen.
