@@ -663,3 +663,67 @@ EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
     fi
     lib_info "keystore in ${svc} open via local auto-login"
 }
+
+# ------------------------------------------------------------------------------
+# Function: compare_canary_blocks
+# Purpose.: Compare only the blocks that actually carry canary rows
+# Args....: $1  evidence label A
+#           $2  evidence label B
+#           $3  container holding the canary table
+#           $4  PDB name
+#           $5  table name, default CANARY_TDE
+# Returns.: 0 canary blocks identical, 1 they differ, 2 could not determine
+# Output..: "identical <n> differing <n> total <n>"
+# Depends.: docker, sqlplus, python3
+# Example.: compare_canary_blocks baseline variant_d odbencdev ODBENCPROD
+# Notes...: The overall block counts are dominated by never used blocks, which
+#           RMAN does not back up and writes fresh on restore - they differ in
+#           every variant and say nothing about the key. The rows that matter
+#           are the ones holding data. Identical ciphertext on identical data at
+#           identical block addresses means the same tablespace key; the wrapped
+#           key in v$encrypted_tablespaces cannot answer that, because it also
+#           changes on a pure re-wrap after a master key rotation.
+# ------------------------------------------------------------------------------
+compare_canary_blocks() {
+    local a="$1" b="$2" svc="$3" pdb="$4" tab="${5:-CANARY_TDE}"
+    local blocks fp_a fp_b
+    blocks=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 100 TRIMSPOOL ON
+ALTER SESSION SET CONTAINER=${pdb};
+SELECT DISTINCT dbms_rowid.rowid_block_number(rowid) FROM ${CANARY_OWNER:-SCOTT}.${tab} ORDER BY 1;
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
+        | awk 'NF && $1 ~ /^[0-9]+$/ { print $1 }')
+    if [[ -z "${blocks}" ]]; then
+        lib_err "could not determine the canary block numbers in ${svc}"
+        return 2
+    fi
+    fp_a=$(find "${EVIDENCE_ROOT}/${a}" -maxdepth 1 -name '*.fp' 2>/dev/null | head -1)
+    fp_b=$(find "${EVIDENCE_ROOT}/${b}" -maxdepth 1 -name '*.fp' 2>/dev/null | head -1)
+    if [[ -z "${fp_a}" || -z "${fp_b}" ]]; then
+        lib_err "missing fingerprint in evidence set ${a} or ${b}"
+        return 2
+    fi
+    local blockfile
+    blockfile=$(mktemp)
+    printf '%s\n' "${blocks}" >"${blockfile}"
+    python3 -c '
+import sys, pathlib
+def load(p):
+    d = {}
+    for line in pathlib.Path(p).read_text().splitlines():
+        if line.startswith("#"):
+            continue
+        n, _, h = line.partition("\t")
+        d[int(n)] = h
+    return d
+a, b = load(sys.argv[1]), load(sys.argv[2])
+want = {int(x) for x in pathlib.Path(sys.argv[3]).read_text().split()}
+common = want & set(a) & set(b)
+diff = {n for n in common if a[n] != b[n]}
+print("identical %d differing %d total %d" % (len(common) - len(diff), len(diff), len(common)))
+sys.exit(1 if diff else 0)
+' "${fp_a}" "${fp_b}" "${blockfile}"
+    local rc=$?
+    rm -f "${blockfile}"
+    return ${rc}
+}

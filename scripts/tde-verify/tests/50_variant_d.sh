@@ -322,16 +322,33 @@ EXIT
     mkid_source=$(read_state "SOURCE_MASTERKEYID")
     tek_source=$(read_state  "SOURCE_TEK")
 
+    # The verdict rests on the canary data blocks, not on the stored key.
+    # Variant D rotates the master key on purpose, so the wrapped TEK in
+    # v$encrypted_tablespaces has to change - it is the same tablespace key
+    # in a new wrapper. That column therefore cannot tell a re-wrap apart
+    # from new key material; only the ciphertext of the data can.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${PROD_PDB}" "CANARY_TDE") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp}"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN"
-    elif [[ "${tek_clone}" == "${tek_source}" ]]; then
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="could not compare the canary blocks - no verdict possible"
+    elif [[ ${canary_rc} -eq 0 ]]; then
         verdict="PASS"
-        msg="TEK IDENTICAL - OFFLINE DECRYPT/ENCRYPT cycle does not change TEK material"
+        msg="canary ciphertext IDENTICAL (${canary_cmp}) - the OFFLINE DECRYPT/ENCRYPT cycle reproduces the source ciphertext, so the tablespace key material is unchanged; the differing wrapped TEK is the re-wrap under the new dev MEK"
     else
         verdict="FAIL"
-        msg="TEK differs from baseline (unexpected for variant D)"
+        msg="canary ciphertext CHANGED (${canary_cmp}) - unexpected for variant D, the offline cycle should reproduce the source blocks"
     fi
 
     write_state "VARIANT_D_MKID" "${mkid_clone}"
@@ -341,9 +358,11 @@ EXIT
     print_key_summary "baseline  (source)" "${mkid_source}" "${tek_source}"
 
     echo ""
-    echo "TEK comparison:  $( [[ "${tek_clone}" == "${tek_source}" ]] && echo "IDENTICAL" || echo "DIFFERENT")"
-    echo "MASTERKEYID:     $( [[ "${mkid_clone}" == "${mkid_source}" ]] && echo "IDENTICAL" || echo "DIFFERENT")"
-    echo "MASTERKEYID diff: expected (new dev MEK was set)"
+    echo "Wrapped TEK:     $( [[ "${tek_clone}" == "${tek_source}" ]] && echo "IDENTICAL" || echo "DIFFERENT (expected - re-wrapped under the new dev MEK)")"
+    echo "MASTERKEYID:     $( [[ "${mkid_clone}" == "${mkid_source}" ]] && echo "IDENTICAL" || echo "DIFFERENT (expected - a new dev MEK was set)")"
+    echo "Note:            the wrapped TEK is not evidence either way - it"
+    echo "                 changes on a pure re-wrap as well. The verdict is"
+    echo "                 taken from the canary ciphertext above."
 
     print_verdict "${verdict}" "${msg}"
     lib_info "Done."

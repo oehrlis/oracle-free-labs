@@ -154,13 +154,33 @@ main() {
     mkid_source=$(read_state "SOURCE_MASTERKEYID")
     tek_source=$(read_state  "SOURCE_TEK")
 
+    # Report the canary data blocks separately. The overall block counts are
+    # dominated by never used blocks, which RMAN does not back up and writes
+    # fresh on restore - they differ in every variant and carry no meaning.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${PROD_PDB}" "CANARY_TDE") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp}"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN"
     elif [[ "${tek_clone}" == "${tek_source}" ]]; then
-        verdict="PASS"
-        msg="TEK IDENTICAL - DUPLICATE preserved the existing TEK, no new TEK for encrypted source"
+        if [[ ${canary_rc} -eq 2 ]]; then
+            verdict="FAIL"
+            msg="TEK is identical but the canary blocks could not be compared - no verdict possible"
+        elif [[ ${canary_rc} -eq 0 ]]; then
+            verdict="PASS"
+            msg="TEK IDENTICAL and canary ciphertext IDENTICAL (${canary_cmp}) - DUPLICATE preserved the existing TEK, no new TEK for encrypted source"
+        else
+            verdict="FAIL"
+            msg="TEK is identical but the canary ciphertext changed (${canary_cmp}) - contradictory, investigate before using this result"
+        fi
     else
         verdict="FAIL"
         msg="TEK differs from baseline (unexpected for variant C)"
