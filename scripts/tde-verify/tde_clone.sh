@@ -48,6 +48,7 @@ TARGET="odbencdev"
 VARIANT=""
 SOURCE_DBID=""
 CF_PIECE=""
+TARGET_DB_NAME="${TARGET_DB_NAME:-FREE}"
 TARGET_KEY_ID=""
 XCHANGE="/opt/oracle/xchange"
 WALLET_DIR="/opt/oracle/dbconfig/FREE/wallet"
@@ -217,7 +218,15 @@ prepare_wallet() {
             log_info "variant b2: target keystore holds only its own MEK, source MEK absent"
             ;;
         c)
-            log_info "variant c: DUPLICATE, source keystore staged per Oracle documentation"
+            # DUPLICATE needs the source keystore on the auxiliary, and Oracle
+            # documents that it must be open. The instance is restarted several
+            # times by DUPLICATE's own memory scripts, so a password-opened
+            # keystore does not survive - the auto-login has to be created here,
+            # on this host, before the duplicate starts.
+            log_info "variant c: staging the source keystore on the auxiliary"
+            in_container "mkdir -p ${XCHANGE}/wallet_dev_pristine && cp -a ${WALLET_DIR}/. ${XCHANGE}/wallet_dev_pristine/"
+            in_container "rm -rf ${WALLET_DIR}/tde ${WALLET_DIR}/tde_seps && cp -a ${XCHANGE}/wallet_prod/. ${WALLET_DIR}/"
+            ensure_autologin
             ;;
         *)
             log_error "unknown variant '${variant}'"
@@ -500,6 +509,52 @@ EXIT
 }
 
 # ------------------------------------------------------------------------------
+# Function: do_duplicate
+# Purpose.: Clone the source into the target with DUPLICATE ... AS ENCRYPTED
+# Args....: none
+# Returns.: exit code of the duplicate
+# Output..: RMAN output
+# Depends.: docker, rman
+# Example.: do_duplicate
+# Notes...: Uses BACKUP LOCATION rather than FROM ACTIVE DATABASE. Active
+#           duplication needs the auxiliary to connect back to the target and
+#           failed with ORA-17627/ORA-01017 in this lab; the backup based form
+#           needs no connection at all and exercises the same AS ENCRYPTED
+#           semantics. NOFILENAMECHECK is required because source and target use
+#           identical paths in their own containers. DUPLICATE assigns a new
+#           DBID, unlike RESTORE which keeps the source DBID.
+# ------------------------------------------------------------------------------
+do_duplicate() {
+    log_info "shutting the auxiliary down and starting it NOMOUNT"
+    run_sqlplus "
+WHENEVER SQLERROR CONTINUE
+SHUTDOWN IMMEDIATE;
+STARTUP NOMOUNT;
+SELECT status FROM v\$instance;
+EXIT
+"
+    quarantine_stale_redo
+
+    log_info "DUPLICATE DATABASE ... BACKUP LOCATION ... AS ENCRYPTED"
+    run_rman "
+connect auxiliary /
+DUPLICATE DATABASE TO ${TARGET_DB_NAME}
+  BACKUP LOCATION '${XCHANGE}/backup'
+  NOFILENAMECHECK
+  AS ENCRYPTED;
+EXIT
+"
+    log_info "opening the pluggable databases"
+    run_sqlplus "
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE ALL OPEN;
+SELECT dbid, name, open_mode FROM v\$database;
+SELECT name, open_mode FROM v\$pdbs;
+EXIT
+"
+}
+
+# ------------------------------------------------------------------------------
 # Parse arguments
 # ------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -537,7 +592,7 @@ main() {
     prepare_wallet "${VARIANT}"
     case "${VARIANT}" in
         a|b1|b2) do_restore "${VARIANT}" ;;
-        c)       log_error "variant c is not implemented yet"; exit 1 ;;
+        c)       do_duplicate ;;
     esac
     log_info "Done."
 }
