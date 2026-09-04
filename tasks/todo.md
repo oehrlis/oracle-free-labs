@@ -1254,3 +1254,26 @@ dokumentiert.
 TODO nach Schritt 60: Verdict von Variante F zusaetzlich auf das
 Canary-Chiffrat stellen (analog Variante G), damit die Aussage nicht nur am
 gespeicherten Schluesselwert haengt.
+
+### Operativer Befund fuer den Green-Field-Pfad (2026-09-04)
+
+Wer den Schluesselstamm einer Kopie wirklich kappen will, muss den alten
+Keystore aus dem **Speicher** bekommen, nicht nur von der Platte:
+
+- `ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE` scheitert bei einem
+  Auto-Login-Keystore mit `ORA-28389: Cannot close auto login keystore`.
+- Solange `cwallet.sso` im Verzeichnis liegt, oeffnet sich der Keystore nach
+  einem Close sofort wieder - gemessen: Status `OPEN / LOCAL_AUTOLOGIN` in
+  allen Containern direkt nach einem erfolgreichen `keystore altered`.
+- Auch nach dem Entfernen der Dateien bleibt der Kontext im Speicher offen.
+  Folge: `CREATE KEYSTORE` gelingt, `SET KEYSTORE OPEN` scheitert mit
+  `ORA-28354`, und das anschliessende `SET KEY` mit `ORA-28417`.
+- Einziger belegter Weg: Instanz neu starten, nachdem die Keystore-Dateien
+  entfernt sind. Zulaessig nur, wenn nichts mehr verschluesselt ist - genau
+  die Vorbedingung, die Stefan fuer `_db_discard_lost_masterkey` genannt hat.
+
+Reihenfolge fuer das Runbook: Tablespaces entschluesseln und pruefen
+(`V$ENCRYPTED_TABLESPACES` = 0 Zeilen) -> Keystore-Dateien entfernen ->
+**Instanz neu starten** -> `CREATE KEYSTORE` -> `SET KEYSTORE OPEN` ->
+`SET KEY` je Container -> `_db_discard_lost_masterkey` in der PDB
+(`SCOPE=MEMORY`) -> `SET KEY` in der PDB -> `OFFLINE ENCRYPT`.
