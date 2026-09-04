@@ -509,6 +509,29 @@ EXIT
 }
 
 # ------------------------------------------------------------------------------
+# Function: run_rman_aux
+# Purpose.: Feed an RMAN script to the target with no target connection
+# Args....: $1  RMAN text
+# Returns.: exit code of RMAN
+# Output..: RMAN output
+# Depends.: docker, rman in the container
+# Example.: run_rman_aux 'connect auxiliary /
+# DUPLICATE DATABASE TO FREE BACKUP LOCATION ...;'
+# Notes...: Backup based duplication runs without a target database. Starting
+#           rman with "target /" makes the local NOMOUNT instance the target and
+#           RMAN then refuses with RMAN-05502, "the target database must be
+#           mounted when issuing a DUPLICATE command".
+# ------------------------------------------------------------------------------
+run_rman_aux() {
+    local cmds="$1"
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        echo "--- DRY-RUN [rman, no target] ---"; printf '%s\n' "${cmds}"; echo "--- end ---"
+        return 0
+    fi
+    printf '%s\n' "${cmds}" | docker exec -i "${TARGET}" rman
+}
+
+# ------------------------------------------------------------------------------
 # Function: do_duplicate
 # Purpose.: Clone the source into the target with DUPLICATE ... AS ENCRYPTED
 # Args....: none
@@ -536,7 +559,7 @@ EXIT
     quarantine_stale_redo
 
     log_info "DUPLICATE DATABASE ... BACKUP LOCATION ... AS ENCRYPTED"
-    run_rman "
+    run_rman_aux "
 connect auxiliary /
 DUPLICATE DATABASE TO ${TARGET_DB_NAME}
   BACKUP LOCATION '${XCHANGE}/backup'
