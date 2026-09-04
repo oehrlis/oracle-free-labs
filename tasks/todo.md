@@ -1230,3 +1230,27 @@ Offline-Konversion den Database Key des Containers verwendet und kein neues
 Tablespace-Schluesselmaterial erzeugt - und dass `ENCRYPTEDKEY` aus
 `V$ENCRYPTED_TABLESPACES` als Beweismittel untauglich ist: der Wert aendert
 sich beim reinen Re-wrap genauso wie bei neuem Schluesselmaterial.
+
+### Der Kontrast D gegen F ist der Beweis fuer das Drei-Ebenen-Modell
+
+Beide Varianten fuehren dieselbe Operation aus: `ALTER TABLESPACE USERS
+ENCRYPTION OFFLINE ENCRYPT`. Der einzige Unterschied liegt darin, ob der
+**Database Key des Containers** erneuert wurde:
+
+| | Variante D | Variante F |
+|---|---|---|
+| MEK | neu (`SET KEY`) | neu (frischer Keystore) |
+| Database Key | unveraendert | erneuert (`_db_discard_lost_masterkey`) |
+| Operation | `OFFLINE ENCRYPT` | `OFFLINE ENCRYPT` |
+| Canary-Chiffrat | **313 identisch / 0 abweichend** | muss abweichen |
+
+Wenn F tatsaechlich abweichendes Chiffrat liefert, ist damit empirisch belegt,
+dass `OFFLINE ENCRYPT` sein Tablespace-Schluesselmaterial aus dem Database Key
+des Containers ableitet und nicht aus dem MEK - die MEK-Rotation allein aendert
+das Chiffrat nachweislich nicht. Das ist die Messgrundlage fuer die dritte
+Ebene in `doc/tde-key-architecture.md`, die Oracle selbst nur zweistufig
+dokumentiert.
+
+TODO nach Schritt 60: Verdict von Variante F zusaetzlich auf das
+Canary-Chiffrat stellen (analog Variante G), damit die Aussage nicht nur am
+gespeicherten Schluesselwert haengt.
