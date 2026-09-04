@@ -976,3 +976,114 @@ sondern weil der Klon-Prozess den Master Key mitkopiert und ihn dort niemand meh
 
 - [ ] Offen: Gegentest, ob eine Test-DB **mit** transportiertem Prod-Keystore Prod-Daten
       restaurieren und lesen kann. Erwartung nach Variante A: ja. Im E2E-Lauf messen.
+
+### Algorithmus-Test abgeschlossen - ONLINE REKEY erneuert das Schluesselmaterial
+
+Gemessen 2026-09-04 an odbencprod, eigener Tablespace ALGTEST, danach wieder entfernt.
+Die Baseline in USERS wurde nicht angetastet.
+
+Zuerst die Korrektur meines frueheren Befunds: ORA-28340 kam vom **falschen Kommando**.
+Oracle dokumentiert fuer den SYSTEM-Tablespace woertlich, dass die ENCRYPT-Klausel keinen
+Algorithmus annimmt, weil beim ersten Mal mit dem bestehenden Database Key verschluesselt
+wird, und dass man danach die REKEY-Klausel nutzen muss, um den Algorithmus zu setzen.
+Quelle: Oracle Advanced Security Guide 19c, Configuring Transparent Data Encryption.
+Mein Versuch lief ueber `ENCRYPTION OFFLINE USING 'AES192' ENCRYPT` - das ist der falsche
+Weg. Der richtige ist `ENCRYPTION ONLINE USING 'AES192' REKEY`.
+
+Ablauf und Ergebnis:
+
+| Groesse | vor dem Rekey | nach dem Rekey |
+|---|---|---|
+| Algorithmus | AES256 | AES192 |
+| Cipher Mode | XTS | CFB |
+| KEY_VERSION | 0 | 2 |
+| gewrappter TEK | 3792A5BB...84A0 | D1D460D8...2DD3 plus Nullbytes |
+| signifikante Schluesselbytes | 32 gleich 256 Bit | 24 gleich 192 Bit |
+| Datafile | o1_mf_algtest_o9ny40mp_.dbf | neu: o1_mf_algtest_o9ny6csn_.dbf |
+| Canary | 5000 Zeilen | 5000 Zeilen |
+| Blockvergleich | - | 2560 von 2561 geaendert, nur Block 0 gleich |
+| alter TEK im neuen Datafile | - | 0 Treffer |
+| neuer TEK im neuen Datafile | - | 1 Treffer |
+
+Das ist der belastbarste Beweis der ganzen Reihe: eine andere Schluessellaenge kann
+kein umgewickelter alter Schluessel sein. Damit ist unabhaengig vom Chiffratvergleich
+belegt, dass ONLINE REKEY neues Schluesselmaterial erzeugt.
+
+Nebenbefund zum Geltungsbereich des Algorithmus:
+
+- `ALTER TABLESPACE ... ENCRYPTION ONLINE USING 'AES192' REKEY` wird akzeptiert, obwohl
+  der Instanz-Default-Cipher-Mode auf XTS stand, und stellt diesen Tablespace auf CFB.
+  KEY_VERSION lief von 0 auf 2, beide Rekey-Anweisungen liefen also durch.
+- `ALTER SYSTEM SET tablespace_encryption_default_algorithm='AES192'` wird bei aktivem
+  XTS dagegen mit ORA-38134 abgelehnt.
+- Belegt in der SQL Language Reference 26ai zur encryption_spec-Klausel: XTS ist nur mit
+  AES128 und AES256 erlaubt, fuer AES192 ist CFB zu verwenden. XTS existiert erst ab
+  23ai, 19c kennt nur CFB.
+
+Merkposten: `odbencdev` war fuer diesen Test nicht mehr verwendbar. Der Angriffstest
+mit dem fehlgeschlagenen Restore hat das USERS-Datafile in ORA-01113 "needs media
+recovery" hinterlassen, und ein INSERT scheiterte mit ORA-28374. Der Container wird im
+E2E-Lauf neu aufgebaut.
+
+## Plan zum Review - PDB-Clone als weiterer Use Case
+
+Noch nicht umgesetzt. Nur Plan und Varianten zur Abnahme.
+
+### Warum das ein eigener Use Case ist
+
+Bisher gemessen wurde ausschliesslich der Weg ueber RMAN, also RESTORE und DUPLICATE auf
+CDB-Ebene. Der PDB-Clone laeuft ueber einen anderen Mechanismus und hat einen eigenen,
+dokumentierten Schluesseltransport: die Schluessel muessen explizit exportiert und
+importiert werden, statt implizit im Keystore mitzureisen. Genau dieser Unterschied ist
+fuer die Kundenfrage relevant, weil `ORIGIN` beim formalen Import `IMPORTED` zeigt statt
+`LOCAL` - die Herkunft wird also nachvollziehbar, anders als beim kopierten Keystore.
+
+Die Infrastruktur ist im Repo vorhanden: `config/common/scripts/create_pdb_archive.sql`,
+`create_pdb_from_archive.sql` und `clone_pdb.sql`, und die Services odbseed und odbdemo
+arbeiten bereits mit PDB-Archiven.
+
+### Varianten
+
+| Nr | Variante | Erwartung, zu pruefen |
+|---|---|---|
+| P1 | Lokaler Clone in derselben CDB, `CREATE PLUGGABLE DATABASE neu FROM alt` | gleicher Keystore, TEK bleibt, kein Transport noetig - Referenzfall |
+| P2 | Unplug mit Schluesselexport, Plug in fremde CDB, `UNPLUG INTO ... ENCRYPT USING <secret>` und `... DECRYPT USING <secret>` | Schluessel reisen im Archiv, PDB oeffnet, TEK unveraendert |
+| P3 | Unplug **ohne** Schluesselexport, Plug in fremde CDB | erwartet: PDB oeffnet nicht oder nur RESTRICTED, verschluesselte Tablespaces unlesbar, ORA-28374 |
+| P4 | Remote Clone ueber DB-Link, `CREATE PLUGGABLE DATABASE ... FROM pdb@link` mit vorherigem `EXPORT KEYS` und `IMPORT KEYS` | Schluessel muessen separat transportiert werden |
+| P5 | Nach P2 oder P4: MEK-Rotation im Ziel | erwartet: Rewrap, Bloecke unveraendert - Gegenprobe zum RMAN-Befund |
+| P6 | Nach P2 oder P4: `ONLINE REKEY` im Ziel | erwartet: neuer TEK, alle Bloecke neu - der Weg zur Unabhaengigkeit |
+| P7 | `ORIGIN`-Vergleich: formal importierter Schluessel gegen kopierten Keystore | erwartet: IMPORTED gegen LOCAL - Provenienz nachweisbar |
+| P8 | `KEY_VERSION` nach Plug-in in eine fremde CDB | Doku sagt, KEY_VERSION wird nach Plug-in in eine fremde Datenbank auf 0 zurueckgesetzt - zu verifizieren |
+
+### Messgroessen je Variante
+
+Identisch zur bisherigen Reihe, damit die Ergebnisse vergleichbar bleiben:
+
+- Schluesselkette vor und nach dem Clone: MEK je Container, Database Key, TS Key,
+  MASTERKEYID, KEY_VERSION, ORIGIN
+- Blockweiser Chiffratvergleich des Canary-Datafiles gegen die Quelle
+- Suche des gewrappten TEK und der MASTERKEYID als Bytefolge im Ziel-Datafile
+- Klartext-Scan mit dem Canary-Marker
+- Entzugstest: Quell-Schluessel im Ziel entfernen, Instanz neu starten, Canary lesen
+
+### Testumgebung
+
+Beide bestehenden Services genuegen. `odbencprod` als Quelle mit PDB ODBENCPROD und dem
+verschluesselten USERS-Tablespace, `odbencdev` als Ziel-CDB. Fuer P4 braucht es
+zusaetzlich einen Datenbank-Link von dev nach prod und einen gemeinsamen Ablagepfad, den
+`data/xchange` bereits bietet. Fuer P2 und P3 wird das PDB-Archiv nach
+`/opt/oracle/xchange` geschrieben.
+
+Bekannter Fallstrick aus der bisherigen Reihe, der hier wieder greift: der Servicename
+ist `FREE.oradba.ch`, nicht `FREE`, und `tnsping` auf den falschen Service meldet
+trotzdem OK.
+
+### Offene Fragen zum Plan
+
+- Soll P3 wirklich gefahren werden? Er erzeugt bewusst eine nicht oeffnende PDB. Als
+  Negativbeleg ist er wertvoll, kostet aber einen Aufraeumzyklus.
+- Reicht ODBENCPROD als zu klonende PDB, oder soll eine zweite, kleinere PDB nur fuer
+  die Clone-Tests angelegt werden, damit die Baseline unberuehrt bleibt?
+- P4 setzt voraus, dass der Link von dev nach prod als SYS funktioniert. Beim
+  RMAN-Active-Duplicate ist genau das an ORA-01017 gescheitert. Soll der Link mit einem
+  eigenen Clone-Benutzer statt SYS aufgebaut werden?

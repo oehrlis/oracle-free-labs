@@ -9,6 +9,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `doc/tde-clone-independence.md`: five-tier model for cryptographic independence of a
+  clone, with the measured evidence and the failed paths per tier.
+- `doc/tde-okv-argumentation.md`: attack surfaces split into real and hypothetical, and
+  the argumentation for external key management against the two customer objections.
+- `scripts/tde-verify/tests/` plus `run_all.sh`: one standalone script per test case and
+  a runner that composes them with gates, `--only`, `--from`, `--to`, `--list` and
+  `--dry-run`.
+- `config/common/scripts/ssenc_keyproof.sql`, `csenc_canary.sql`, `ssenc_canary.sql`,
+  `ssenc_filehdr.sql`: key chain evidence, canary data with its physical block range,
+  read-back for the key withdrawal test, and Oracle's own file header dump.
+- `scripts/tde-verify/block_fingerprint.py`: block level ciphertext fingerprinting,
+  comparison, clear-text scan, hex needle search and block hexdump.
 - `odbencprod` / `odbencdev` services (ports 1532 / 1533) plus
   `config/odbencprod/` and `config/odbencdev/`: two-container lab for the TDE
   restore verification test. No OEM Express port is mapped and the memory limit
@@ -35,8 +47,29 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `doc/tde-key-architecture.md`: Mermaid diagrams of the key hierarchy, measured
   against the lab rather than drawn illustratively.
 
+### Changed
+
+- `doc/tde-key-architecture.md`: rewritten around the measured dependency model between
+  master key, database key and tablespace key, with eight Mermaid diagrams.
+
 ### Fixed
 
+- `config/common/scripts/csenc_swkeystore.sql`: the conditional backup of
+  `wallet_pwd.txt` spanned three lines with backslash continuation, which SQL*Plus does
+  not support for `HOST`. The container then reported `DATABASE SETUP WAS NOT SUCCESSFUL`
+  although the keystore had been created correctly.
+- `data/<service>/dbconfig/FREE/`: added the `.gitkeep` markers the image needs, so a
+  fresh clone no longer aborts with DBT-60127.
+- `.gitignore`: the `data/` rules are now deny by default. The previous pattern set left
+  RMAN backup pieces, keystores and `wallet_pwd.txt` eligible for tracking.
+- `Makefile` `reset` target: restores the whole tracked path instead of only `README.md`,
+  and says so when there is nothing to restore.
+- `config/odbencdev/setup/`: the default pluggable database is no longer dropped. The
+  entrypoint health check requires one open user PDB, so the container reported a setup
+  failure on a database that was fully functional.
+- `scripts/tde-verify/tde_evidence.sh`: `--compare` pairs single-datafile evidence sets
+  across a datafile rename instead of reporting nothing compared, which is what
+  `ONLINE REKEY` and a rebuilt lab cause.
 - `config/common/scripts/csenc_swkeystore.sql`: the conditional backup of
   `wallet_pwd.txt` was written as a `HOST` command spanning three lines with
   backslash continuation. SQL*Plus does not support that, so `/bin/sh` received a
