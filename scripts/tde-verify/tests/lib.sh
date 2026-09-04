@@ -874,8 +874,28 @@ ensure_independent_dev_cdb() {
         lib_info "DRY-RUN: would compare the DBIDs of ${PROD_SERVICE} and ${DEV_SERVICE}"
         return 0
     fi
-    local dbid_prod dbid_dev
+    local dbid_prod dbid_dev health
     dbid_prod=$(get_dbid "${PROD_SERVICE}") || return 1
+
+    # An unhealthy dev has to be rebuilt too, and the check has to happen here
+    # rather than in a precheck: the broken CDB temp file is what makes the
+    # health check fail in the first place, so a precheck would abort before
+    # the repair could run.
+    health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+             "${DEV_SERVICE}" 2>/dev/null || echo unknown)
+    if [[ "${health}" != "healthy" ]]; then
+        lib_warn "dev container health is '${health}' - rebuilding ${DEV_SERVICE}"
+        reset_service "${DEV_SERVICE}"
+        wait_for_ready "${DEV_SERVICE}"
+        dbid_dev=$(get_dbid "${DEV_SERVICE}") || return 1
+        if [[ "${dbid_prod}" == "${dbid_dev}" ]]; then
+            lib_err "dev still carries prod DBID ${dbid_dev} after the rebuild"
+            return 1
+        fi
+        lib_info "dev CDB rebuilt, DBID now ${dbid_dev} (prod ${dbid_prod})"
+        return 0
+    fi
+
     dbid_dev=$(get_dbid "${DEV_SERVICE}")   || return 1
     if [[ "${dbid_prod}" != "${dbid_dev}" ]]; then
         lib_info "dev CDB is independent (DBID ${dbid_dev} vs prod ${dbid_prod})"

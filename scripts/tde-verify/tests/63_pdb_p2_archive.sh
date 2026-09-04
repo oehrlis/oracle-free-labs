@@ -109,6 +109,11 @@ main() {
     require_container "${PROD_SERVICE}"
     require_container "${DEV_SERVICE}"
     require_healthy   "${PROD_SERVICE}"
+    # Before the dev health requirement: the RMAN variants leave dev as a
+    # restore of prod - same DBID - and with a CDB temp file that no longer
+    # verifies, which is exactly what makes the health check fail. P2/P7/P8
+    # claim a foreign CDB, so rebuilding is part of the method.
+    ensure_independent_dev_cdb
     require_healthy   "${DEV_SERVICE}"
     require_state "PDBCLONE_READY" "PDB testbed (run step 61 first)"
 
@@ -187,11 +192,6 @@ SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_SRC_PDB}"''"'"';
 EXIT
 SQL
 '
-
-    # The RMAN variants leave dev as a restore of prod - same DBID, and a CDB
-    # temp file that no longer verifies. P2/P7/P8 claim a foreign CDB, so this
-    # is part of the method rather than a workaround.
-    ensure_independent_dev_cdb
 
     # Phase 3: Drop PDBCLONE_P2 in dev if it exists (idempotency)
     step_header "Phase 3: Prepare dev - drop ${CLONE_P2_PDB} if exists"
