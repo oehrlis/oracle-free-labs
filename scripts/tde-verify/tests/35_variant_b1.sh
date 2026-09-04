@@ -101,8 +101,11 @@ main() {
     require_state "SOURCE_DBID"  "source DBID (run step 10 first)"
     require_state "BACKUP_READY" "backup flag (run step 15 first)"
 
-    local dbid
+    local dbid cf_piece
     dbid=$(read_state "SOURCE_DBID")
+    # The source control file autobackup, recorded by step 15. Passing it
+    # explicitly avoids restoring the target's own autobackup from a previous run.
+    cf_piece=$(read_state "BACKUP_CF_PIECE")
 
     # Reset odbencdev to a clean state
     step_header "Reset odbencdev"
@@ -122,11 +125,12 @@ main() {
 
     local clone_exit=0
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant b1 --dbid ${dbid}"
+        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant b1 --dbid ${dbid} --cf-piece ${cf_piece}"
     else
         "${CLONE_SCRIPT}" \
             --variant b1 \
-            --dbid   "${dbid}" \
+            --dbid     "${dbid}" \
+            --cf-piece "${cf_piece}" \
             "${CLONE_EXTRA_ARGS[@]}" || clone_exit=$?
     fi
 

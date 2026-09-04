@@ -104,6 +104,10 @@ main() {
     # Ensure backup destination exists inside the container
     step_header "Prepare backup directory"
     lib_run in_prod "mkdir -p ${XCHANGE_CONTAINER}/backup"
+    # A previous clone may have left the target's own control file autobackup
+    # here, carrying the same DBID. Leaving it makes the piece selection below
+    # ambiguous and the clone would restore the wrong control file.
+    lib_run in_prod "rm -f ${XCHANGE_CONTAINER}/backup/cf_*"
 
     # RMAN backup
     step_header "RMAN BACKUP DATABASE PLUS ARCHIVELOG"
@@ -175,7 +179,10 @@ ls -la ${XCHANGE_CONTAINER}/wallet_prod/tde/
         fi
         # Locate the control file autobackup
         local cf_piece
-        cf_piece=$(find "${backup_host_dir}" -name "cf_c-${dbid}-*" -type f 2>/dev/null | sort | tail -1 || true)
+        # Exactly one autobackup is expected here because the directory was
+        # cleared above. Take the oldest if there are several - the source's own
+        # is always written first.
+        cf_piece=$(find "${backup_host_dir}" -name "cf_c-${dbid}-*" -type f 2>/dev/null | sort | head -1 || true)
         if [[ -z "${cf_piece}" ]]; then
             lib_err "controlfile autobackup not found in ${backup_host_dir} for DBID ${dbid}"
             exit 1
