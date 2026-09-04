@@ -1354,3 +1354,18 @@ ob das auch ueber CDB-Grenzen hinweg gilt.
 
 Erwartung in `doc/`-Dateien und im Plan war "P1: TEK identisch zur Quelle" -
 diese Annahme ist widerlegt und muss in der Dokumentation korrigiert werden.
+
+### Dritter, unabhaengiger Beleg fuer P1 (Wiederholungslauf)
+
+Zwei Klone derselben Quelle, gleicher MEK, unterschiedliche gewrappte Keys:
+
+| Lauf | Quelle `PDBCLONE` | Klon `PDBCLONE_P1` |
+|---|---|---|
+| 1 | `212154F5...BE8C` | `0602F072...866C` |
+| 2 | `212154F5...BE8C` | `57CF3E17...15E3` |
+
+MASTERKEYID in allen vier Faellen identisch. Ein Re-wrap ist deterministisch
+in dem Sinne, dass derselbe TEK unter demselben MEK denselben gewrappten Wert
+ergibt - zwei verschiedene Werte belegen zwei verschiedene Tablespace-Keys.
+Damit stuetzt sich der Befund auf drei unabhaengige Beobachtungen:
+identischer MEK, wechselnde gewrappte Keys, vollstaendig abweichendes Chiffrat.
