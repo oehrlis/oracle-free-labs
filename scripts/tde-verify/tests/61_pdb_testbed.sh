@@ -148,6 +148,22 @@ SELECT tablespace_name, encrypted FROM dba_tablespaces
 EXIT
 "
 
+    # csenc_canary.sql requires the schema to exist. PDBCLONE was created from
+    # PDB$SEED, which carries no SCOTT - unlike ODBENCPROD, where the service
+    # setup scripts create it. Created generically so CANARY_OWNER stays free
+    # to override.
+    step_header "Create canary schema ${CANARY_OWNER} in ${CLONE_SRC_PDB}"
+    sqlplus_prod "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER=${CLONE_SRC_PDB};
+CREATE USER ${CANARY_OWNER} NO AUTHENTICATION;
+GRANT CREATE SESSION, CREATE TABLE TO ${CANARY_OWNER};
+ALTER USER ${CANARY_OWNER} QUOTA UNLIMITED ON ${CLONE_TS_ENC};
+ALTER USER ${CANARY_OWNER} QUOTA UNLIMITED ON ${CLONE_TS_PLAIN};
+SELECT username, account_status FROM dba_users WHERE username='${CANARY_OWNER}';
+EXIT
+"
+
     # Create canary in encrypted tablespace
     step_header "Create canary in ${CLONE_TS_ENC} (encrypted)"
     sqlplus_prod "
