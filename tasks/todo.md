@@ -1120,7 +1120,29 @@ Der Dry-Run schreibt aber Platzhalter in dieselbe State-Datei
 Gates faelschlich offen, und ein spaeterer Einzelschritt kann eine erfundene DBID
 verwenden. Das ist genau die Klasse Fehler, die wie erledigte Arbeit aussieht.
 
-- [ ] `write_state` in `tests/lib.sh` im Dry-Run entweder nicht schreiben oder in eine
-      getrennte Datei, und beim Lesen im Dry-Run kennzeichnen. Erst nach Abschluss des
-      laufenden Agenten anfassen, der `run_all.sh` und die Testskripte aendert.
-- [ ] verify: nach `run_all.sh --dry-run` darf `--only 20` weiterhin GATE melden
+- [x] `write_state` schreibt im Dry-Run nicht mehr, sondern loggt nur.
+- [x] verify: nach `run_all.sh --dry-run` existiert keine State-Datei, und
+      `--only 20` meldet weiterhin GATE VIOLATION.
+
+### Gegenpruefung der PDB-Skripte - zwei sicherheitsrelevante Korrekturen
+
+Die Skripte kamen shellcheck-clean und mit funktionierenden Gates, zwei Stellen musste
+ich aber korrigieren:
+
+1. **Passwort im geteilten Mount.** Der Remote-Clone schrieb `ORACLE_PWD` nach
+   `/opt/oracle/xchange/.clone_cred` mit dem Kommentar "prod container only". Das ist
+   falsch: `/opt/oracle/xchange` ist der gemeinsame Bind-Mount, die Datei lag damit
+   unter `data/xchange/` auf dem Host und war auch fuer den Ziel-Container lesbar.
+   `chmod 600` im Container hilft dagegen nicht. Jetzt wird das Passwort aus dem
+   Quell-Container in eine Shell-Variable gelesen und dem Ziel ueber stdin uebergeben -
+   weder in argv noch in einer Datei. Dass es im `CREATE DATABASE LINK` und damit
+   potenziell in `V$SQL` erscheint, ist bei DB-Links unvermeidbar und im Skript vermerkt.
+2. **Hartcodierte Transport-Secrets.** `OEHRLI-CLONE-SECRET-P2` und `-P4` standen fest
+   im Code. Auch im Lab ist ein festes Secret im Repository ein committetes Secret, und
+   es bringt nichts: das Secret muss nur zwischen Export und Import **eines** Laufs
+   passen. Wird jetzt je Lauf zufaellig erzeugt.
+
+Nicht beanstandet, weil sachlich richtig: dass P2 und P3 die Quell-PDB nach dem Unplug
+wieder zurueckstecken. Ohne das waere PDBCLONE nach dem ersten Lauf aus der Quelle
+verschwunden und P4 nicht mehr fahrbar. Die Reihe bleibt so in beliebiger Reihenfolge
+einzeln ausfuehrbar.

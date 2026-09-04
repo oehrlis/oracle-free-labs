@@ -389,6 +389,13 @@ EXIT" \
 # Append or replace a KEY=VALUE line in the state file.
 write_state() {
     local key="$1" value="$2"
+    # A dry-run must not touch the state file the gates read. Otherwise a
+    # dry-run leaves placeholder values behind, the gates look satisfied and a
+    # later single step runs against an invented DBID.
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_dbg "state (dry-run, not persisted): ${key}=${value}"
+        return 0
+    fi
     mkdir -p "$(dirname "${STATE_FILE}")"
     if [[ -f "${STATE_FILE}" ]]; then
         # Remove existing line for this key, then append
