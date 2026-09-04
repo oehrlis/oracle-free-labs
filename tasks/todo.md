@@ -1369,3 +1369,48 @@ in dem Sinne, dass derselbe TEK unter demselben MEK denselben gewrappten Wert
 ergibt - zwei verschiedene Werte belegen zwei verschiedene Tablespace-Keys.
 Damit stuetzt sich der Befund auf drei unabhaengige Beobachtungen:
 identischer MEK, wechselnde gewrappte Keys, vollstaendig abweichendes Chiffrat.
+
+## Gemessen: Klon und Unplug/Plug verhalten sich entgegengesetzt
+
+Schritt 63 (P2, Archiv-Transport in eine **frische** Dev-CDB mit eigener DBID):
+
+| | Quelle `PDBCLONE` | Ziel `PDBCLONE_P2` |
+|---|---|---|
+| MASTERKEYID | `5D59025BBFEE48CD94EF23CD6CD42CF8` | identisch |
+| Wrapped TEK | `91D0AD87CA68317E5ED6365A256A009368FB940D0818111A3C5576345E3AE7BA` | identisch |
+| KEY_VERSION | 0 | 0 |
+| Blockvergleich | - | 6400 von 6401 identisch, 1 abweichend |
+| ORIGIN im Ziel | - | `LOCAL` |
+
+Zusammen mit P1 ergibt das zwei entgegengesetzte Pfade:
+
+| Pfad | Schluesselmaterial | Chiffrat |
+|---|---|---|
+| `CREATE PLUGGABLE DATABASE ... FROM` (Klon) | **neu** | 0 von 313 identisch |
+| `UNPLUG` / `CREATE ... USING` (Archiv) | **erhalten** | 6400 von 6401 identisch |
+
+Der Klon entschluesselt und verschluesselt neu, der Archiv-Transport verschiebt
+die Dateien unveraendert und transportiert die Schluessel.
+
+### Der Provenance-Befund in seiner scharfsten Form
+
+Das Ziel ist eine frische, unabhaengige CDB - eigene DBID, eigener Keystore,
+eigener MEK aus dem Setup. Nach dem Transport steht dort Prods MEK-ID, das
+Chiffrat ist byteidentisch zu Prod, und `ORIGIN` meldet `LOCAL`, obwohl der
+Schluessel per `EXPORT KEYS` / `IMPORT KEYS` formal aus Produktion kam.
+
+Nichts in `V$ENCRYPTION_KEYS` unterscheidet einen transportierten
+Produktionsschluessel von einem lokal erzeugten. Das ist die empirische
+Grundlage fuer das OKV-Argument: die Herkunftsfrage ist mit einem
+Software-Keystore nicht beantwortbar, mit einem zentralen Key-Management
+schon.
+
+### Negativtest P3: Oracle verhindert es frueher als angenommen
+
+`ORA-46680: Pluggable database (PDB) master keys must be exported.` beim
+**UNPLUG**. Der Testfall war so entworfen, dass das Unplug ohne
+`ENCRYPT USING` gelingt und erst das Einpluggen scheitert. Tatsaechlich
+verweigert Oracle bereits das Erzeugen des Archivs: von einer PDB mit
+verschluesselten Tablespaces laesst sich kein schluessellose Archiv anlegen.
+Das ist ein staerkeres Ergebnis als erwartet und muss im Testfall so
+formuliert werden.
