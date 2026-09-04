@@ -118,12 +118,30 @@ EXIT
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod '
 DBPWD=$(printf "%s" "${ORACLE_PWD}")
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' ADMIN USER pdbadmin IDENTIFIED BY "${DBPWD}";
 ALTER PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' OPEN READ WRITE;
 ALTER PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' SAVE STATE;
 SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_SRC_PDB}"''"'"';
+EXIT
+SQL
+'
+
+    # A PDB created from PDB$SEED has no master key of its own, and without one
+    # CREATE TABLESPACE ... ENCRYPTION fails with ORA-28361, "Master key not yet
+    # set". FORCE KEYSTORE is required because the prod keystore is open as
+    # LOCAL_AUTOLOGIN - password operations need it. Passed via stdin so the
+    # keystore password never reaches the host process list.
+    step_header "Set master key for ${CLONE_SRC_PDB}"
+    # shellcheck disable=SC1078,SC1079
+    lib_run in_prod_stdin '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER='"${CLONE_SRC_PDB}"';
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" WITH BACKUP;
+SELECT con_id, key_id, origin FROM v\$encryption_keys ORDER BY con_id;
 EXIT
 SQL
 '
@@ -200,7 +218,7 @@ EXIT
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod '
 DBPWD=$(printf "%s" "${ORACLE_PWD}")
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR CONTINUE
 DROP USER '"${CLONE_USER}"' CASCADE;
 WHENEVER SQLERROR EXIT SQL.SQLCODE
