@@ -718,3 +718,44 @@ im Text ausdruecklich vermerkt ist:
 
 MOS Notes: keine der genannten Notes ist frei einsehbar. Die IDs 1301365.1, 1228046.1 und
 1241925.1 stammen aus einer Sekundaerquelle und wurden inhaltlich nicht geprueft.
+
+## Algorithmuswechsel als Beweis fuer neues Schluesselmaterial
+
+Ein Wechsel der Schluessellaenge ist der einzige Nachweis, der ohne Chiffratvergleich
+auskommt: ein 192-Bit-Schluessel kann kein umgewickelter 256-Bit-Schluessel sein.
+
+Zuerst eine Korrektur. Ein frueherer Versuch, den Algorithmus mit
+`ALTER TABLESPACE ... ENCRYPTION OFFLINE USING 'AES192' ENCRYPT` zu wechseln, scheiterte
+mit ORA-28340. Ursache war das falsche Kommando, nicht eine Sperre. Oracle dokumentiert
+fuer den SYSTEM-Tablespace, dass die ENCRYPT-Klausel keinen Algorithmus annimmt, weil
+beim ersten Mal mit dem bestehenden Database Key verschluesselt wird, und dass fuer den
+Algorithmus die REKEY-Klausel zu verwenden ist.
+
+Gemessen an einem eigenen Tablespace in der Quelldatenbank, 5000 Canary-Zeilen:
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Groesse | vor dem Rekey | nach `ENCRYPTION ONLINE USING 'AES192' REKEY` |
+|---|---|---|
+| Algorithmus und Cipher Mode | AES256 XTS | AES192 CFB |
+| KEY_VERSION | 0 | 2 |
+| gewrappter TEK | 3792A5BB...84A0 | D1D460D8...2DD3 plus Nullbytes |
+| signifikante Schluesselbytes | 32, also 256 Bit | 24, also 192 Bit |
+| Datafile | unveraendert | neu geschrieben |
+| Blockvergleich | - | 2560 von 2561 Bloecken geaendert, nur Block 0 gleich |
+| alter TEK im neuen Datafile | - | 0 Treffer |
+| Canary | 5000 Zeilen | 5000 Zeilen |
+
+<!-- markdownlint-restore -->
+
+Geltungsbereich des Algorithmus, ebenfalls gemessen: der tablespace-lokale
+`USING 'AES192' REKEY` wird akzeptiert, obwohl der Instanz-Default-Cipher-Mode auf XTS
+steht, und stellt diesen Tablespace auf CFB. Der Instanzparameter
+`tablespace_encryption_default_algorithm` dagegen wird bei aktivem XTS mit ORA-38134
+abgelehnt. Belegt in der SQL Language Reference 26ai: XTS ist nur mit AES128 und AES256
+erlaubt, fuer AES192 ist CFB zu verwenden. XTS existiert erst ab 23ai, 19c kennt nur CFB.
+
+Konsequenz fuer die Empfehlung: wer AES192 waehlt, verlaesst XTS. Als Mittel zur
+Trennung von der Produktion ist der Algorithmuswechsel damit kein Selbstzweck - ein
+`ONLINE REKEY` unter AES256 erneuert das Schluesselmaterial genauso und behaelt den
+modernen Cipher Mode.
