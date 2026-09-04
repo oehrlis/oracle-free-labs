@@ -30,7 +30,7 @@ Kein RMAN-basierter Klonweg erzeugt neues Tablespace-Encryption-Key-Material. Ge
   ORA-28374. RMAN braucht den Quell-MEK, um die verschluesselten Quellbloecke zu lesen. Ein
   RMAN-Klon ohne Transfer des Prod-Schluessels existiert nicht.
 - **Variante B1 (`AS ENCRYPTED USING KEY` mit Prod-MEK und eigenem Ziel-MEK):** die
-  unverschluesselten CDB-Datafiles werden korrekt neu verschluesselt (Laufzeit 5:45 gegenueber
+  unverschluesselten CDB-Datafiles werden korrekt neu verschluesselt (Laufzeit 5:45 in einem Einzellauf gegenueber
   3 Sekunden bei einem normalen Restore, also echte Blockarbeit). Beim ersten bereits
   verschluesselten Datafile bricht RMAN mit ORA-00600
   `[kcbtse_encdec_tbsblk_1]` ab, dreimal reproduziert. Fuer eine bereits verschluesselte
@@ -70,7 +70,7 @@ kryptografisch vollstaendig an Prod haengt - identisches Chiffrat, identischer g
 identische `MASTERKEYID`. Variante B2 zeigt, dass es keinen RMAN-Weg gibt, der ohne den
 Prod-Schluessel auskommt: RMAN muss die Quellbloecke lesen, dazu braucht es den Quell-MEK.
 Variante B1 erfuellt genau den dokumentierten Anwendungsfall - unverschluesselte Quelldateien
-werden beim Restore verschluesselt, messbar an der Laufzeit von 5:45 gegenueber 3 Sekunden -
+werden beim Restore verschluesselt, messbar an der Laufzeit von 5:45 gegenueber 3 Sekunden, je Einzellauf -
 scheitert aber beim ersten bereits verschluesselten Datafile mit einem internen Fehler.
 Variante C wurde nicht gemessen und bleibt offen.
 
@@ -457,7 +457,7 @@ Der Keystore musste nach dem Instanzneustart explizit mit Passwort geoeffnet wer
 ORA-28365. Anders als bei Variante A ist das hier zwingend.
 
 Das erste Backup-Set mit den unverschluesselten CDB-Datafiles wurde erfolgreich restauriert,
-Laufzeit 5:45 gegenueber 3 Sekunden bei einem normalen Restore. Auf unverschluesselten
+Laufzeit 5:45 in einem Einzellauf gegenueber 3 Sekunden bei einem normalen Restore. Auf unverschluesselten
 Quelldateien leistet `AS ENCRYPTED` also echte Blockarbeit. Der dokumentierte Anwendungsfall
 funktioniert und ist am Timing messbar.
 

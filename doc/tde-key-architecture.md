@@ -1,153 +1,226 @@
-# TDE Schluesselarchitektur - Diagramme
+# TDE Schluesselarchitektur
 
-Begleitdokument zu [tde-restore-as-encrypted.md](tde-restore-as-encrypted.md). Alle
-Zahlenwerte in den Diagrammen sind am Lab gemessen, nicht illustrativ gewaehlt.
-Messsatz: `data/xchange/evidence/baseline/`, Service `odbencprod`, PDB `ODBENCPROD`,
-Tablespace `USERS`, Oracle AI Database Free 26ai.
+Diagramm- und Erklaerdokument zur TDE-Schluesselarchitektur in Oracle AI Database
+Free 26ai. Begleitdokument zu [tde-restore-as-encrypted.md](tde-restore-as-encrypted.md).
+Alle Zahlenwerte sind am Lab gemessen, Messsatz `data/xchange/evidence/`,
+Services `odbencprod` und `odbencdev`, PDB `ODBENCPROD`, Tablespace `USERS`.
 
-## 1 Zwei-Ebenen-Schluesselhierarchie
+## Lesehinweis
 
-Der Master Encryption Key liegt im Keystore, der Tablespace Encryption Key liegt im
-Datafile-Header - dort mit dem MEK eingewickelt. Nur der TEK verschluesselt Datenbloecke.
+Das Dokument folgt der Reihenfolge: Schluesselstruktur (Kapitel 2), eine haeufig
+uebersehene Ausnahme (Kapitel 3), gemessene Wirkung je Operation (Kapitel 4),
+Sonderfaelle (Kapitel 5-7), Variantenvergleich (Kapitel 8) und Stufenmodell (Kapitel 9).
+Kapitel 4 enthaelt die Terminologiefalle, die den Kernbefund des Tests erklaert.
+
+## Die drei Schluesselebenen
+
+Drei Ebenen sind aktiv, wenn ein Tablespace mit TDE geschuetzt wird. Sie liegen an
+unterschiedlichen Orten und haben unterschiedliche Rollen.
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Ebene | View | Format | Speicherort | Anzahl |
+|---|---|---|---|---|
+| MEK | `v$encryption_keys` | KEY_ID base64 | Keystore `ewallet.p12` | je Container ein aktiver, dazu die Historie |
+| Database Key | `v$database_key_info` | RAW(48), 32 Byte signifikant | von Oracle verwaltet, vom MEK gewrappt | je Container einer |
+| Tablespace Key | `v$encrypted_tablespaces` | RAW(32) | gewrappt im Datafile-Header, bei 8K in Block 1 Byte 785 | je verschluesseltem Tablespace einer |
+
+<!-- markdownlint-restore -->
 
 ```mermaid
 flowchart TB
     subgraph KS["Software Keystore - WALLET_ROOT/tde"]
-        P12["ewallet.p12<br/>passwortgeschuetzter Keystore"]
+        P12["ewallet.p12<br/>passwortgeschuetzt"]
         SSO["cwallet.sso<br/>Local Auto-Login"]
-        SEPS["tde_seps/cwallet.sso<br/>Keystore-Passwort fuer<br/>IDENTIFIED BY EXTERNAL STORE"]
+        SEPS["tde_seps/cwallet.sso<br/>External Store fuer<br/>Keystore-Passwort"]
     end
 
-    subgraph MEKS["Master Encryption Keys"]
-        MEKC["MEK CDB con_id 1<br/>KEY_ID AbyhIcXQQk+XiBYrKzrI3FY...<br/>ORIGIN LOCAL"]
-        MEKP["MEK PDB con_id 4<br/>KEY_ID AYonWJeWoki+lSIuWUB/+WI...<br/>MASTERKEYID 8A2758...F962<br/>ORIGIN LOCAL"]
+    subgraph MEK_BOX["Master Encryption Keys - v$encryption_keys"]
+        MEKC["MEK CDB con_id 1<br/>KEY_ID base64<br/>ORIGIN LOCAL"]
+        MEKP["MEK PDB con_id N<br/>KEY_ID base64<br/>ORIGIN LOCAL"]
     end
 
-    subgraph DF["Datafile USERS - o1_mf_users_*.dbf, 2560 Bloecke"]
-        HDR["Block 1 - File Header<br/>Byte 785: gewrappter TEK, 32 Byte<br/>Byte 833: MASTERKEYID, 16 Byte"]
-        DATA["Bloecke 979-1407<br/>313 Datenbloecke mit Canary<br/>370 Bloecke verschluesselt"]
+    subgraph DBK["Database Key - v$database_key_info"]
+        DK["RAW(48), 32 Byte signifikant<br/>je Container einer<br/>existiert auch bei unverschluesselten Tablespaces"]
+    end
+
+    subgraph DF["Datafile-Header - Block 1"]
+        TEK["Tablespace Key RAW(32)<br/>Byte 785: gewrappter TEK<br/>Byte 833: MASTERKEYID"]
+        DATA["Datenbloecke<br/>vom TEK verschluesselt"]
     end
 
     P12 --> SSO
-    SEPS -.->|"oeffnet Keystore<br/>ohne Passworteingabe"| P12
+    SEPS -.->|"oeffnet ohne Passworteingabe"| P12
     P12 --> MEKC
     P12 --> MEKP
-    MEKP ==>|"wrappt den TEK"| HDR
-    HDR ==>|"TEK entschluesselt<br/>und verschluesselt"| DATA
+    MEKP -->|"wrappt"| DK
+    MEKP -->|"wrappt"| TEK
+    TEK -->|"entschluesselt und verschluesselt"| DATA
 ```
 
-Belegt durch die Suche nach den View-Werten in der Rohdatei: der gewrappte TEK
-`BAD537AD...FA55` aus `V$ENCRYPTED_TABLESPACES.ENCRYPTEDKEY` wurde genau einmal im
-Datafile gefunden, bei Offset 8977 gleich Block 1 Byte 785. Die `MASTERKEYID`
-`8A27589796A248BE95222E59407FF962` liegt 48 Byte dahinter bei Offset 9025. In einem
-unverschluesselten Kontroll-Datafile war keine der beiden Sequenzen vorhanden.
+Physisch nachgewiesen: der gewrappte TEK aus `v$encrypted_tablespaces.ENCRYPTEDKEY`
+wurde genau einmal im Rohdatafile gefunden, bei Offset 8977 gleich Block 1 Byte 785.
+Die `MASTERKEYID` liegt bei Offset 9025, 48 Byte dahinter. In einem unverschluesselten
+Kontroll-Datafile kein Treffer. Gemessen in zwei unabhaengigen Aufbauten, die Offsets
+waren in beiden identisch.
 
-## 2 Die Terminologiefalle - beide Operationen heissen rekey
+## Nicht jeder Tablespace hat einen eigenen Schluessel
 
-Der Unterschied entscheidet die Kundenfrage. Eine MEK-Rotation beruehrt keinen
-einzigen Datenblock.
-
-```mermaid
-flowchart LR
-    subgraph ROT["MEK-Rotation - ADMINISTER KEY MANAGEMENT SET KEY"]
-        R1["neuer MEK im Keystore"] --> R2["TEK wird mit dem<br/>neuen MEK neu gewrappt"]
-        R2 --> R3["Datafile-Header<br/>Byte 785 und 833 aendern sich"]
-        R3 --> R4["Datenbloecke<br/>unveraendert<br/>Dauer: Sekunden"]
-    end
-
-    subgraph REK["Tablespace-Rekey - ALTER TABLESPACE ... ONLINE REKEY"]
-        K1["neues TEK-Material"] --> K2["Datafiles werden<br/>konvertiert neu geschrieben<br/>daher FILE_NAME_CONVERT"]
-        K2 --> K3["alle Datenbloecke<br/>neu verschluesselt<br/>Dauer: proportional zur Datenmenge"]
-    end
-```
-
-In Oracle Database Free ist die Online-Variante nicht unterstuetzt, siehe Licensing
-Restrictions. Im Lab wird die Referenz daher ueber einen neuen verschluesselten
-Tablespace mit Datenumzug gebildet.
-
-## 3 Wo liegt welcher MEK und was aktualisiert ihn
+Das ist der Punkt, an dem Erwartung und Messung auseinandergehen. Die verwendete
+Verschluesselungsoperation entscheidet, ob ein Tablespace einen eigenen Schluessel
+erhaelt oder den Database Key des Containers uebernimmt.
 
 ```mermaid
 flowchart TB
-    subgraph PROD["odbencprod - Quelle, Port 1532"]
-        PW["WALLET_ROOT<br/>/opt/oracle/dbconfig/FREE/wallet<br/>Host: data/odbencprod/dbconfig/FREE/wallet"]
-        PM["MEK PDB, ORIGIN LOCAL<br/>MASTERKEYID 8A2758...F962<br/>KEY_VERSION 1"]
-        PW --> PM
+    subgraph OFL["OFFLINE ENCRYPT"]
+        OF1["kein eigener Schluessel erzeugt"]
+        OF2["TEK = Database Key des Containers"]
+        OF1 --> OF2
     end
 
-    subgraph DEV["odbencdev - Ziel, Port 1533"]
-        DW["WALLET_ROOT<br/>/opt/oracle/dbconfig/FREE/wallet<br/>Host: data/odbencdev/dbconfig/FREE/wallet"]
-        DM["MEK CDB, ORIGIN LOCAL<br/>KEY_ID AWZuopGe2EGHqnGxulapWxw...<br/>eigenstaendig erzeugt"]
-        DW --> DM
+    subgraph ONL["ONLINE ENCRYPT / ONLINE REKEY"]
+        ON1["eigener Tablespace Key erzeugt"]
+        ON2["TEK verschieden vom Database Key"]
+        ON1 --> ON2
     end
 
-    XCH["data/xchange<br/>/opt/oracle/xchange<br/>RMAN-Backupsets, Wallet-Kopien"]
-
-    PROD -->|"Backup + Wallet-Kopie"| XCH
-    XCH -->|"je Variante unterschiedlich"| DEV
+    subgraph RMN["RMAN AS ENCRYPTED (zuvor unverschluesselt)"]
+        RM1["verschluesselt mit Database Key<br/>der Quelldatenbank"]
+        RM2["kein eigenes Schluesselmaterial<br/>fuer diese Tablespaces"]
+        RM1 --> RM2
+    end
 ```
 
-Beide Container nutzen denselben containerinternen Pfad, der aber auf getrennte
-Host-Verzeichnisse zeigt. Das ist genau die Kundenkonstellation: identische
-Konfiguration, getrennte Schluesselbestaende.
+Gemessene Belege:
 
-Was den MEK aendert:
+- Nach Variante F trug `USERS` (per `OFFLINE ENCRYPT` verschluesselt) exakt den
+  DB-Key-Wert `D40B030F...F03F` als TEK.
+- `CANARY_PLAIN` erhielt per `ONLINE ENCRYPT` einen eigenen TEK `A1EBE741...`,
+  `USERS` nach `ONLINE REKEY` den TEK `A4C84E43...426B` - beide verschieden vom DB Key.
+- In Variante C (DUPLICATE AS ENCRYPTED) erhielten `SYSTEM`, `SYSAUX`, `UNDOTBS1`,
+  `AUDIT_DATA` und `CANARY_PLAIN` alle den Wert `566B2C9C...69CE`, den Database Key
+  der Quell-PDB.
+
+Der Doku-Wortlaut "the tablespace will have its own independent encryption keys and
+algorithms" bezieht sich ausschliesslich auf Online-Operationen. Das ist hier am
+Verhalten belegt.
+
+## Wirkung je Operation
 
 <!-- markdownlint-disable MD013 MD060 -->
 
-| Ereignis | Wirkung auf den MEK | Wirkung auf den TEK | Wirkung auf Datenbloecke |
-|---|---|---|---|
-| `ADMINISTER KEY MANAGEMENT SET KEY` | neuer aktiver MEK, alter bleibt im Keystore | wird neu gewrappt | keine |
-| Keystore-Kopie nach Dev | derselbe MEK, `ORIGIN` bleibt `LOCAL` in der Kopie | unveraendert | keine |
-| `EXPORT`/`IMPORT KEYS` | MEK erscheint im Ziel mit `ORIGIN IMPORTED` | unveraendert | keine |
-| `RESTORE ... AS ENCRYPTED USING KEY` | Ziel-MEK wird verwendet | offen - Messung | offen - Messung |
-| Tablespace-Rekey | unveraendert | neues Material | alle neu verschluesselt |
+| Operation | MEK | Database Key | Tablespace Key | Datenbloecke |
+|---|---|---|---|---|
+| `SET KEY` MEK-Rotation | neu | neu gewrappt, Klartext gleich | neu gewrappt, KEY_VERSION unveraendert | unveraendert, 2560 von 2561 identisch |
+| `ONLINE REKEY` | unveraendert | unveraendert | **neuer Schluessel**, KV plus 1 | **alle neu verschluesselt**, neues Datafile, altes entfernt |
+| `ONLINE ENCRYPT` | unveraendert | unveraendert | **neuer eigener Schluessel** | verschluesselt |
+| `OFFLINE ENCRYPT` | unveraendert | unveraendert | **uebernimmt den Database Key** | verschluesselt |
+| `OFFLINE DECRYPT` | unveraendert | unveraendert | Handle bleibt im Header stehen | entschluesselt |
+| RMAN `AS ENCRYPTED` | Quelle | Quelle | unverschluesselte TS erhalten DB Key, verschluesselte behalten ihren | bei verschluesselten unveraendert |
 
 <!-- markdownlint-restore -->
 
-Die beiden mit "offen" markierten Zellen sind der Gegenstand des Tests. Sie sind in der
-oeffentlichen Oracle-Dokumentation fuer den Fall verschluesselt nach verschluesselt
-nicht belegt.
+### Die Terminologiefalle
 
-## 4 UNITED gegen ISOLATED Keystore-Modus
-
-Im Lab laeuft alles im UNITED Mode. Gemessen an `odbencprod`: genau ein
-Keystore-Verzeichnis `WALLET_ROOT/tde` plus `tde_seps` und `backups`, kein
-PDB-eigenes Keystore-Verzeichnis, `KEYSTORE_MODE = UNITED` fuer die PDB, und
-`TDE_CONFIGURATION = KEYSTORE_CONFIGURATION=FILE` ausschliesslich auf CDB-Ebene
-gesetzt - die PDB hat keinen eigenen Wert und erbt.
-
-Zum Moduswechsel gibt es zwei Aussagen, die sich nicht deckten und die hier
-getrennt stehen bleiben, bis das Lab entscheidet:
-
-- Oracle-Primaerdokumentation: der Wechsel laeuft ueber
-  `ADMINISTER KEY MANAGEMENT ISOLATE KEYSTORE ... FROM ROOT KEYSTORE` in der PDB
-  und zurueck ueber `UNITE KEYSTORE`. `TDE_CONFIGURATION` unterscheidet die Modi
-  **nicht** ueber seinen Wert - beide nutzen `KEYSTORE_CONFIGURATION=FILE`. Eine
-  isolierte PDB kann den Parameter danach separat setzen.
-  Quelle: Administering United Mode und TDE_CONFIGURATION, Oracle 26ai.
-- Praxisbeobachtung: wird `TDE_CONFIGURATION` in der PDB gesetzt, entsteht dort
-  ein eigenes Keystore-File.
-
-Beides kann zusammenpassen, wenn das Setzen des Parameters in der PDB die
-Isolierung in der Praxis nach sich zieht. Belegt ist das nicht - der Punkt ist
-im Lab zu pruefen und steht als offener Pruefpunkt in `tasks/todo.md`.
+Beide Operationen heissen umgangssprachlich "rekey". Der Unterschied ist
+kryptografisch entscheidend.
 
 ```mermaid
 flowchart TB
-    subgraph U["UNITED - TDE_CONFIGURATION nur in CDB\$ROOT"]
+    subgraph ROT["MEK-Rotation - ADMINISTER KEY MANAGEMENT SET KEY"]
+        direction TB
+        R1["neuer MEK im Keystore<br/>B0A4B54D...0B74 -> DEFA0240...6A3A"]
+        R2["TEK neu gewrappt<br/>Klartext unveraendert<br/>A4C84E43...426B -> B1DB7C22...A8BE"]
+        R3["Block 1 Byte 785 und 833 geaendert<br/>Datenbloecke unveraendert<br/>2560 von 2561 identisch"]
+        R1 --> R2
+        R2 --> R3
+    end
+
+    subgraph REK["ONLINE REKEY - ALTER TABLESPACE ... ENCRYPTION ONLINE REKEY"]
+        direction TB
+        K1["neues TEK-Material<br/>D40B030F...F03F -> A4C84E43...426B<br/>KEY_VERSION 3 -> 4"]
+        K2["alle Datenbloecke neu verschluesselt<br/>neues Datafile angelegt<br/>altes physisch entfernt"]
+        K3["alte TEKs im neuen File<br/>nicht mehr auffindbar<br/>2560 von 2561 Bloecke unterschiedlich"]
+        K1 --> K2
+        K2 --> K3
+    end
+```
+
+Belege fuer die MEK-Rotation:
+
+- Alert Log woertlich: `KZTDE: Set Master Key: Tablespace key rewrap done`
+- Blockvergleich: 2560 von 2561 Bloecken identisch, Verdict "RE-WRAP INDICATED"
+- KEY_VERSION des TEK unveraendert bei 4
+
+Belege fuer `ONLINE REKEY`:
+
+- KEY_VERSION 3 auf 4, TEK `D40B030F...F03F` auf `A4C84E43...426B`
+- Neues Datafile angelegt, altes physisch entfernt
+- Alte TEKs im neuen File nicht mehr auffindbar
+- `ONLINE REKEY` ist in Oracle Database Free 26ai technisch ausfuehrbar. Die
+  Licensing Restriction ist eine Lizenz- und Supportaussage, kein technischer Riegel.
+
+## Read-only-Tablespaces
+
+Bei der MEK-Rotation werden Read-only-Tablespaces nicht umgewickelt. Oracle kann
+den Datafile-Header eines Read-only-Tablespace nicht schreiben.
+
+```mermaid
+flowchart LR
+    subgraph KS["Keystore nach SET KEY"]
+        NK["neuer MEK DEFA0240...6A3A<br/>aktiv"]
+        OK["alter MEK B0A4B54D...0B74<br/>in der Historie"]
+    end
+
+    subgraph TS["Tablespaces nach SET KEY"]
+        USERS_TS["USERS (READ WRITE)<br/>zeigt auf DEFA0240...6A3A"]
+        CP_TS["CANARY_PLAIN (READ ONLY)<br/>zeigt weiter auf B0A4B54D...0B74"]
+    end
+
+    NK --> USERS_TS
+    OK --> CP_TS
+    OK -.->|"zwingend erforderlich"| CP_TS
+```
+
+Gemessen: `CANARY_PLAIN` stand auf `READ ONLY` und verwies nach der MEK-Rotation
+weiter auf den alten MEK `B0A4B54D...0B74`, waehrend `USERS` und der Database Key
+auf `DEFA0240...6A3A` zeigten.
+
+Folge: der alte MEK bleibt zwingend erforderlich. Die vollstaendige Schluesselhistorie
+muss im Keystore bleiben. Operativ relevant, weil Archiv-Tablespaces haeufig read-only
+sind. Wer den alten MEK entfernt, verliert den Zugriff auf jeden read-only Tablespace,
+der ihn referenziert.
+
+## UNITED gegen ISOLATED
+
+Im Lab laeuft alles im UNITED Mode. Gemessen an `odbencprod`:
+
+- ein Keystore-Verzeichnis `WALLET_ROOT/tde` plus `tde_seps` und `backups`
+- kein PDB-eigenes Keystore-Verzeichnis
+- `KEYSTORE_MODE = UNITED` fuer die PDB
+- `TDE_CONFIGURATION = KEYSTORE_CONFIGURATION=FILE` ausschliesslich auf CDB-Ebene
+- Alert Log: `KZTDE:kztsmptc: keystore mode: United`
+
+Korrektur zu einer frueheren Annahme: `TDE_CONFIGURATION` unterscheidet die Modi
+**nicht** ueber seinen Wert. Beide nutzen `KEYSTORE_CONFIGURATION=FILE`. Der Wechsel
+laeuft ueber `ADMINISTER KEY MANAGEMENT ISOLATE KEYSTORE ... FROM ROOT KEYSTORE`
+in der PDB und zurueck ueber `UNITE KEYSTORE`.
+
+```mermaid
+flowchart TB
+    subgraph U["UNITED - TDE_CONFIGURATION nur in CDB ROOT"]
         UKS["ein Keystore<br/>WALLET_ROOT/tde/ewallet.p12"]
-        UM1["MEK CDB\$ROOT<br/>con_id 1"]
-        UM2["MEK PDB<br/>con_id 4"]
+        UM1["MEK CDB ROOT con_id 1"]
+        UM2["MEK PDB con_id N"]
         UKS --> UM1
         UKS --> UM2
         UM2 --> UTS["TEK des PDB-Tablespace"]
     end
 
-    subgraph I["ISOLATED - TDE_CONFIGURATION in der PDB gesetzt"]
-        IKS1["Keystore CDB\$ROOT<br/>WALLET_ROOT/tde"]
+    subgraph I["ISOLATED - ISOLATE KEYSTORE ausgefuehrt"]
+        IKS1["Keystore CDB ROOT<br/>WALLET_ROOT/tde"]
         IKS2["eigenes Keystore-File der PDB"]
-        IM1["MEK CDB\$ROOT"]
+        IM1["MEK CDB ROOT"]
         IM2["MEK PDB"]
         IKS1 --> IM1
         IKS2 --> IM2
@@ -155,81 +228,160 @@ flowchart TB
     end
 ```
 
-Beide Modi halten containerspezifische MEKs. Der Unterschied liegt darin, ob
-diese Schluessel in einem gemeinsamen Keystore-File liegen oder in getrennten.
-Fuer einen Klon von Prod nach Non-Prod heisst das: in UNITED wandert eine
-Keystore-Datei mit allen MEKs, in ISOLATED wandern mehrere und die Zuordnung
-muss stimmen.
+Die Praxisbeobachtung, dass ein in der PDB gesetztes `TDE_CONFIGURATION` ein eigenes
+Keystore-File erzeugt, ist nicht durch die Oracle-Primaerdokumentation belegt und
+bleibt ein offener Pruefpunkt. Beides kann zusammenpassen, wenn das Setzen des
+Parameters in der PDB die Isolierung nach sich zieht - gemessen ist das nicht.
 
-Ein eigener PDB-MEK ist in UNITED nicht optional. Die Oracle-Dokumentation zu
-United Mode sagt dazu, der Keystore werde vom CDB-Root verwaltet, muesse aber
-einen fuer die PDB spezifischen TDE-Master-Key enthalten, damit die PDB TDE
-nutzen kann. Ein dokumentierter Weg, PDB-Tablespace-Keys direkt mit dem
-MEK von CDB\$ROOT zu wrappen und so mit einem einzigen MEK fuer die ganze
-Datenbank zu arbeiten, ist nicht belegt. Nur eine Non-CDB haette naturgemaess
-einen einzigen MEK.
+Ein eigener PDB-MEK ist in UNITED nicht optional. Ein dokumentierter Weg, PDB-Tablespace-
+Keys direkt mit dem MEK von `CDB$ROOT` zu wrappen, ist nicht belegt. Nur eine Non-CDB
+haette naturgemaess einen einzigen MEK.
 
-Bei einer Single-Tenant-Umgebung mit genau einer PDB ist UNITED damit der
-einfachere Weg, aber auch dort existieren zwei MEKs. Am Prinzip der Messung
-aendert der Modus nichts - der TEK liegt in beiden Faellen im Datafile-Header
-und wird von einem MEK gewrappt. ISOLATED erhoeht nur den Verwaltungsaufwand
-beim Transport, und laut einer Sekundaerquelle ist ISOLATED von AutoUpgrade und
-OCI-Tooling noch nicht vollstaendig unterstuetzt.
+## Keystore-Portabilitaet
 
-> Quellenstand: die Aussage, dass `TDE_CONFIGURATION` auf PDB-Ebene ein eigenes
-> Keystore-File erzeugt, ist Praxiswissen und deckt sich nicht mit der
-> Oracle-Primaerdokumentation, die den Moduswechsel ueber `ISOLATE KEYSTORE`
-> beschreibt. Der Punkt wird im Lab gemessen.
-
-## 5 Die Varianten im Vergleich
-
-Alle Varianten starten bei derselben Quelle: PDB `ODBENCPROD`, Tablespace `USERS`
-verschluesselt mit AES256, gewrappter TEK `BAD537AD...FA55` unter MASTERKEYID
-`8A2758...F962`, 313 Canary-Datenbloecke.
+Ein `LOCAL` Auto-Login-Keystore ist an den erzeugenden Host gebunden. Das hat
+Konsequenzen beim Transport.
 
 ```mermaid
 flowchart TB
-    SRC["Quelle odbencprod<br/>USERS verschluesselt<br/>TEK BAD537AD...FA55<br/>313 Datenbloecke"]
+    SRC["odbencprod<br/>ewallet.p12 und cwallet.sso LOCAL"]
+    COPY["Kopie auf Zielhost<br/>beide Dateien uebertragen"]
+    ERR1["v$encryption_wallet: CLOSED<br/>WALLET_TYPE: UNKNOWN<br/>ORA-28365 beim Zugriff"]
+    ERR2["cwallet.sso blockiert<br/>Neuerzeugung: ORA-46630"]
+    FIX["Loesung:<br/>cwallet.sso beiseite legen<br/>ewallet.p12 behalten<br/>LOCAL AUTO_LOGIN am Ziel neu erzeugen"]
+    OK["Keystore OPEN<br/>WALLET_TYPE: LOCAL_AUTOLOGIN"]
 
-    SRC --> A["A: RESTORE DATABASE<br/>Prod-Wallet transportiert"]
-    SRC --> B2["B2: AS ENCRYPTED USING KEY<br/>ohne Prod-MEK"]
-    SRC --> B1["B1: AS ENCRYPTED USING KEY<br/>mit Prod-MEK"]
-    SRC --> D["D: FORCE AS DECRYPTED<br/>dann SET KEY<br/>dann OFFLINE ENCRYPT"]
-    SRC --> P["Positivkontrolle<br/>neuer verschluesselter<br/>Tablespace"]
-
-    A --> AR["313 von 313 Datenbloecken<br/>byteidentisch<br/>TEK unveraendert<br/>Entzug: ORA-28374"]
-    B2 --> B2R["Restore scheitert<br/>ORA-19870 plus ORA-28374<br/>kein Ergebnis"]
-    B1 --> B1R["Restore scheitert<br/>ORA-00600<br/>kcbtse_encdec_tbsblk_1<br/>dreimal reproduziert"]
-    D --> DR["313 von 313 Datenbloecken<br/>byteidentisch<br/>MEK neu, TEK unveraendert"]
-    P --> PR["367 von 501 Bloecken<br/>unterschiedlich<br/>TEK nachweislich neu"]
-
-    AR --> NO1["untauglich"]
-    B2R --> NO2["nicht nutzbar"]
-    B1R --> NO3["nicht nutzbar"]
-    DR --> NO4["MEK getrennt,<br/>Chiffrat identisch"]
-    PR --> YES["erfuellt die<br/>Trennungsanforderung"]
+    SRC -->|"sso + p12 kopiert"| COPY
+    COPY --> ERR1
+    COPY --> ERR2
+    ERR2 --> FIX
+    FIX --> OK
 ```
 
-Die Positivkontrolle ist der Beweis, dass die Messung ueberhaupt greift: zwei
-Tablespaces mit identischem Inhalt, identischen Blockadressen und verschiedenen
-TEKs liefern unterschiedliches Chiffrat. Wo Quelle und Klon byteidentisch sind,
-ist der TEK also wirklich derselbe und nicht nur die Messung blind.
+Gemessen in drei Varianten unabhaengig aufgetreten. Das funktionierende Vorgehen:
 
-## 6 Entscheidungsbaum fuer den Kunden
+```sql
+ADMINISTER KEY MANAGEMENT CREATE LOCAL AUTO_LOGIN KEYSTORE
+  FROM KEYSTORE '/opt/oracle/dbconfig/FREE/wallet/tde' IDENTIFIED BY <pwd>;
+```
+
+Wichtiger Nebenbefund: `ORIGIN` zeigt fuer transportierte Schluessel im Ziel `LOCAL`,
+nicht `IMPORTED`. Wer die Keystore-Datei kopiert, hinterlaesst keine Spur der Herkunft.
+`ORIGIN` taugt nicht als Nachweis lokaler Schluesselerzeugung. Betrifft auch den
+SEPS-Store `tde_seps`, der ebenfalls als `LOCAL AUTO_LOGIN` angelegt wird.
+
+## Die Varianten im Vergleich
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Variante | Vorgehen | Canary-Bloecke identisch | TEK USERS | Ergebnis |
+|---|---|---|---|---|
+| A | normaler RESTORE, Prod-Wallet transportiert | 313 von 313 | unveraendert | laeuft; Entzugstest: ORA-28374 |
+| B1 | AS ENCRYPTED USING KEY mit Prod-MEK | - | - | ORA-00600 [kcbtse\_encdec\_tbsblk\_1], dreimal reproduziert |
+| B2 | AS ENCRYPTED USING KEY ohne Prod-MEK | - | - | ORA-19870 plus ORA-28374 |
+| C | DUPLICATE BACKUP LOCATION AS ENCRYPTED | 313 von 313 | unveraendert | laeuft, neue DBID; unverschluesselte TS erhalten DB Key der Quelle |
+| D | FORCE AS DECRYPTED, SET KEY, OFFLINE ENCRYPT | 313 von 313 | unveraendert | MEK neu, Chiffrat identisch; kein kryptografischer Neuanfang |
+| F | RESTORE, OFFLINE DECRYPT, frischer Keystore, \_db\_discard\_lost\_masterkey, SET KEY, OFFLINE ENCRYPT | 2561 von 2561 | **neu** | Quell-TEK und Quell-MASTERKEYID physisch verschwunden, kein Quell-MEK, Canary lesbar |
+| G | ONLINE REKEY | 2560 von 2561 | **neu** | neues Datafile, altes entfernt, alte TEKs nicht mehr auffindbar |
+| Positivkontrolle | zwei frische verschluesselte TS mit identischem Inhalt und verschiedenen TEKs | - | verschieden | 367 von 501 Canary-Bloecken unterschiedlich; Methode erkennt TEK-Wechsel |
+
+<!-- markdownlint-restore -->
+
+Anmerkung zu Variante B1: das erste Backup-Set mit unverschluesselten CDB-Datafiles
+wurde in 5:45 erfolgreich konvertiert, gegenueber 3 Sekunden bei normalem Restore.
+Beide Zeiten sind Einzelbeobachtungen und wurden nicht wiederholt gemessen; sie belegen
+die Richtung, nicht einen Kennwert.
+`AS ENCRYPTED` leistet bei unverschluesselter Quelle echte Blockarbeit - das Abbrechen
+tritt erst beim bereits verschluesselten Datafile auf.
+
+Anmerkung zu Variante C: der als "neuer gemeinsamer TEK" gemessene Wert
+`566B2C9C...69CE` ist der Database Key der PDB in der Quelle. AS ENCRYPTED hat die
+fuenf unverschluesselten Tablespaces unter dem vorhandenen Database Key der Quelle
+verschluesselt.
 
 ```mermaid
 flowchart TB
-    Q1{"Soll der Klon<br/>kryptografisch von Prod<br/>getrennt sein?"}
-    Q1 -->|nein| A1["RESTORE DATABASE<br/>Prod-Keystore mitgeben<br/>einfachster Weg"]
-    Q1 -->|ja| Q2{"Darf der Prod-Schluessel<br/>voruebergehend ins Ziel?"}
-    Q2 -->|nein| X["kein RMAN-Weg vorhanden<br/>gemessen: ORA-28374<br/>Alternative: logischer Export"]
-    Q2 -->|ja| Q3{"Enterprise Edition<br/>verfuegbar?"}
-    Q3 -->|ja| R1["Klon, dann SET KEY,<br/>dann ONLINE REKEY<br/>Doku verspricht<br/>independent keys<br/>im Lab nicht pruefbar"]
-    Q3 -->|nein| R2["Klon, dann SET KEY,<br/>dann neuen verschluesselten<br/>Tablespace anlegen und<br/>Daten umziehen<br/>gemessen: neuer TEK"]
-    R1 --> CLEAN["danach Keystore-Hygiene:<br/>frischer Keystore mit<br/>selektivem Import,<br/>sonst bleiben alle<br/>historischen Prod-Schluessel"]
-    R2 --> CLEAN
+    SRC["Quelle odbencprod<br/>USERS: TEK E36623EC...934F<br/>DB Key: 566B2C9C...69CE<br/>313 Canary-Datenbloecke"]
+
+    SRC --> A["A: normaler RESTORE<br/>Prod-Wallet transportiert"]
+    SRC --> B1["B1: AS ENCRYPTED<br/>mit Prod-MEK"]
+    SRC --> B2["B2: AS ENCRYPTED<br/>ohne Prod-MEK"]
+    SRC --> C["C: DUPLICATE AS ENCRYPTED<br/>aus Backup"]
+    SRC --> D["D: AS DECRYPTED<br/>SET KEY, OFFLINE ENCRYPT"]
+    SRC --> F["F: RESTORE, DECRYPT<br/>frischer Keystore, SET KEY<br/>OFFLINE ENCRYPT"]
+    SRC --> G["G: ONLINE REKEY"]
+    SRC --> PK["Positivkontrolle<br/>neuer TS, gleicher Inhalt"]
+
+    A --> AR["313 von 313 identisch<br/>TEK unveraendert<br/>ORA-28374 beim Entzug"]
+    B1 --> B1R["ORA-00600<br/>kcbtse_encdec_tbsblk_1"]
+    B2 --> B2R["ORA-19870<br/>ORA-28374"]
+    C --> CR["313 von 313 identisch<br/>USERS TEK unveraendert<br/>unverschluesselte TS: DB Key der Quelle"]
+    D --> DR["313 von 313 identisch<br/>TEK unveraendert<br/>MEK neu"]
+    F --> FR["2561 von 2561 unterschiedlich<br/>TEK neu, kein Quell-MEK<br/>Canary lesbar"]
+    G --> GR["2560 von 2561 unterschiedlich<br/>TEK neu, neues Datafile"]
+    PK --> PKR["367 von 501 unterschiedlich<br/>TEK-Wechsel nachweisbar"]
 ```
 
-Der Kasten zur Keystore-Hygiene ist kein Nebenschauplatz. Ein kopierter Keystore
-enthaelt die vollstaendige Schluesselhistorie der Quelle, und `ORIGIN` zeigt fuer
-diese Schluessel im Ziel `LOCAL` - die Herkunft ist an den Views nicht erkennbar.
+## Stufenmodell der kryptografischen Unabhaengigkeit
+
+Die Stufen leiten sich ausschliesslich aus den Messergebnissen ab.
+
+```mermaid
+flowchart LR
+    S0["Stufe 0<br/>Prod-Keystore und<br/>Prod-Schluessel im Ziel<br/>Varianten A, C-USERS"]
+    S1["Stufe 1<br/>eigener MEK<br/>Prod-TEK, identisches Chiffrat<br/>Variante D"]
+    S2["Stufe 2<br/>eigener MEK<br/>eigener TEK<br/>Prod-MEK noch vorhanden"]
+    S3["Stufe 3<br/>eigener MEK<br/>eigener TEK<br/>kein Quell-MEK im Keystore<br/>Varianten F, G"]
+
+    S0 --> S1
+    S1 --> S2
+    S2 --> S3
+```
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Stufe | Merkmal | Varianten | Was gemeinsam bleibt | Kryptografische Trennung |
+|---|---|---|---|---|
+| 0 | Prod-Keystore und Prod-TEK im Ziel | A, C (USERS-Teil) | MEK, TEK, Chiffrat | keine |
+| 1 | Eigener MEK, Prod-TEK | D | TEK-Klartext, Chiffrat identisch | MEK-Trennung, kein Schutz des Chiffrats |
+| 2 | Eigener MEK, eigener TEK, Prod-MEK noch im Keystore | Zwischenzustand nach F vor Keystore-Bereinigung | Prod-MEK vorhanden | TEK getrennt, Keystore-Kontrolle noch nicht vollstaendig |
+| 3 | Eigener MEK, eigener TEK, kein Quell-MEK | F, G | nichts Schluesselrelevantes | vollstaendig |
+
+<!-- markdownlint-restore -->
+
+Hinweis zu Variante F: `_db_discard_lost_masterkey` ist ein Hidden Parameter,
+dokumentiert in einer MOS Note. Einsatz nur nach Abklaerun mit Oracle Support.
+Fachlich zulaessig ausschliesslich nach vollstaendigem `AS DECRYPTED`, wenn
+nachweislich kein verschluesseltes Objekt mehr existiert. Eine Sekundaerquelle
+warnt bei wiederholtem Einsatz vor echten Korruptionen (ORA-01595, ORA-28304).
+Gemessen in Oracle AI Database Free 26ai, nicht in Enterprise Edition.
+
+Im Fenster zwischen `OFFLINE DECRYPT` und `OFFLINE ENCRYPT` in Variante F liegen
+die Daten unverschluesselt. Das ist ein bewusster Sicherheitskompromiss.
+
+## Quellen
+
+- Oracle Backup and Recovery Reference 19c, RESTORE:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/19/rcmrf/RESTORE.html>
+- Oracle Backup and Recovery Reference 26ai, RESTORE:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/26/rcmrf/RESTORE.html>
+- Oracle Backup and Recovery Reference 19c, DUPLICATE:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/19/rcmrf/DUPLICATE.html>
+- Oracle Database Free 26ai, Licensing Restrictions:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/26/xeinl/licensing-restrictions.html>
+- Oracle TDE 26ai, Encryption Conversions for Tablespaces:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/encryption-conversions-tablespaces-and-databases1.html>
+- Oracle Reference 19c, V$ENCRYPTED\_TABLESPACES:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/V-ENCRYPTED_TABLESPACES.html>
+- Oracle TDE 26ai, Administering United Mode:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/administering-united-mode1.html>
+- Oracle Reference 26ai, TDE\_CONFIGURATION:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/26/refrn/TDE_CONFIGURATION.html>
+- Oracle Advanced Security 19c, Managing Keystores in United Mode:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/19/asoag/managing-keystores-encryption-keys-in-united-mode.html>
+- Oracle TDE 26ai, ORA-28374:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/error-ora-28374-typed-master-key-not-found.html>
+- Oracle Advanced Security 19c, Configuring TDE:
+  <https://docs.oracle.com/en/database/oracle/oracle-database/19/asoag/configuring-transparent-data-encryption.html>
+- Asanga Pradeep Blog, 19c Encryption (Sekundaerquelle):
+  <https://asanga-pradeep.blogspot.com/2019/10/19c-encryption.html>
