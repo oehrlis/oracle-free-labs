@@ -119,15 +119,65 @@ main() {
     ensure_omf "${PROD_SERVICE}"
     ensure_omf "${DEV_SERVICE}"
 
+    # The DROP deliberately does NOT sit in the same block as the UNPLUG. With
+    # SQLERROR CONTINUE it would run even when the UNPLUG failed and delete the
+    # source PDB without any archive to restore it from.
     step_header "Phase 1: UNPLUG ${CLONE_SRC_PDB} (no key export)"
-    sqlplus_prod "
+    local unplug_output=""
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would attempt UNPLUG without ENCRYPT USING"
+        unplug_output="DRY-RUN"
+    else
+        unplug_output=$(sqlplus_prod "
 WHENEVER SQLERROR CONTINUE
--- Tolerated: an aborted earlier attempt leaves the PDB MOUNTED, and closing
--- an already closed PDB fails with ORA-65020.
 ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} CLOSE IMMEDIATE;
-WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB}
   UNPLUG INTO '${ARCHIVE_PATH}';
+EXIT
+" 2>&1) || true
+        printf '%s\n' "${unplug_output}"
+    fi
+
+    # Did an archive actually appear? That, not the message, decides.
+    local archive_present="no"
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        archive_present=$(docker exec "${PROD_SERVICE}" \
+            bash -c "[ -f ${ARCHIVE_PATH} ] && echo yes || echo no")
+    fi
+    lib_info "archive present after the keyless unplug attempt: ${archive_present}"
+
+    # Measured: Oracle refuses the unplug itself with ORA-46680, "Pluggable
+    # database (PDB) master keys must be exported". The case was designed on
+    # the assumption that the archive gets written and only the plug-in fails.
+    # The real answer is stronger - a keyless archive of an encrypted PDB
+    # cannot be produced at all, so there is nothing to carry away.
+    if [[ "${archive_present}" == "no" && "${DRY_RUN}" != "TRUE" ]]; then
+        step_header "Reopen ${CLONE_SRC_PDB} - phase 1 closed it and nothing was unplugged"
+        sqlplus_prod "
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} OPEN READ WRITE;
+ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} SAVE STATE;
+SELECT name, open_mode FROM v\$pdbs WHERE name='${CLONE_SRC_PDB}';
+EXIT
+"
+        local verdict msg
+        if printf '%s' "${unplug_output}" | grep -q 'ORA-46680'; then
+            verdict="PASS"
+            msg="P3: Oracle refuses the keyless unplug outright (ORA-46680, PDB master keys must be exported). No archive is written, so an encrypted PDB cannot be carried off without the keys at all - the block sits earlier than the test assumed"
+        else
+            verdict="FAIL"
+            msg="P3: no archive was written but ORA-46680 is not in the output - see above"
+        fi
+        write_state "PDB_P3_UNPLUG_BLOCKED" "${verdict}"
+        print_verdict "${verdict}" "${msg}"
+        lib_info "Done."
+        return 0
+    fi
+
+    # Only reached when the unplug did produce an archive.
+    step_header "Phase 1b: drop ${CLONE_SRC_PDB} - the archive exists"
+    sqlplus_prod "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 DROP PLUGGABLE DATABASE ${CLONE_SRC_PDB} INCLUDING DATAFILES;
 SELECT 'PDBCLONE unplugged (no key export)' AS status FROM dual;
 EXIT
