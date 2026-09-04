@@ -155,21 +155,47 @@ EXIT
     write_state "PDB_P1_TEK"  "${tek_p1}"
     write_state "PDB_P1_MKID" "${mkid_p1}"
 
+    # Measured, against the original expectation: a local clone does NOT
+    # preserve the tablespace key. The MASTERKEYID is identical in source and
+    # clone - same CDB, same keystore - so a differing wrapped key cannot come
+    # from a re-wrap, which under an unchanged MEK would reproduce the same
+    # value. It is new key material, and the ciphertext confirms it
+    # independently. KEY_VERSION is 0 in both and says nothing here.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+                       "${PROD_SERVICE}" "${CLONE_P1_PDB}" "CANARY_CLONEENC") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all differing - clone re-encrypts)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
-    elif [[ "${tek_p1}" == "${tek_src}" ]]; then
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="P1: canary blocks could not be compared - no verdict possible"
+    elif [[ "${tek_p1}" != "${tek_src}" && ${canary_rc} -eq 1 ]]; then
         verdict="PASS"
-        msg="P1 local clone: TEK IDENTICAL to source (same CDB, same keystore - expected)"
+        if [[ "${mkid_p1}" == "${mkid_src}" ]]; then
+            msg="P1 local clone: NEW tablespace key material. The MASTERKEYID is unchanged, so the differing wrapped key cannot be a re-wrap, and the ciphertext changed with it (${canary_cmp}). A PDB clone re-encrypts - unlike every RMAN path measured"
+        else
+            msg="P1 local clone: TEK and MASTERKEYID both differ, ciphertext changed (${canary_cmp}) - new key material, but the MEK changed too, so the re-wrap argument does not apply"
+        fi
+    elif [[ "${tek_p1}" == "${tek_src}" && ${canary_rc} -eq 0 ]]; then
+        verdict="PASS"
+        msg="P1 local clone: TEK and ciphertext identical to source (${canary_cmp}) - the clone shares the key material"
     else
         verdict="FAIL"
-        msg="P1 local clone: TEK DIFFERS from source - unexpected for same-CDB clone"
+        msg="P1 local clone: contradictory - wrapped key $( [[ "${tek_p1}" == "${tek_src}" ]] && echo identical || echo different ) but ciphertext ${canary_cmp}"
     fi
 
     print_key_summary "pdb_p1_local (${CLONE_P1_PDB})" "${mkid_p1}" "${tek_p1}"
     print_key_summary "pdb_baseline  (${CLONE_SRC_PDB})" "${mkid_src}" "${tek_src}"
     echo ""
-    echo "TEK comparison: $( [[ "${tek_p1}" == "${tek_src}" ]] && echo "IDENTICAL (expected)" || echo "DIFFERENT")"
+    echo "Wrapped TEK:    $( [[ "${tek_p1}" == "${tek_src}" ]] && echo "IDENTICAL" || echo "DIFFERENT")"
+    echo "MASTERKEYID:    $( [[ "${mkid_p1}" == "${mkid_src}" ]] && echo "IDENTICAL - a re-wrap would have reproduced the same wrapped key" || echo "DIFFERENT")"
 
     print_verdict "${verdict}" "${msg}"
     lib_info "Done."
