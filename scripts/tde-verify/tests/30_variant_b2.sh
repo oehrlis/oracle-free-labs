@@ -103,7 +103,7 @@ ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP CONTAINER
 SELECT key_id FROM v\$encryption_keys WHERE keystore_type != '"'"'UNKNOWN'"'"' AND rownum=1;
 EXIT
 SQL
-' 2>/dev/null | grep -viE "identified by|password" \
+' 2>/dev/null | grep -viE "identified by" \
     | awk 'NF && length($1) > 10 { print $1; exit }')
     printf '%s\n' "${keyid}"
 }

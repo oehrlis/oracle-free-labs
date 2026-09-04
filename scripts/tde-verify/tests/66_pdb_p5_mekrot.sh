@@ -125,7 +125,7 @@ EXIT
     # shellcheck disable=SC1078,SC1079
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER='"${target_pdb}"';
 ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}"

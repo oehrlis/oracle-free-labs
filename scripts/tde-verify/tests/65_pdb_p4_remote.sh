@@ -154,13 +154,13 @@ main() {
     step_header "Phase 2: Create DB link ${DB_LINK} in dev"
     # shellcheck disable=SC1078,SC1079
     lib_run in_dev '
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 DROP DATABASE LINK '"${DB_LINK}"';
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 EXIT
 SQL
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE DATABASE LINK '"${DB_LINK}"'
   CONNECT TO "'"${CLONE_USER}"'" IDENTIFIED BY "'"${CLONE_PWD}"'"
@@ -196,7 +196,7 @@ EXIT
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password|with secret"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET '"'"''"${P4_KEY_SECRET}"''"'"'
   TO '"'"''"${KEYS_FILE}"''"'"'
@@ -214,7 +214,7 @@ SQL
     # shellcheck disable=SC1078,SC1079
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|password|with secret"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET '"'"''"${P4_KEY_SECRET}"''"'"'
   FROM '"'"''"${KEYS_FILE}"''"'"'

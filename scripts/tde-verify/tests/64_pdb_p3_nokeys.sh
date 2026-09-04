@@ -181,7 +181,7 @@ WHENEVER SQLERROR CONTINUE
 ALTER SESSION SET CONTAINER=${CLONE_P3_PDB};
 @/opt/oracle/common/scripts/ssenc_canary.sql ${CANARY_OWNER} ${CANARY_MARKER} CANARY_CLONEENC
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>&1 \
-            | grep -viE "identified by|password" || true)
+            | grep -viE "identified by" || true)
         echo "${p3_output}"
     fi
 
