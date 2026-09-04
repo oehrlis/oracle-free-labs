@@ -193,18 +193,30 @@ fi
 echo \"fresh empty keystore directory: \${ks_dir}\"
 "
 
+    # Restart the instance. ORA-28389 says an auto-login keystore cannot be
+    # closed by SQL at all, and the in-memory context survives deleting the
+    # files - which is why the OPEN kept failing with ORA-28354 and SET KEY
+    # with ORA-28417. A restart is the only way to drop it, and it is safe
+    # here: the phase 2 gate proved zero encrypted tablespaces remain.
+    step_header "Restart instance to drop the auto-login keystore from memory"
+    lib_run in_dev '
+sqlplus -S / as sysdba <<SQL 2>&1
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+SHUTDOWN IMMEDIATE
+STARTUP
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE ALL OPEN;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
+EXIT
+SQL
+'
+
     # shellcheck disable=SC1078
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
-WHENEVER SQLERROR CONTINUE
--- Close only now. An auto-login keystore re-opens itself immediately while
--- cwallet.sso is still on disk - closing before the move left the keystore
--- OPEN/LOCAL_AUTOLOGIN, so the OPEN below failed with ORA-28354 and the
--- SET KEY with ORA-28417. With the files gone there is nothing to re-open.
-ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE;
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 -- No path: WALLET_ROOT is configured, so Oracle derives WALLET_ROOT/tde
 -- itself. Passing an explicit path fails with ORA-46633 - and the path in
 -- this single-quoted section would have been expanded inside the container,
