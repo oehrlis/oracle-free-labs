@@ -254,13 +254,6 @@ EXIT
     step_header "Reopen the keystore after RESETLOGS"
     ensure_autologin_for "${DEV_SERVICE}"
 
-    # Keep the target from writing its own autobackups next to the source's.
-    step_header "Redirect the target's control file autobackup"
-    rman_dev "
-CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
-EXIT
-"
-
     # Phase 3: SET KEY to a dev-own MEK
     # Per container, not CONTAINER=ALL: PDB$SEED has no master key, so
     # CONTAINER=ALL fails with ORA-46663 "master encryption keys not created for
