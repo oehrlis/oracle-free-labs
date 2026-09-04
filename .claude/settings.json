@@ -50,7 +50,24 @@
       "Bash(make:*)",
       "Bash(shellcheck:*)",
       "Bash(markdownlint:*)",
-      "Bash(yamllint:*)"
+      "Bash(yamllint:*)",
+      "Bash(scripts/tde-verify/run_all.sh:*)",
+      "Bash(./scripts/tde-verify/run_all.sh:*)",
+      "Bash(scripts/tde-verify/tde_evidence.sh:*)",
+      "Bash(scripts/render_mermaid.sh:*)",
+      "Bash(python3:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(git clean:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   },
   "hooks": {
