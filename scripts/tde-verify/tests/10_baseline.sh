@@ -103,6 +103,25 @@ ALTER SESSION SET CONTAINER=${PROD_PDB};
 EXIT
 "
 
+    # The control tablespace does not exist in a freshly built service - the
+    # setup scripts only create the encrypted USERS. Without it the canary
+    # creation fails with ORA-00959 and the plaintext scan loses its control
+    # group, which is what makes the scan falsifiable in the first place.
+    step_header "Create unencrypted control tablespace CANARY_PLAIN"
+    sqlplus_prod "
+WHENEVER SQLERROR CONTINUE
+ALTER SESSION SET CONTAINER=${PROD_PDB};
+ALTER TABLESPACE CANARY_PLAIN READ WRITE;
+DROP TABLESPACE CANARY_PLAIN INCLUDING CONTENTS AND DATAFILES;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE BIGFILE TABLESPACE CANARY_PLAIN
+  DATAFILE SIZE 20M AUTOEXTEND ON NEXT 10M MAXSIZE 100M;
+ALTER USER ${CANARY_OWNER} QUOTA UNLIMITED ON CANARY_PLAIN;
+SELECT tablespace_name, bigfile, encrypted FROM dba_tablespaces
+  WHERE tablespace_name = 'CANARY_PLAIN';
+EXIT
+"
+
     # Create control canary in the unencrypted CANARY_PLAIN tablespace
     step_header "Create control canary in CANARY_PLAIN (unencrypted)"
     sqlplus_prod "

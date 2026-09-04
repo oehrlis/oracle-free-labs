@@ -105,11 +105,12 @@ main() {
     sqlplus_prod "
 SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
 ALTER SESSION SET CONTAINER=${CLONE_SRC_PDB};
-SELECT name, encryptionalg, key_version,
-       RAWTOHEX(masterkeyid) AS masterkeyid
-FROM v\$encrypted_tablespaces
-WHERE name IN ('${CLONE_TS_ENC}','${CLONE_TS_PLAIN}')
-ORDER BY name;
+SELECT t.name, et.encryptionalg, et.key_version,
+       RAWTOHEX(et.masterkeyid) AS masterkeyid
+FROM v\$encrypted_tablespaces et, v\$tablespace t
+WHERE et.ts# = t.ts# AND et.con_id = t.con_id
+AND t.name IN ('${CLONE_TS_ENC}','${CLONE_TS_PLAIN}')
+ORDER BY t.name;
 EXIT
 "
 
@@ -118,11 +119,12 @@ EXIT
     sqlplus_dev "
 SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
 ALTER SESSION SET CONTAINER=${target_pdb};
-SELECT name, encryptionalg, key_version,
-       RAWTOHEX(masterkeyid) AS masterkeyid
-FROM v\$encrypted_tablespaces
-WHERE name IN ('${CLONE_TS_ENC}','${CLONE_TS_PLAIN}')
-ORDER BY name;
+SELECT t.name, et.encryptionalg, et.key_version,
+       RAWTOHEX(et.masterkeyid) AS masterkeyid
+FROM v\$encrypted_tablespaces et, v\$tablespace t
+WHERE et.ts# = t.ts# AND et.con_id = t.con_id
+AND t.name IN ('${CLONE_TS_ENC}','${CLONE_TS_PLAIN}')
+ORDER BY t.name;
 EXIT
 "
 
@@ -133,7 +135,7 @@ EXIT
         kv_source=$(printf '%s\n' "
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${CLONE_SRC_PDB};
-SELECT key_version FROM v\$encrypted_tablespaces WHERE name='${CLONE_TS_ENC}';
+SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
             | awk 'NF && /^[0-9]+$/ { print $1; exit }')
     else
@@ -147,7 +149,7 @@ EXIT" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
         kv_target=$(printf '%s\n' "
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${target_pdb};
-SELECT key_version FROM v\$encrypted_tablespaces WHERE name='${CLONE_TS_ENC}';
+SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${CLONE_TS_ENC}' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
             | awk 'NF && /^[0-9]+$/ { print $1; exit }')
     else

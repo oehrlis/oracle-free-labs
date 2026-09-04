@@ -223,7 +223,7 @@ EXIT
 SET LINESIZE 120 PAGESIZE 100
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 SELECT tablespace_name, encrypted FROM dba_tablespaces WHERE tablespace_name='USERS';
-SELECT COUNT(*) AS enc_ts_count FROM v\$encrypted_tablespaces WHERE name='USERS';
+SELECT COUNT(*) AS enc_ts_count FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='USERS' AND con_id=sys_context('userenv','con_id'));
 EXIT
 "
 

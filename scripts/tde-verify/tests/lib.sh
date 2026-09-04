@@ -407,12 +407,26 @@ EXIT" \
 # ------------------------------------------------------------------------------
 get_masterkeyid() {
     local svc="$1" pdb="$2" ts="${3:-USERS}"
+    local _tmp
+    _tmp="$(mktemp)"
     printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${pdb};
-SELECT RAWTOHEX(masterkeyid) FROM v\$encrypted_tablespaces WHERE name='${ts}';
+SELECT RAWTOHEX(masterkeyid) FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${ts}' AND con_id=sys_context('userenv','con_id'));
 EXIT" \
     | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
-    | awk 'NF && /^[0-9A-Fa-f]+$/ { print $1; exit }'
+    | awk 'NF && /^[0-9A-Fa-f]+$/ { print $1; exit }' > "${_tmp}"
+    if [[ ! -s "${_tmp}" ]]; then
+        # An empty result here is almost always a broken query, not an absent
+        # key - v$encrypted_tablespaces has no NAME column, so a filter on it
+        # fails with ORA-00904 and yields nothing. Silence would carry the
+        # empty value into every later comparison.
+        lib_err "MASTERKEYID query for ${ts} in ${pdb} returned nothing"
+        lib_err "check the query in ${FUNCNAME[0]} - an empty value breaks every comparison"
+        rm -f "${_tmp}"
+        return 1
+    fi
+    cat "${_tmp}"
+    rm -f "${_tmp}"
 }
 
 # ------------------------------------------------------------------------------
@@ -425,12 +439,26 @@ EXIT" \
 # ------------------------------------------------------------------------------
 get_encryptedkey() {
     local svc="$1" pdb="$2" ts="${3:-USERS}"
+    local _tmp
+    _tmp="$(mktemp)"
     printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 200 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${pdb};
-SELECT RAWTOHEX(encryptedkey) FROM v\$encrypted_tablespaces WHERE name='${ts}';
+SELECT RAWTOHEX(encryptedkey) FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='${ts}' AND con_id=sys_context('userenv','con_id'));
 EXIT" \
     | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
-    | awk 'NF && /^[0-9A-Fa-f]+$/ { print $1; exit }'
+    | awk 'NF && /^[0-9A-Fa-f]+$/ { print $1; exit }' > "${_tmp}"
+    if [[ ! -s "${_tmp}" ]]; then
+        # An empty result here is almost always a broken query, not an absent
+        # key - v$encrypted_tablespaces has no NAME column, so a filter on it
+        # fails with ORA-00904 and yields nothing. Silence would carry the
+        # empty value into every later comparison.
+        lib_err "wrapped TEK query for ${ts} in ${pdb} returned nothing"
+        lib_err "check the query in ${FUNCNAME[0]} - an empty value breaks every comparison"
+        rm -f "${_tmp}"
+        return 1
+    fi
+    cat "${_tmp}"
+    rm -f "${_tmp}"
 }
 
 # ------------------------------------------------------------------------------
