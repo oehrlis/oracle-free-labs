@@ -118,6 +118,10 @@ main() {
         [[ "${_reply}" == [yY] ]] || { lib_warn "aborted by user"; exit 1; }
     fi
 
+    # The transport secret takes double quotes. Measured with a syntax probe
+    # against a non-existent PDB: single quotes give ORA-00922, double quotes
+    # get through to ORA-65011. Same for WITH SECRET on EXPORT/IMPORT KEYS,
+    # where single quotes are rejected with ORA-46609.
     # Phase 1: Close and UNPLUG PDBCLONE with ENCRYPT USING
     # PDBs are created in both containers here; without OMF every
     # CREATE PLUGGABLE DATABASE fails with ORA-65016.
@@ -126,11 +130,14 @@ main() {
 
     step_header "Phase 1: UNPLUG ${CLONE_SRC_PDB} with key encryption"
     sqlplus_prod "
-WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER SQLERROR CONTINUE
+-- Tolerated: an aborted earlier attempt leaves the PDB MOUNTED, and closing
+-- an already closed PDB fails with ORA-65020.
 ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} CLOSE IMMEDIATE;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB}
   UNPLUG INTO '${ARCHIVE_PATH}'
-  ENCRYPT USING '${P2_SECRET}';
+  ENCRYPT USING \"${P2_SECRET}\";
 DROP PLUGGABLE DATABASE ${CLONE_SRC_PDB} INCLUDING DATAFILES;
 SELECT 'PDBCLONE unplugged and dropped' AS status FROM dual;
 EXIT
@@ -142,7 +149,7 @@ EXIT
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE PLUGGABLE DATABASE ${CLONE_SRC_PDB}
   USING '${ARCHIVE_PATH}'
-  DECRYPT USING '${P2_SECRET}'
+  DECRYPT USING \"${P2_SECRET}\"
   COPY TEMPFILE REUSE;
 ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} OPEN READ WRITE;
 ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} SAVE STATE;
@@ -167,7 +174,7 @@ EXIT
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE PLUGGABLE DATABASE ${CLONE_P2_PDB}
   USING '${ARCHIVE_PATH}'
-  DECRYPT USING '${P2_SECRET}'
+  DECRYPT USING \"${P2_SECRET}\"
   COPY TEMPFILE REUSE;
 ALTER PLUGGABLE DATABASE ${CLONE_P2_PDB} OPEN READ WRITE;
 SELECT name, open_mode FROM v\$pdbs WHERE name='${CLONE_P2_PDB}';
