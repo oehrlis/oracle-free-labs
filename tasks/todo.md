@@ -747,3 +747,74 @@ KZTDE: Set Master Key: Tablespace key rewrap done
 Oracle nennt es woertlich **rewrap**. Ein Master-Key-Wechsel wickelt den
 Tablespace-Key neu ein, mehr nicht. Das ist die Bestaetigung der Blockmessung
 aus der Datenbank selbst statt aus einer Sekundaerquelle.
+
+### Variante F - der Weg, der die Schluesselkette bricht (gemessen 2026-09-03)
+
+Erste und einzige gemessene Variante, die einen **neuen Tablespace-Encryption-Key**
+erzeugt und damit die Anforderung "keine Rueckschluesse auf Prod" erfuellt.
+
+Ablauf, reproduzierbar:
+
+1. Variante A: normaler `RESTORE DATABASE` mit transportiertem Quell-Keystore
+2. `ALTER TABLESPACE USERS ENCRYPTION OFFLINE DECRYPT` - danach pruefen, dass
+   `containers(v$encrypted_tablespaces)` **0** Zeilen liefert. Die Daten liegen in
+   diesem Fenster im Klartext, das ist ein bewusster Sicherheitskompromiss.
+3. Keystore-Verzeichnis beiseite legen und einen **frischen** Keystore anlegen:
+   `ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY <pwd>` plus
+   `SET KEYSTORE OPEN` plus `SET KEY ... CONTAINER=ALL`. Damit sind die
+   Quell-MEKs weg.
+4. `ALTER SYSTEM SET "_db_discard_lost_masterkey"=TRUE SCOPE=MEMORY` **in der PDB**
+5. `ADMINISTER KEY MANAGEMENT SET KEY ... FORCE KEYSTORE IDENTIFIED BY <pwd>
+   WITH BACKUP` in der PDB - jetzt erfolgreich
+6. `ALTER TABLESPACE USERS ENCRYPTION OFFLINE ENCRYPT`
+
+Entscheidend bei Schritt 4: der Parameter muss **in der PDB** gesetzt werden.
+`ISPDB_MODIFIABLE` ist TRUE. Auf CDB-Ebene scheitert `SCOPE=MEMORY` mit ORA-02097
+plus ORA-28355 "failed to initialize security module", und `SCOPE=SPFILE` plus
+Neustart wirkt nicht - der SPFILE-Wert steht auf TRUE, der Laufzeitwert bleibt
+FALSE. Genau daran sind meine ersten drei Versuche gescheitert.
+
+Ergebnis, vollstaendig verifiziert:
+
+| Pruefung | Wert |
+|---|---|
+| Quell-MEKs im Keystore | 0 |
+| MEKs im Keystore | 5, alle ORIGIN LOCAL, im Ziel erzeugt |
+| PDB Database-Key | B0A4B54D52C74AF6AC6AF07E037C0B74, vorher 01D00DF6...8F98 |
+| TEK USERS | D40B030F...F03F, vorher E36623EC...934F |
+| KEY_VERSION | 3 |
+| Algorithmus / Cipher Mode | AES256 / XTS, unveraendert |
+| Quell-TEK im Datafile-Header | 0 Treffer |
+| Quell-MASTERKEYID im Header | 0 Treffer |
+| Blockvergleich gegen Quelle | 2561 von 2561 Bloecken unterschiedlich |
+| Canary-Datenbloecke | 313 von 313 unterschiedlich |
+| Canary lesbar | 5000 Zeilen, 5000 Marker-Treffer |
+| open_mode | READ WRITE ohne jeden Quell-Schluessel |
+
+Das Werkzeug urteilt "RE-ENCRYPT INDICATED - every comparable block changed" -
+derselbe Urteilsspruch, den die synthetische Positivkontrolle erzeugt.
+
+Der Entzugstest ist hier implizit bestanden: die Quell-MEKs sind nicht bloss
+unbenutzt, sie existieren im Ziel-Keystore nicht mehr, und die Datenbank laeuft.
+
+Was `_db_discard_lost_masterkey` leistet und was nicht:
+
+- Es verwirft den **Master-Key**-Handle und erlaubt `SET KEY`, obwohl der
+  referenzierte Schluessel fehlt. Ohne das Flag: ORA-28374.
+- Es verwirft **nicht** die Algorithmus-Bindung des Tablespace. `AES192` scheitert
+  auch mit aktivem Flag weiter mit ORA-28340. Fuer die Trennung ist das
+  unerheblich, weil der TEK ohnehin neu ist - AES256 bleibt erhalten.
+
+Auflagen, die in Protokoll und Praesentation mitstehen muessen:
+
+- Hidden Parameter, in einer MOS Note dokumentiert, Einsatz nur nach Freigabe
+  durch Oracle Support
+- fachlich nur zulaessig, wenn nachweislich kein verschluesseltes Objekt mehr
+  existiert - Schritt 2 ist die Bedingung, nicht eine Option
+- Sekundaerquelle warnt bei wiederholtem Einsatz vor echten Korruptionen,
+  genannt ORA-01595 und ORA-28304, sowie vor der Alert-Log-Warnung zu einem
+  ersetzten SYSAUX-Key
+- gemessen in Oracle AI Database Free 26ai, nicht in EE
+- im Fenster zwischen Schritt 2 und 6 liegen die Daten unverschluesselt
+
+- [x] `_db_discard_lost_masterkey` korrekt gemessen
