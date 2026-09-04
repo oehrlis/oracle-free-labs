@@ -179,19 +179,32 @@ sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-SELECT con_id, status, wallet_type FROM v$encryption_wallet ORDER BY con_id;
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 EXIT
 SQL
 '
     lib_run in_dev "
+set -e
 ks_dir=${WALLET_DIR_CONTAINER}/tde
-# Preserve the dev-pristine backup if it exists; move prod wallet aside
+aside=${XCHANGE_CONTAINER}/wallet_prod_used_f
+# The two paths are separate bind mounts, so mv copies and deletes. A leftover
+# target from an earlier run made it fail with 'Directory not empty' while the
+# script still reported success - the prod keystore stayed in place, the CREATE
+# below failed with ORA-46630, and phase 4+5 silently kept using prod's keys.
 if [ -d \${ks_dir} ]; then
-    mv \${ks_dir} ${XCHANGE_CONTAINER}/wallet_prod_used_f
-    echo 'prod keystore moved to ${XCHANGE_CONTAINER}/wallet_prod_used_f'
+    rm -rf \${aside}
+    mv \${ks_dir} \${aside} || { echo \"ERROR: could not move \${ks_dir} aside\" >&2; exit 1; }
+    echo \"prod keystore moved to \${aside}\"
 fi
 mkdir -p \${ks_dir}
-echo 'fresh keystore directory created: '\${ks_dir}
+# Verify it is really empty. A remaining cwallet.sso or ewallet.p12 is exactly
+# what triggers ORA-46630 on CREATE KEYSTORE.
+if [ -n \"\$(ls -A \${ks_dir})\" ]; then
+    echo \"ERROR: \${ks_dir} is not empty:\" >&2
+    ls -la \${ks_dir} >&2
+    exit 1
+fi
+echo \"fresh empty keystore directory: \${ks_dir}\"
 "
 
     # shellcheck disable=SC1078
