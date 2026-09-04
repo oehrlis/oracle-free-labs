@@ -286,10 +286,15 @@ SQL
     sqlplus_dev "
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
--- Set tablespace to READ WRITE first (it came back READ ONLY from the restore)
+-- READ WRITE first, it came back READ ONLY from the restore, and then OFFLINE:
+-- offline encryption needs the tablespace offline, otherwise it fails with
+-- ORA-28440 "cannot offline encrypt or decrypt data file - file is in use".
 ALTER TABLESPACE USERS READ WRITE;
+ALTER TABLESPACE USERS OFFLINE NORMAL;
 ALTER TABLESPACE USERS ENCRYPTION OFFLINE ENCRYPT;
-SELECT tablespace_name, encrypted FROM dba_tablespaces WHERE tablespace_name='USERS';
+ALTER TABLESPACE USERS ONLINE;
+ALTER SYSTEM CHECKPOINT;
+SELECT tablespace_name, status, encrypted FROM dba_tablespaces WHERE tablespace_name='USERS';
 EXIT
 "
 
