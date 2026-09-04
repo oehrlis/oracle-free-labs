@@ -172,15 +172,38 @@ EXIT
     write_state "PDB_P5_MKID_AFTER"  "${mkid_after}"
     write_state "PDB_P5_TEK_AFTER"   "${tek_after}"
 
+    # The message used to claim "ciphertext comparison shows RE-WRAP" while the
+    # condition only checked that the MASTERKEYID had changed. This is the
+    # customer question in its PDB form - "we only swap the MEK" - so it has to
+    # be answered on the ciphertext: after a pure MEK rotation the data blocks
+    # must be untouched. The reference is prod's pre-transport baseline, which
+    # makes the statement stronger than a before/after inside the target: the
+    # dev ciphertext is still bit-identical to prod after transport *and*
+    # rotation.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all identical - re-wrap only)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
-    elif [[ "${mkid_after}" != "${mkid_before}" ]]; then
-        verdict="PASS"
-        msg="P5: MEK rotation succeeded (MASTERKEYID changed); ciphertext comparison shows RE-WRAP"
-    else
+    elif [[ "${mkid_after}" == "${mkid_before}" ]]; then
         verdict="FAIL"
         msg="P5: MASTERKEYID unchanged after SET KEY - rotation may have failed"
+    elif [[ ${canary_rc} -eq 0 ]]; then
+        verdict="PASS"
+        msg="P5: MASTERKEYID changed, ciphertext still byte-identical to prod's pre-transport baseline (${canary_cmp}) - transport plus MEK rotation left the data blocks untouched, so the rotation is a re-wrap"
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="P5: MEK rotated but the canary blocks could not be compared - no verdict possible"
+    else
+        verdict="FAIL"
+        msg="P5: MEK rotation changed the ciphertext (${canary_cmp}) - unexpected, a rotation re-wraps and must not rewrite data blocks"
     fi
 
     print_key_summary "before rotation" "${mkid_before}" "${tek_before}"
