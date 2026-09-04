@@ -118,6 +118,24 @@ main() {
         [[ "${_reply}" == [yY] ]] || { lib_warn "aborted by user"; exit 1; }
     fi
 
+    # The source PDB must still exist. Phase 1 unplugs and drops it, and the
+    # transport secret is generated per run - so a retry of this step alone
+    # would find neither the PDB nor a matching archive. Fail with the fix
+    # instead of an ORA-65011 that looks like something else.
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        local pdb_exists
+        pdb_exists=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$pdbs WHERE name = '${CLONE_SRC_PDB}';
+EXIT" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+        if [[ "${pdb_exists}" != "1" ]]; then
+            lib_err "${CLONE_SRC_PDB} does not exist in ${PROD_SERVICE} - phase 1 dropped it in an earlier attempt"
+            lib_err "re-run step 61 first: run_all.sh --from 61 --yes"
+            exit 1
+        fi
+    fi
+
     # The transport secret takes double quotes. Measured with a syntax probe
     # against a non-existent PDB: single quotes give ORA-00922, double quotes
     # get through to ORA-65011. Same for WITH SECRET on EXPORT/IMPORT KEYS,
@@ -145,17 +163,25 @@ EXIT
 
     # Phase 2: Re-plug PDBCLONE back into prod so P4 can use it
     step_header "Phase 2: Re-plug ${CLONE_SRC_PDB} back into prod"
-    sqlplus_prod "
+    # The plug-in needs the keystore password too - same ORA-46697 as the clone
+    # in step 62. Every PDB operation touching encrypted tablespaces requires
+    # it; an auto-login keystore does not satisfy any of them.
+    # shellcheck disable=SC1078,SC1079
+    lib_run in_prod_stdin '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|decrypt using"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-CREATE PLUGGABLE DATABASE ${CLONE_SRC_PDB}
-  USING '${ARCHIVE_PATH}'
-  DECRYPT USING \"${P2_SECRET}\"
+CREATE PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"'
+  USING '"'"''"${ARCHIVE_PATH}"''"'"'
+  DECRYPT USING "'"${P2_SECRET}"'"
+  KEYSTORE IDENTIFIED BY "${KSPWD}"
   COPY TEMPFILE REUSE;
-ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} OPEN READ WRITE;
-ALTER PLUGGABLE DATABASE ${CLONE_SRC_PDB} SAVE STATE;
-SELECT name, open_mode FROM v\$pdbs WHERE name='${CLONE_SRC_PDB}';
+ALTER PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' OPEN READ WRITE;
+ALTER PLUGGABLE DATABASE '"${CLONE_SRC_PDB}"' SAVE STATE;
+SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_SRC_PDB}"''"'"';
 EXIT
-"
+SQL
+'
 
     # Phase 3: Drop PDBCLONE_P2 in dev if it exists (idempotency)
     step_header "Phase 3: Prepare dev - drop ${CLONE_P2_PDB} if exists"
@@ -170,16 +196,21 @@ EXIT
 
     # Phase 4: Plug PDBCLONE_P2 into dev
     step_header "Phase 4: CREATE ${CLONE_P2_PDB} in dev from archive"
-    sqlplus_dev "
+    # shellcheck disable=SC1078,SC1079
+    lib_run in_dev_stdin '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|decrypt using"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-CREATE PLUGGABLE DATABASE ${CLONE_P2_PDB}
-  USING '${ARCHIVE_PATH}'
-  DECRYPT USING \"${P2_SECRET}\"
+CREATE PLUGGABLE DATABASE '"${CLONE_P2_PDB}"'
+  USING '"'"''"${ARCHIVE_PATH}"''"'"'
+  DECRYPT USING "'"${P2_SECRET}"'"
+  KEYSTORE IDENTIFIED BY "${KSPWD}"
   COPY TEMPFILE REUSE;
-ALTER PLUGGABLE DATABASE ${CLONE_P2_PDB} OPEN READ WRITE;
-SELECT name, open_mode FROM v\$pdbs WHERE name='${CLONE_P2_PDB}';
+ALTER PLUGGABLE DATABASE '"${CLONE_P2_PDB}"' OPEN READ WRITE;
+SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_P2_PDB}"''"'"';
 EXIT
-"
+SQL
+'
 
     # Phase 5: Query key chain in clone
     step_header "Phase 5: Query key chain in ${CLONE_P2_PDB}"
