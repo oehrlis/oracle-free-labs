@@ -190,15 +190,23 @@ SELECT 'dev cleanup done' AS status FROM dual;
 EXIT
 "
 
-    # Phase 4: Remote clone via DB link
+    # Phase 4: Remote clone via DB link. The KEYSTORE clause is required as
+    # soon as the source carries encrypted tablespaces - measured on the local
+    # clone in step 62, which failed with ORA-46697 without it. An auto-login
+    # keystore does not satisfy this operation.
     step_header "Phase 4: CREATE ${CLONE_P4_PDB} FROM ${CLONE_SRC_PDB}@${DB_LINK}"
-    sqlplus_dev "
+    # shellcheck disable=SC1078,SC1079
+    lib_run in_dev_stdin '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-CREATE PLUGGABLE DATABASE ${CLONE_P4_PDB}
-  FROM ${CLONE_SRC_PDB}@${DB_LINK};
-SELECT name, open_mode FROM v\$pdbs WHERE name='${CLONE_P4_PDB}';
+CREATE PLUGGABLE DATABASE '"${CLONE_P4_PDB}"'
+  FROM '"${CLONE_SRC_PDB}"'@'"${DB_LINK}"'
+  KEYSTORE IDENTIFIED BY "${KSPWD}";
+SELECT name, open_mode FROM v\$pdbs WHERE name='"'"''"${CLONE_P4_PDB}"''"'"';
 EXIT
-"
+SQL
+'
 
     # Phase 5: Export PDBCLONE keys from prod
     step_header "Phase 5: Export keys from prod for ${CLONE_SRC_PDB}"
