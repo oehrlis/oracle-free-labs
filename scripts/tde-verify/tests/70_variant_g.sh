@@ -132,7 +132,13 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='USERS' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+fi
+    if [[ "${DRY_RUN}" != "TRUE" && -z "${kv_before}" ]]; then
+        # An empty KEY_VERSION would slip into the verdict comparison and could
+        # turn a failed measurement into a PASS.
+        lib_err "KEY_VERSION query returned nothing (kv_before)"
+        return 1
     fi
     lib_info "TEK before REKEY : ${tek_before:0:16}..."
     lib_info "KEY_VERSION before: ${kv_before}"
@@ -171,7 +177,13 @@ SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 SELECT key_version FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='USERS' AND con_id=sys_context('userenv','con_id'));
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+fi
+    if [[ "${DRY_RUN}" != "TRUE" && -z "${kv_before}" ]]; then
+        # An empty KEY_VERSION would slip into the verdict comparison and could
+        # turn a failed measurement into a PASS.
+        lib_err "KEY_VERSION query returned nothing (kv_before)"
+        return 1
     fi
     lib_info "TEK after REKEY  : ${tek_after:0:16}..."
     lib_info "KEY_VERSION after : ${kv_after}"

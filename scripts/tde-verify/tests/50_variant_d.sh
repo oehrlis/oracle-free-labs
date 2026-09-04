@@ -192,7 +192,16 @@ SQL
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
 SELECT NVL(MAX(sequence#), 0) FROM v\$archived_log WHERE thread# = 1;
 EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[0-9]+$/ { print $1; exit }')
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+        if [[ -z "${until_seq}" ]]; then
+            # An empty value here silently becomes 1, and SET UNTIL SEQUENCE 1
+            # makes RMAN look for backups older than the first log - it then
+            # reports RMAN-06023 "no backup found" for every datafile, which
+            # looks like a missing backup rather than a parsing bug.
+            lib_err "could not determine the last archived sequence in ${DEV_SERVICE}"
+            lib_err "SET UNTIL SEQUENCE would fall back to 1 and no backup would be found"
+            return 1
+        fi
         until_plus1=$(( until_seq + 1 ))
     else
         until_plus1=0
