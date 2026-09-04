@@ -9,11 +9,12 @@
 # Version....: 0.1.0
 # Purpose....: PDB P4 - Remote clone of PDBCLONE via DB link (c##clone user),
 #              then export/import keys separately.
-#              The c##clone password is written to a 600-mode temp file in the
-#              xchange directory (container-internal, never in host process args),
-#              used to create the DB link in dev, then deleted immediately.
+#              The c##clone password is never written to disk and never put on
+#              the command line. It is read into memory, passed to the container
+#              via stdin, and dropped again - "docker exec bash -c" would put it
+#              in the host process list, where any local user can read it.
 #              Steps:
-#              1. Write c##clone credential to xchange (prod container side)
+#              1. Read the c##clone credential into memory (prod container)
 #              2. Drop DB link prod_cdb_link in dev if exists
 #              3. Create DB link prod_cdb_link in dev using c##clone credentials
 #              4. Drop PDBCLONE_P4 in dev if exists
@@ -54,7 +55,10 @@ LABEL="pdb_p4_remote"
 # Transport secret, generated per run. A fixed value in the repository would
 # be a committed secret even in a lab, and it adds nothing: the secret only
 # has to match between the export and the import within this one run.
-P4_KEY_SECRET="$(LC_ALL=C tr -dc "A-Za-z0-9" </dev/urandom | head -c 24)"
+# head -c would exit after 24 bytes, tr would get SIGPIPE, and with
+# pipefail set -e aborts the script before it prints a single line.
+# openssl produces a finite stream and cut reads it to the end.
+P4_KEY_SECRET="$(openssl rand -base64 48 | LC_ALL=C tr -dc "A-Za-z0-9" | cut -c1-24)"
 DB_LINK="prod_cdb_link"
 PROD_HOST="odbencprod"
 PROD_PORT="1521"
@@ -137,7 +141,7 @@ main() {
     # Register cleanup for temp cred file
     trap cleanup_cred EXIT
 
-    # Phase 1: Write c##clone password to xchange (inside prod container)
+    # Phase 1: Read the c##clone password into memory - never to disk
     step_header "Phase 1: Prepare credential for DB link (prod container only)"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         lib_info "DRY-RUN: would read the clone password from the source container"
@@ -153,7 +157,7 @@ main() {
     # Phase 2: Drop DB link if it exists and re-create
     step_header "Phase 2: Create DB link ${DB_LINK} in dev"
     # shellcheck disable=SC1078,SC1079
-    lib_run in_dev '
+    lib_run in_dev_stdin '
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
 WHENEVER SQLERROR CONTINUE
 DROP DATABASE LINK '"${DB_LINK}"';
@@ -194,7 +198,7 @@ EXIT
     # Phase 5: Export PDBCLONE keys from prod
     step_header "Phase 5: Export keys from prod for ${CLONE_SRC_PDB}"
     # shellcheck disable=SC1078,SC1079
-    lib_run in_prod '
+    lib_run in_prod_stdin '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"
 WHENEVER SQLERROR EXIT SQL.SQLCODE
@@ -212,7 +216,7 @@ SQL
     # Phase 6: Import keys into dev keystore
     step_header "Phase 6: Import keys into dev keystore"
     # shellcheck disable=SC1078,SC1079
-    lib_run in_dev '
+    lib_run in_dev_stdin '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"
 WHENEVER SQLERROR EXIT SQL.SQLCODE

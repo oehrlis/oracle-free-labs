@@ -319,6 +319,34 @@ in_dev() {
 }
 
 # ------------------------------------------------------------------------------
+# Function: in_dev_stdin / in_prod_stdin
+# Purpose.: Run a script inside a container without putting it on the command
+#           line
+# Args....: $*  the shell script to execute
+# Returns.: the exit code of the script
+# Output..: whatever the script writes
+# Depends.: docker
+# Example.: in_dev_stdin "sqlplus -S / as sysdba <<SQL ... SQL"
+# Notes...: in_dev/in_prod pass the script to "docker exec bash -c" as an
+#           argument, so it shows up in the host process list. Anything
+#           carrying a password has to go through stdin instead - "ps" is
+#           readable by every local user.
+# ------------------------------------------------------------------------------
+in_dev_stdin() {
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN [${DEV_SERVICE}]: (script via stdin)"; return 0
+    fi
+    printf '%s\n' "$*" | docker exec -i "${DEV_SERVICE}" bash -s
+}
+
+in_prod_stdin() {
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN [${PROD_SERVICE}]: (script via stdin)"; return 0
+    fi
+    printf '%s\n' "$*" | docker exec -i "${PROD_SERVICE}" bash -s
+}
+
+# ------------------------------------------------------------------------------
 # Function: sqlplus_prod / sqlplus_dev
 # Purpose.: Feed SQL to SQL*Plus as SYSDBA in the respective container
 # Args....: $1  SQL text

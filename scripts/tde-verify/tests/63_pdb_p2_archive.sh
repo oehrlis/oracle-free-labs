@@ -48,7 +48,10 @@ LABEL="pdb_p2_archive"
 # Transport secret, generated per run. A fixed value in the repository would
 # be a committed secret even in a lab, and it adds nothing: the secret only
 # has to match between the export and the import within this one run.
-P2_SECRET="$(LC_ALL=C tr -dc "A-Za-z0-9" </dev/urandom | head -c 24)"
+# head -c would exit after 24 bytes, tr would get SIGPIPE, and with
+# pipefail set -e aborts the script before it prints a single line.
+# openssl produces a finite stream and cut reads it to the end.
+P2_SECRET="$(openssl rand -base64 48 | LC_ALL=C tr -dc "A-Za-z0-9" | cut -c1-24)"
 
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
