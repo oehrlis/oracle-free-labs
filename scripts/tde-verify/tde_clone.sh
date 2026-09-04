@@ -476,7 +476,10 @@ EXIT
     run_rman "
 RUN {
   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
-  CATALOG START WITH '${XCHANGE}/backup/' NOPROMPT;
+  -- No CATALOG: both containers see the exchange directory at the same path, so
+  -- the restored control file already knows the source pieces. Cataloging would
+  -- also pick up a previous clone's control file autobackup and its incarnation,
+  -- which makes recovery fail with ORA-19912.
   RELEASE CHANNEL c1;
 }
 EXIT

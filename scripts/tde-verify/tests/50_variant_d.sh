@@ -181,6 +181,10 @@ RUN {
   SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '${XCHANGE_CONTAINER}/backup/cf_%F';
   RESTORE CONTROLFILE FROM '${XCHANGE_CONTAINER}/backup/${cf_piece}';
   ALTER DATABASE MOUNT;
+  -- The restored control file carries the SOURCE autobackup path, so every
+  -- autobackup this target triggers would land next to the source pieces under
+  -- the same DBID. Redirect inside the same RUN block, before recovery.
+  CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
   RELEASE CHANNEL c1;
 }
 EXIT
@@ -222,7 +226,11 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
     rman_dev "
 RUN {
   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
-  CATALOG START WITH '${XCHANGE_CONTAINER}/backup/' NOPROMPT;
+  -- No CATALOG here on purpose. Both containers mount the exchange directory at
+  -- the same path, so the restored control file already knows every source
+  -- piece. Cataloging the directory would also register any control file
+  -- autobackup a previous clone left there, and with it that clone incarnation.
+  -- Recovery then fails with ORA-19912, cannot recover to target incarnation.
   SET UNTIL SEQUENCE ${until_plus1} THREAD 1;
   RESTORE DATABASE FORCE AS DECRYPTED;
   RECOVER DATABASE;
