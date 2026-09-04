@@ -1078,12 +1078,49 @@ Bekannter Fallstrick aus der bisherigen Reihe, der hier wieder greift: der Servi
 ist `FREE.oradba.ch`, nicht `FREE`, und `tnsping` auf den falschen Service meldet
 trotzdem OK.
 
-### Offene Fragen zum Plan
+### Entscheide zum Plan (2026-09-04)
 
-- Soll P3 wirklich gefahren werden? Er erzeugt bewusst eine nicht oeffnende PDB. Als
-  Negativbeleg ist er wertvoll, kostet aber einen Aufraeumzyklus.
-- Reicht ODBENCPROD als zu klonende PDB, oder soll eine zweite, kleinere PDB nur fuer
-  die Clone-Tests angelegt werden, damit die Baseline unberuehrt bleibt?
-- P4 setzt voraus, dass der Link von dev nach prod als SYS funktioniert. Beim
-  RMAN-Active-Duplicate ist genau das an ORA-01017 gescheitert. Soll der Link mit einem
-  eigenen Clone-Benutzer statt SYS aufgebaut werden?
+1. **P3 wird gefahren.** Der Negativbeleg ist den Aufraeumzyklus wert: er zeigt, was
+   passiert, wenn beim Transport der Schluessel vergessen wird.
+2. **Eigene Test-PDB.** Nicht ODBENCPROD klonen, sondern eine kleinere PDB nur fuer die
+   Clone-Tests anlegen. Die Baseline in ODBENCPROD bleibt damit unberuehrt und die
+   bisherigen Messsaetze bleiben vergleichbar.
+3. **Dedizierter Clone-Benutzer statt SYS.** Der Link von dev nach prod laeuft nicht als
+   SYS - genau daran ist das RMAN-Active-Duplicate mit ORA-01017 gescheitert. Stattdessen:
+
+   ```sql
+   CREATE USER c##clone IDENTIFIED BY <passwort> CONTAINER=ALL;
+   GRANT CREATE SESSION, CREATE PLUGGABLE DATABASE TO c##clone CONTAINER=ALL;
+   ```
+
+   Das Passwort wird zur Laufzeit aus der Container-Umgebung gelesen und nie ausgegeben.
+
+### Testbed fuer die PDB-Clone-Reihe
+
+- Quell-PDB `PDBCLONE` in `odbencprod`, klein gehalten: ein verschluesselter Tablespace
+  `CLONE_ENC` mit AES256, ein unverschluesselter `CLONE_PLAIN` als Kontrolle, je 5000
+  Canary-Zeilen mit deterministischem Payload wie in der bisherigen Reihe.
+- Common User `c##clone` in `odbencprod` mit den beiden Rechten oben.
+- Ziel-CDB `odbencdev`, PDB-Archive und Schluesselexporte ueber `data/xchange`.
+- Der Testbed-Aufbau gehoert in ein eigenes Testskript zur Laufzeit, nicht in die
+  Container-Setup-Skripte. Damit bleibt `config/odbencprod/` weiterhin analog zu
+  `config/odbenc/` und der Startvorgang unveraendert.
+
+### Defekt im Runner - Dry-Run verseucht die State-Datei
+
+Gefunden 2026-09-04 beim Gegenpruefen der Gates.
+
+Die Gates funktionieren korrekt: `--only 20` ohne vorherigen Backup-Schritt meldet
+`GATE VIOLATION: prerequisite 'step 15 (backup)' not met (BACKUP_READY is unset)` und
+das Ergebnis steht als `GATE` statt `PASS` in der Tabelle.
+
+Der Dry-Run schreibt aber Platzhalter in dieselbe State-Datei
+`data/xchange/evidence/lab_state.env`, unter anderem `SOURCE_DBID=DRY-RUN-DBID`,
+`SOURCE_TEK=DRY-RUN-TEK` und `BACKUP_READY=TRUE`. Folge: nach einem Dry-Run sind die
+Gates faelschlich offen, und ein spaeterer Einzelschritt kann eine erfundene DBID
+verwenden. Das ist genau die Klasse Fehler, die wie erledigte Arbeit aussieht.
+
+- [ ] `write_state` in `tests/lib.sh` im Dry-Run entweder nicht schreiben oder in eine
+      getrennte Datei, und beim Lesen im Dry-Run kennzeichnen. Erst nach Abschluss des
+      laufenden Agenten anfassen, der `run_all.sh` und die Testskripte aendert.
+- [ ] verify: nach `run_all.sh --dry-run` darf `--only 20` weiterhin GATE melden
