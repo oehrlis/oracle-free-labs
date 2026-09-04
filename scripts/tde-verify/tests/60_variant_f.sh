@@ -215,7 +215,7 @@ SQL
     # shellcheck disable=SC1078
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 -- No path: WALLET_ROOT is configured, so Oracle derives WALLET_ROOT/tde
 -- itself. Passing an explicit path fails with ORA-46633 - and the path in
@@ -228,11 +228,13 @@ ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "${KSPWD}";
 WHENEVER SQLERROR CONTINUE
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
 WHENEVER SQLERROR EXIT SQL.SQLCODE
--- Set CDB master key first (PDB key will follow after discard step).
--- No CONTAINER=ALL here: it also targets PDB$SEED, which is not open for
--- writing, and the statement then fails with ORA-46663. The key is set per
--- container, matching the intent of this phase.
-ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP;
+-- No SET KEY in CDB$ROOT here. Measured: it fails with ORA-28374, "typed
+-- master key not found in wallet", because the CDB still references the
+-- MEK id of the source database. A database that lost its master key cannot simply adopt a new one -
+-- that is what _db_discard_lost_masterkey is for, and it is only settable in
+-- the PDB (ORA-28355 at CDB level). The key is therefore established in the
+-- PDB in phase 4+5, which is enough: variant F produces new key material
+-- without a CDB-level key.
 SELECT con_id, key_id, keystore_type, origin FROM v\$encryption_keys ORDER BY con_id;
 EXIT
 SQL
@@ -243,7 +245,7 @@ SQL
     # shellcheck disable=SC1078
     lib_run in_dev '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR CONTINUE
 ALTER SESSION SET CONTAINER='"${PROD_PDB}"';
 -- _db_discard_lost_masterkey MUST be set in the PDB with SCOPE=MEMORY

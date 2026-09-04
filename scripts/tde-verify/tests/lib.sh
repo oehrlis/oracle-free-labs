@@ -352,6 +352,11 @@ in_prod_stdin() {
 # Args....: $1  SQL text
 # Returns.: exit code of SQL*Plus
 # Output..: SQL*Plus output with password lines filtered out
+# Notes...: The output is captured first and filtered afterwards. Piping
+#           SQL*Plus straight into grep returns grep's exit status, so a
+#           statement that failed under WHENEVER SQLERROR EXIT SQL.SQLCODE
+#           looked like success, set -e never fired, and the step went on -
+#           an ORA-28374 passed through unnoticed exactly this way.
 # ------------------------------------------------------------------------------
 sqlplus_prod() {
     local sql="$1"
@@ -361,9 +366,11 @@ sqlplus_prod() {
         echo "--- end ---"
         return 0
     fi
-    printf '%s\n' "${sql}" \
-        | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba \
-        | grep -viE "identified by"
+    local out rc
+    out=$(printf '%s\n' "${sql}" | docker exec -i "${PROD_SERVICE}" sqlplus -S / as sysdba)
+    rc=$?
+    printf '%s\n' "${out}" | grep -viE "identified by"
+    return ${rc}
 }
 
 sqlplus_dev() {
@@ -374,9 +381,11 @@ sqlplus_dev() {
         echo "--- end ---"
         return 0
     fi
-    printf '%s\n' "${sql}" \
-        | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba \
-        | grep -viE "identified by"
+    local out rc
+    out=$(printf '%s\n' "${sql}" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba)
+    rc=$?
+    printf '%s\n' "${out}" | grep -viE "identified by"
+    return ${rc}
 }
 
 # ------------------------------------------------------------------------------
