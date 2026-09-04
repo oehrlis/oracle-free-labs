@@ -1195,3 +1195,19 @@ Konsequenzen:
 - **Schritt 65, Remote Clone:** braucht nur den DB-Link und den Benutzer, keine
   weiteren Vorkehrungen. In einer Produktionsumgebung mit einer 15 TB grossen PDB
   so durchgefuehrt. Unser Aufbau entspricht dem.
+
+## Offene Beobachtungen aus dem Lauf ab Schritt 50 (2026-09-04)
+
+- `ensure_autologin_for` meldet "open via local auto-login", `V$ENCRYPTION_WALLET`
+  zeigt aber `WALLET_TYPE = PASSWORD`. Der Keystore ist offen, das Verdict ist
+  davon nicht betroffen - die Meldung behauptet aber einen Zustand, den die View
+  nicht bestaetigt. Vor dem E2E-Lauf entweder Auto-Login wirklich erzeugen oder
+  die Meldung auf "open" zuruecknehmen.
+- Nebenbefund mit Kundenrelevanz, direkt aus dem Log von Schritt 50:
+  in der Dev-CDB stehen vier Schluessel, zwei davon stammen aus Prod - `ORIGIN`
+  meldet fuer **alle vier** `LOCAL`. Die Herkunft eines transportierten MEK ist
+  in der View nicht sichtbar. Das ist die empirische Grundlage fuer das
+  Provenance-Argument in `doc/tde-okv-argumentation.md`.
+- Zwei Defekte in der PDB-Serie vor dem ersten Lauf gefunden und behoben:
+  SIGPIPE-Abbruch in der Variableninitialisierung (Schritte 63/65) und
+  Secrets im Host-Prozesslisting via `docker exec bash -c` (Schritt 65).
