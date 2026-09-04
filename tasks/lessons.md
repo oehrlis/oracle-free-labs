@@ -71,3 +71,47 @@ not siblings (i.e. they appear under different parent headings).
 references (e.g. `BUILD_IMAGE = oracle-free-labs:$(_DB_BASE_TAG)`). The actual
 expanded values are correct at recipe execution time. Use `make -n <target>` or
 `make <target> --dry-run` to verify the expanded commands, not `make -p`.
+
+## 2026-09-04 - Apostroph in SQL-Kommentaren, zweimal derselbe Fehler
+
+In einem einfach gequoteten Bash-String beendet ein Apostroph den String.
+Ich habe das an einem Tag zweimal produziert - "the repo's own" und
+"prod's MEK id" - jeweils in einem `--`-SQL-Kommentar innerhalb eines
+`lib_run in_dev '...'`-Blocks. shellcheck fing beide (SC1011), aber mein
+`git add` stand jeweils in einer eigenen Zeile und lief trotz roter Pruefung.
+
+Regel: in Kommentaren innerhalb gequoteter Blöcke keine Possessive und keine
+Apostrophe. "the repo uses", "the MEK id of the source database".
+
+Regel: Commit an die Pruefung koppeln, nicht danebenstellen -
+`if shellcheck ... && bash -n ...; then git commit; else echo ROT; fi`.
+Ein `&&` nach dem letzten echo schuetzt nichts.
+
+## 2026-09-04 - Ein gespeicherter Schluesselwert beweist keine Neuverschluesselung
+
+`V$ENCRYPTED_TABLESPACES.ENCRYPTEDKEY` aendert sich beim reinen Re-wrap
+genauso wie bei neuem Schluesselmaterial. Verdicts, die darauf beruhen,
+meldeten zweimal ein falsches Ergebnis:
+
+- Variante D wurde rot, obwohl sie sich korrekt verhielt (MEK absichtlich
+  rotiert, also musste der gewrappte TEK abweichen).
+- Variante F wurde gruen auf einem Pfad, auf dem Prods Keystore nie ersetzt
+  wurde - der TEK unterschied sich durch das Re-wrap, die Daten waren
+  unangetastet.
+
+Regel: Aussagen ueber Verschluesselung am **Chiffrat** pruefen, nicht am
+gespeicherten Schluessel. Und nur an den Bloecken, die Daten tragen - die
+Gesamtzahlen sind von nie benutzten Bloecken dominiert, die RMAN bei jedem
+Restore neu schreibt.
+
+## 2026-09-04 - `sqlplus | grep` verschluckt den Exit-Status
+
+Der Status einer Pipe ist der des letzten Glieds. `sqlplus <<SQL | grep`
+liefert grep's Status, ein per `WHENEVER SQLERROR EXIT SQL.SQLCODE`
+gescheitertes Statement sieht wie Erfolg aus, `set -e` greift nicht.
+So lief ein ORA-28374 folgenlos durch und der Schritt blieb gruen.
+
+`set -o pipefail` ist hier die falsche Loesung: ein `grep`, das nichts
+findet, liefert 1 und wuerde den Block fälschlich rot machen. Richtig:
+Ausgabe zuerst einfangen, dann filtern - oder `${PIPESTATUS[0]}` explizit
+pruefen.
