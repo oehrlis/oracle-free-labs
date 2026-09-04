@@ -1315,3 +1315,42 @@ Betroffen ist das Muster in mehreren Skripten (`sqlplus_prod`, `sqlplus_dev`,
 alle `lib_run in_dev`/`in_prod`-Bloecke). Vor dem finalen E2E-Lauf beheben:
 `set -o pipefail` in den betroffenen Container-Skripten oder
 `${PIPESTATUS[0]}` auswerten.
+
+## Zentraler neuer Befund: der PDB-Klon erzeugt neues Schluesselmaterial
+
+Gemessen 2026-09-04, Schritt 62 (P1, lokaler Klon in derselben CDB):
+
+| | Quelle `PDBCLONE` | Klon `PDBCLONE_P1` |
+|---|---|---|
+| MASTERKEYID | `F99544E45B4B4A5298EFD7D0CEBEDCA7` | `F99544E45B4B4A5298EFD7D0CEBEDCA7` |
+| ENCRYPTEDKEY | `212154F58E503609D1B726C2DDDA1F36267FDD0A978001650996AE1AF832BE8C` | `0602F0724EEA2DB3BCBA408137DAB21ADD86177377E473FA5E9713631F06866C` |
+| KEY_VERSION | 0 | 0 |
+| Canary-Chiffrat | - | 0 identisch / 313 abweichend |
+| Blockvergleich gesamt | - | 1 identisch / 6400 abweichend |
+
+Die Beweisfuehrung steht auf zwei unabhaengigen Beinen:
+
+1. Der **MEK ist identisch** - gleiche CDB, gleicher Keystore. Ein Re-wrap
+   unter unveraendertem MEK ergaebe denselben gewrappten Wert. Der Wert weicht
+   ab, also ist das Schluesselmaterial neu. Das ist ein logischer Schluss, der
+   ohne Annahmen ueber die IV-Ableitung auskommt.
+2. Das Chiffrat der Canary-Bloecke ist zu 100 Prozent abweichend.
+
+`KEY_VERSION` ist auf beiden Seiten 0 und traegt hier keine Information -
+ein weiteres Beispiel dafuer, dass die View-Spalten die Frage nicht beantworten.
+
+### Konsequenz fuer die Kundenaussage
+
+Bis hierhin galt: **kein** RMAN-Pfad erneuert den Tablespace-Key eines bereits
+verschluesselten Tablespace (Varianten A, C, D gemessen; B1/B2 brechen ab).
+Neues Schluesselmaterial entstand nur ueber `ONLINE REKEY` oder ueber den
+Discard-Pfad (Variante F, mit Hidden Parameter und Oracle-Support-Freigabe).
+
+Der PDB-Klon aendert diese Antwort: er liefert neues TEK-Material mit einem
+einzigen, regulaer unterstuetzten Kommando. Fuer den Kunden ist das der
+praktikable Weg von Prod nach Dev - vorbehaltlich der noch offenen Messungen
+in Schritt 63 (Archiv-Transport) und 65 (Remote Clone), die zeigen muessen,
+ob das auch ueber CDB-Grenzen hinweg gilt.
+
+Erwartung in `doc/`-Dateien und im Plan war "P1: TEK identisch zur Quelle" -
+diese Annahme ist widerlegt und muss in der Dokumentation korrigiert werden.
