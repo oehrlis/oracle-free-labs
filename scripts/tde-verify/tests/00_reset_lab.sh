@@ -30,6 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="0.1.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
+ENABLE_DELETE=${ENABLE_DELETE:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
 
 # shellcheck source=lib.sh
@@ -52,6 +53,7 @@ Usage: ${SCRIPT_NAME} [OPTIONS]
 Options:
   -h, --help      Show this help and exit
   -v, --verbose   Enable verbose output
+      --delete       Also clear data/xchange (drops the previous run's evidence)
   -d, --dry-run   Show what would be done; change nothing
   -y, --yes       Skip the confirmation prompt (required for unattended use)
 
@@ -75,11 +77,56 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)    usage; exit 0 ;;
         -v|--verbose) VERBOSE="TRUE"; shift ;;
+           --delete)   ENABLE_DELETE="TRUE"; shift ;;
         -d|--dry-run) DRY_RUN="TRUE"; shift ;;
         -y|--yes)     FORCE_YES="TRUE"; shift ;;
         *) lib_err "Unknown option: $1"; usage; exit 1 ;;
     esac
 done
+
+# ------------------------------------------------------------------------------
+# Function: clean_xchange
+# Purpose.: Remove the artefacts of previous runs from the exchange mount
+# Args....: none
+# Returns.: 0 always
+# Output..: one line per removed item, or a warning when leftovers are kept
+# Depends.: find
+# Example.: clean_xchange
+# Notes...: make reset only wipes data/<service>, so backup pieces, wallet
+#           copies and evidence sets from earlier runs survive it. Stale
+#           evidence labels next to fresh ones are easy to misread, and old
+#           backup pieces can be catalogued by RMAN. Guarded by --delete
+#           because it discards every measurement of the previous run.
+#           README.md and the directory itself are kept.
+# ------------------------------------------------------------------------------
+clean_xchange() {
+    local xh="${REPO_DIR}/data/xchange"
+    [[ -d "${xh}" ]] || return 0
+
+    if [[ "${ENABLE_DELETE}" != "TRUE" ]]; then
+        local leftovers
+        leftovers=$(find "${xh}" -mindepth 1 -maxdepth 1 ! -name 'README.md' 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "${leftovers}" -gt 0 ]]; then
+            lib_warn "data/xchange still holds ${leftovers} item(s) from an earlier run"
+            lib_warn "evidence sets and backup pieces would be mixed with this run"
+            lib_warn "rerun with --delete to start from an empty exchange mount"
+        fi
+        return 0
+    fi
+
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would clear ${xh} except README.md"
+        return 0
+    fi
+
+    local item
+    while IFS= read -r item; do
+        [[ -n "${item}" ]] || continue
+        rm -rf "${item}"
+        lib_info "removed ${item#"${REPO_DIR}/"}"
+    done < <(find "${xh}" -mindepth 1 -maxdepth 1 ! -name 'README.md' 2>/dev/null)
+    lib_info "exchange mount cleared"
+}
 
 # ------------------------------------------------------------------------------
 # Main
@@ -107,6 +154,8 @@ main() {
 
     # Reset and restart prod service
     step_header "Reset odbencprod"
+    clean_xchange
+
     reset_service "${PROD_SERVICE}"
     start_service "${PROD_SERVICE}"
     wait_for_ready "${PROD_SERVICE}" 900

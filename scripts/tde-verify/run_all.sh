@@ -33,6 +33,7 @@ VERSION="0.1.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
+ENABLE_DELETE=${ENABLE_DELETE:-"FALSE"}
 
 TESTS_DIR="${SCRIPT_DIR}/tests"
 REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -62,6 +63,7 @@ Options:
   -h, --help          Show this help and exit
   -v, --verbose       Enable verbose output in test scripts
   -d, --dry-run       Pass --dry-run to each script; print steps, change nothing
+      --delete         Clear data/xchange in step 00 (drops the previous run's evidence)
   -y, --yes           Pass --yes to all scripts (skip interactive prompts)
   -l, --list          List available steps and exit
       --only NR|NAME  Run exactly one step (e.g. --only 20 or --only variant_a)
@@ -87,6 +89,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)    usage; exit 0 ;;
         -v|--verbose) VERBOSE="TRUE"; shift ;;
         -d|--dry-run) DRY_RUN="TRUE"; shift ;;
+           --delete)   ENABLE_DELETE="TRUE"; shift ;;
         -y|--yes)     FORCE_YES="TRUE"; shift ;;
         -l|--list)    OPT_LIST=1; shift ;;
             --only)   OPT_ONLY="${2:-}"; shift 2 ;;
@@ -269,6 +272,11 @@ run_step() {
     [[ "${VERBOSE}"   == "TRUE" ]] && args+=("--verbose")
     [[ "${DRY_RUN}"   == "TRUE" ]] && args+=("--dry-run")
     [[ "${FORCE_YES}" == "TRUE" ]] && args+=("--yes")
+    # --delete only goes to the steps that implement it, otherwise a step would
+    # abort on an unknown option and the run would stop for the wrong reason.
+    if [[ "${ENABLE_DELETE}" == "TRUE" ]] && grep -q -- '--delete)' "${script_path}" 2>/dev/null; then
+        args+=("--delete")
+    fi
 
     # For withdrawal test, pass --after-variant if the last variant is known
     if [[ "${script}" == "90_withdrawal_test.sh" ]]; then
