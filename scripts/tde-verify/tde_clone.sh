@@ -47,6 +47,7 @@ ENABLE_DELETE=${ENABLE_DELETE:-"FALSE"}
 TARGET="odbencdev"
 VARIANT=""
 SOURCE_DBID=""
+CF_PIECE=""
 TARGET_KEY_ID=""
 XCHANGE="/opt/oracle/xchange"
 WALLET_DIR="/opt/oracle/dbconfig/FREE/wallet"
@@ -81,6 +82,9 @@ Variants:
 Options:
   -V, --variant NAME   Variant to run (required)
   -D, --dbid ID        DBID of the source database (required for a, b1, b2)
+  -C, --cf-piece FILE  Control file autobackup of the SOURCE, file name only.
+                       Without it the newest autobackup is used, which after a
+                       previous clone is the TARGET's own - see the note below.
   -k, --key KEY_ID     Target master key id, required for b1 and b2
   -t, --target NAME    Target container (default: ${TARGET})
   -h, --help           Show this help and exit
@@ -421,15 +425,40 @@ EXIT
     # SET CONTROLFILE AUTOBACKUP FORMAT must match the format the source used,
     # otherwise RESTORE ... FROM AUTOBACKUP looks in the default FRA location and
     # reports that no AUTOBACKUP was found.
+    # Restore a NAMED autobackup, never "FROM AUTOBACKUP". After the control
+    # file restore the target carries the source DBID, so any autobackup it
+    # triggers later - OPEN RESETLOGS does - is written as
+    # cf_c-<source dbid>-<date>-NN into the same shared directory. FROM
+    # AUTOBACKUP then picks the newest, which is the target's own control file
+    # from a post-RESETLOGS incarnation, and recovery asks for sequence 1 of
+    # that new incarnation instead of the source logs.
+    local cf_clause
+    if [[ -n "${CF_PIECE}" ]]; then
+        cf_clause="RESTORE CONTROLFILE FROM '${XCHANGE}/backup/${CF_PIECE}';"
+        log_info "control file autobackup: ${CF_PIECE}"
+    else
+        cf_clause="RESTORE CONTROLFILE FROM AUTOBACKUP;"
+        log_warn "no --cf-piece given, falling back to FROM AUTOBACKUP"
+        log_warn "this picks the newest autobackup, which may be the target's own"
+    fi
+
     run_rman "
 SET DBID ${SOURCE_DBID};
 RUN {
   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
   SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '${XCHANGE}/backup/cf_%F';
-  RESTORE CONTROLFILE FROM AUTOBACKUP;
+  ${cf_clause}
   ALTER DATABASE MOUNT;
   RELEASE CHANNEL c1;
 }
+EXIT
+"
+
+    # Keep the target from writing its own autobackups next to the source's.
+    # Without this the shared directory accumulates target control files and the
+    # next clone restores the wrong one.
+    run_rman "
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
 EXIT
 "
     open_keystore
@@ -482,6 +511,7 @@ while [[ $# -gt 0 ]]; do
            --delete)   ENABLE_DELETE="TRUE"; shift ;;
         -V|--variant)  VARIANT="${2:-}"; shift 2 ;;
         -D|--dbid)     SOURCE_DBID="${2:-}"; shift 2 ;;
+        -C|--cf-piece) CF_PIECE="${2:-}"; shift 2 ;;
         -k|--key)      TARGET_KEY_ID="${2:-}"; shift 2 ;;
         -t|--target)   TARGET="${2:-}"; shift 2 ;;
         *)  log_error "Unknown option $1"; usage; exit 1 ;;
