@@ -162,18 +162,50 @@ wait_for_ready() {
         return 0
     fi
     lib_info "waiting for ${svc} to be ready (timeout ${timeout}s) ..."
+    local state
     while (( elapsed < timeout )); do
-        if docker compose --profile "${svc}" logs --tail 50 2>/dev/null \
-            | grep -q "DATABASE IS READY TO USE"; then
+        # Read the whole log, not a tail window. The ready marker is printed
+        # early and the entrypoint then keeps appending the alert log, so a
+        # "--tail 50" window scrolls past the marker within about a minute and
+        # the wait never succeeds even though the database is up.
+        if docker logs "${svc}" 2>&1 | grep -q "DATABASE IS READY TO USE"; then
             lib_info "${svc} is ready"
             return 0
         fi
+
+        # Fail fast on a setup that already reported failure, instead of
+        # burning the full timeout on a container that will never get there.
+        if docker logs "${svc}" 2>&1 | grep -qE "DATABASE SETUP WAS NOT SUCCESSFUL|DBT-[0-9]+"; then
+            lib_err "${svc} reported a setup failure"
+            docker logs "${svc}" 2>&1 | grep -E "DBT-[0-9]+|SETUP WAS NOT SUCCESSFUL" \
+                | sort -u | head -5 | sed 's/^/    /' >&2
+            lib_err "Check: docker logs ${svc}"
+            exit 1
+        fi
+
+        # A container that is restarting or gone is not going to become ready.
+        state="$(docker inspect -f '{{.State.Status}}' "${svc}" 2>/dev/null | tr -d '[:space:]')"
+        [[ -n "${state}" ]] || state="absent"
+        case "${state}" in
+            running|created) : ;;
+            restarting)
+                lib_err "${svc} is in a restart loop - it will not become ready"
+                docker logs "${svc}" 2>&1 | grep -E "FATAL|DBT-[0-9]+|ORA-[0-9]{5}" \
+                    | sort -u | head -5 | sed 's/^/    /' >&2
+                exit 1
+                ;;
+            *)
+                lib_err "${svc} is '${state}', expected running"
+                exit 1
+                ;;
+        esac
+
         sleep "${interval}"
         elapsed=$(( elapsed + interval ))
-        lib_dbg "${svc}: ${elapsed}s elapsed"
+        lib_dbg "${svc}: ${elapsed}s elapsed, state ${state}"
     done
     lib_err "${svc} did not become ready within ${timeout}s"
-    lib_err "Check: docker compose --profile ${svc} logs -f"
+    lib_err "Check: docker logs ${svc}"
     exit 1
 }
 
@@ -228,8 +260,28 @@ reset_service() {
             lib_info "removing ${data_dir}"
             rm -rf "${data_dir}"
         fi
+
+        # Restore the tracked skeleton. The image symlinks
+        # /opt/oracle/network/admin (TNS_ADMIN) to /opt/oracle/dbconfig/FREE,
+        # so that directory must exist before the container starts. Without it
+        # the bind mount creates an empty dbconfig, the symlink dangles and DBCA
+        # aborts with DBT-60127 in a restart loop. rm -rf above also removes the
+        # tracked .gitkeep markers, so they have to come back.
+        if git -C "${REPO_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
+            if git -C "${REPO_DIR}" restore "data/${svc}" 2>/dev/null; then
+                lib_info "restored tracked files under data/${svc}"
+            else
+                lib_info "nothing tracked under data/${svc} to restore"
+            fi
+        fi
+        mkdir -p "${data_dir}/dbconfig/FREE" "${data_dir}/logs"
+
+        if [[ ! -d "${data_dir}/dbconfig/FREE" ]]; then
+            lib_err "data/${svc}/dbconfig/FREE missing - the container would fail with DBT-60127"
+            return 1
+        fi
     else
-        lib_info "DRY-RUN: would remove ${REPO_DIR}/data/${svc}"
+        lib_info "DRY-RUN: would remove ${REPO_DIR}/data/${svc} and restore its tracked skeleton"
     fi
     lib_info "service '${svc}' reset complete"
 }
