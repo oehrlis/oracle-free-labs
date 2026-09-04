@@ -755,3 +755,46 @@ sys.exit(1 if diff else 0)
     rm -f "${blockfile}"
     return ${rc}
 }
+
+# ------------------------------------------------------------------------------
+# Function: ensure_omf
+# Purpose.: Make sure db_create_file_dest is set so PDB creation works
+# Args....: $1  container name
+#           $2  OMF base directory, default /opt/oracle/oradata
+# Returns.: 0 OMF available, 1 could not set it
+# Output..: one line stating the value in effect
+# Depends.: docker, sqlplus
+# Example.: ensure_omf odbencprod
+# Notes...: Neither db_create_file_dest nor pdb_file_name_convert is set in
+#           this lab, so every CREATE PLUGGABLE DATABASE - from PDB$SEED,
+#           FROM another PDB, or USING an archive - fails with ORA-65016,
+#           "FILE_NAME_CONVERT must be specified". Setting OMF once covers all
+#           of them and reproduces the path layout the lab already uses
+#           (/opt/oracle/oradata/FREE/<GUID>/datafile/o1_mf_*). The repo's own
+#           config/common/scripts/create_pdb.sql solves it per statement with
+#           CREATE_FILE_DEST; one parameter is the smaller change here.
+# ------------------------------------------------------------------------------
+ensure_omf() {
+    local svc="$1" base="${2:-/opt/oracle/oradata}"
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would ensure db_create_file_dest=${base} in ${svc}"
+        return 0
+    fi
+    local current
+    current=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 200 TRIMSPOOL ON
+SELECT value FROM v\$parameter WHERE name = 'db_create_file_dest';
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null | tr -d ' \t\r')
+    if [[ "${current}" == "${base}" ]]; then
+        lib_info "db_create_file_dest already ${base} in ${svc}"
+        return 0
+    fi
+    printf '%s\n' "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SYSTEM SET db_create_file_dest='${base}' SCOPE=BOTH;
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba >/dev/null 2>&1 || {
+        lib_err "could not set db_create_file_dest in ${svc}"
+        return 1
+    }
+    lib_info "db_create_file_dest set to ${base} in ${svc}"
+}

@@ -100,6 +100,9 @@ main() {
     require_healthy   "${PROD_SERVICE}"
 
     # Drop PDBCLONE if it already exists (idempotency)
+    # Without OMF, CREATE PLUGGABLE DATABASE fails with ORA-65016.
+    ensure_omf "${PROD_SERVICE}"
+
     step_header "Drop PDBCLONE if exists (idempotency)"
     sqlplus_prod "
 WHENEVER SQLERROR CONTINUE

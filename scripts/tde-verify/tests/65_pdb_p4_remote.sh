@@ -142,6 +142,11 @@ main() {
     trap cleanup_cred EXIT
 
     # Phase 1: Read the c##clone password into memory - never to disk
+    # PDBs are created in both containers here; without OMF every
+    # CREATE PLUGGABLE DATABASE fails with ORA-65016.
+    ensure_omf "${PROD_SERVICE}"
+    ensure_omf "${DEV_SERVICE}"
+
     step_header "Phase 1: Prepare credential for DB link (prod container only)"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         lib_info "DRY-RUN: would read the clone password from the source container"

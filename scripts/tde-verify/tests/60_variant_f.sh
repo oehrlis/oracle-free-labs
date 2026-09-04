@@ -169,6 +169,20 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
 
     # Phase 3: Remove prod keystore, create a fresh dev keystore
     step_header "Phase 3: Remove prod keystore, create fresh dev keystore"
+    # Close the keystore first. Moving the directory does not close what is
+    # already open in memory - the CREATE would then be followed by ORA-28354
+    # on the OPEN, the block would abort, and the SET KEY for CDB$ROOT below
+    # would be skipped without the step ever turning red.
+    lib_run in_dev '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"
+WHENEVER SQLERROR CONTINUE
+ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+SELECT con_id, status, wallet_type FROM v$encryption_wallet ORDER BY con_id;
+EXIT
+SQL
+'
     lib_run in_dev "
 ks_dir=${WALLET_DIR_CONTAINER}/tde
 # Preserve the dev-pristine backup if it exists; move prod wallet aside
@@ -191,7 +205,11 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 -- where WALLET_DIR_CONTAINER does not exist. Same syntax the repo uses in
 -- config/common/scripts/csenc_swkeystore.sql.
 ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "${KSPWD}";
+-- Tolerate ORA-28354: if the keystore is already open the desired state is
+-- reached, and aborting here would silently skip the SET KEY below.
+WHENEVER SQLERROR CONTINUE
 ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 -- Set CDB master key first (PDB key will follow after discard step).
 -- No CONTAINER=ALL here: it also targets PDB$SEED, which is not open for
 -- writing, and the statement then fails with ORA-46663. The key is set per
@@ -258,16 +276,39 @@ EXIT
     mkid_source=$(read_state "SOURCE_MASTERKEYID")
     tek_source=$(read_state  "SOURCE_TEK")
 
+    # This is the counterpart to variant D. Both run the same
+    # ALTER TABLESPACE ... ENCRYPTION OFFLINE ENCRYPT; the only difference is
+    # that the container Database Key was renewed here. Variant D reproduced
+    # the source ciphertext byte for byte despite a new MEK - so if the
+    # ciphertext changes here, the tablespace key material demonstrably comes
+    # from the Database Key and not from the MEK. Without this check the
+    # verdict would rest on the stored key value alone, which a pure re-wrap
+    # changes just as well.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${PROD_PDB}" "CANARY_TDE") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all differing)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN"
-    elif [[ "${tek_clone}" != "${tek_source}" ]]; then
-        verdict="PASS"
-        msg="TEK DIFFERS from baseline - new TEK created, key chain broken"
-    else
+    elif [[ "${tek_clone}" == "${tek_source}" ]]; then
         verdict="FAIL"
         msg="TEK is still identical to baseline - chain not broken (investigate)"
+    elif [[ ${canary_rc} -eq 1 ]]; then
+        verdict="PASS"
+        msg="TEK DIFFERS and the canary ciphertext changed with it (${canary_cmp}) - new key material, chain broken. Same OFFLINE ENCRYPT as variant D, which reproduced the ciphertext: the difference is the renewed Database Key"
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="TEK differs but the canary blocks could not be compared - no verdict possible"
+    else
+        verdict="FAIL"
+        msg="TEK differs but the canary ciphertext is unchanged (${canary_cmp}) - the stored key changed without the data being re-encrypted, which is a re-wrap, not a broken chain"
     fi
 
     write_state "VARIANT_F_MKID" "${mkid_clone}"
