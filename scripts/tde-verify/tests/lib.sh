@@ -127,9 +127,14 @@ require_container() {
 
 # ------------------------------------------------------------------------------
 # Function: require_healthy
-# Purpose.: Abort if a container health check is not healthy
+# Purpose.: Abort unless the database in the container is usable
 # Args....: $1  container / service name
-# Returns.: 0   healthy, exits 1 otherwise (skipped in dry-run)
+# Returns.: 0   usable, exits 1 otherwise (skipped in dry-run)
+# Notes...: The docker health check runs every 60s with a 30s timeout, so under
+#           load a single timed-out probe leaves the container marked unhealthy
+#           while the database serves queries normally - measured on odbencprod,
+#           which reported unhealthy for an hour and answered every query. The
+#           flag is treated as a hint; the database itself is the authority.
 # ------------------------------------------------------------------------------
 require_healthy() {
     local name="$1"
@@ -138,13 +143,23 @@ require_healthy() {
         return 0
     fi
     local health
-    health=$(docker inspect -f '{{.State.Health.Status}}' "${name}" 2>/dev/null || echo "none")
-    if [[ "${health}" != "healthy" ]]; then
-        lib_err "container '${name}' health status: ${health} (expected: healthy)"
-        lib_err "Check logs with: docker compose --profile ${name} logs -f"
-        exit 1
+    health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+             "${name}" 2>/dev/null || echo "absent")
+    if [[ "${health}" == "healthy" || "${health}" == "none" ]]; then
+        lib_dbg "container ${name} is healthy"
+        return 0
     fi
-    lib_dbg "container ${name} is healthy"
+    # Ask the database directly before giving up on the container.
+    # [[:space:]], not ' ' - SQL*Plus indents its output with a tab.
+    if printf '%s\n' "SELECT 1 FROM dual;
+EXIT" | docker exec -i "${name}" sqlplus -S / as sysdba 2>/dev/null \
+       | grep -qE '^[[:space:]]*1[[:space:]]*$'; then
+        lib_warn "docker reports '${health}' for ${name}, but the database answers - continuing"
+        return 0
+    fi
+    lib_err "container '${name}' health status: ${health} and the database does not answer"
+    lib_err "Check logs with: docker compose --profile ${name} logs -f"
+    exit 1
 }
 
 # ------------------------------------------------------------------------------
