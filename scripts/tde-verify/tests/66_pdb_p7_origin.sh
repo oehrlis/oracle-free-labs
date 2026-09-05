@@ -124,19 +124,18 @@ ORDER BY creation_time;
 EXIT
 "
 
-    # Read single ORIGIN value from target
-    local origin_target
-    origin_target=""
+    # ORIGIN of the key the data actually hangs on. Taking the first row of
+    # v$encryption_keys answers a different question - a PDB can hold several
+    # keys, and only the one referenced by the tablespace matters here.
+    local origin_target ts_mek
+    origin_target=""; ts_mek=""
     if [[ "${DRY_RUN}" != "TRUE" ]]; then
-        origin_target=$(printf '%s\n' "
-SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
-ALTER SESSION SET CONTAINER=${target_pdb};
-SELECT origin FROM v\$encryption_keys
-WHERE con_id = sys_context('userenv','con_id') AND rownum=1;
-EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && /^[A-Z]+$/ { print $1; exit }')
+        ts_mek=$(get_masterkeyid "${DEV_SERVICE}" "${target_pdb}" "${CLONE_TS_ENC}")
+        lib_info "tablespace ${CLONE_TS_ENC} in ${target_pdb} depends on MEK ${ts_mek}"
+        origin_target=$(get_origin_for_mek "${DEV_SERVICE}" "${target_pdb}" "${ts_mek}") || true
     else
         origin_target="IMPORTED"
+        ts_mek="DRY-RUN"
     fi
 
     # Read ORIGIN values from state (stored by P2 / P4)
@@ -162,18 +161,23 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
     echo "Key distinction: IMPORTED traces the key provenance; LOCAL does not."
     echo "A copied keystore (Variant A) leaves no audit trail in v\$encryption_keys."
 
+    # This step observes; the ORIGIN value is the result, not a pass criterion.
+    # It fails only when the measurement itself did not produce one.
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
+    elif [[ -z "${origin_target}" || "${origin_target}" == "NOT-IN-KEYSTORE" ]]; then
+        verdict="FAIL"
+        msg="P7: the key ${ts_mek} the tablespace depends on is not in the target keystore - no provenance statement possible"
+    elif [[ "${origin_target}" == "LOCAL" ]]; then
+        verdict="PASS"
+        msg="P7: the key ${ts_mek} was transported out of production by EXPORT/IMPORT KEYS, yet the target reports ORIGIN=LOCAL. Nothing in v\$encryption_keys distinguishes a transported production key from one generated on the spot - the provenance question cannot be answered from the database"
     elif [[ "${origin_target}" == "IMPORTED" ]]; then
         verdict="PASS"
-        msg="P7: ORIGIN=IMPORTED in target - formal key import leaves traceable audit trail"
-    elif [[ "${origin_target}" == "LOCAL" ]]; then
-        verdict="FAIL"
-        msg="P7: ORIGIN=LOCAL in target - key provenance not visible; check if P2/P4 ran correctly"
+        msg="P7: ORIGIN=IMPORTED for key ${ts_mek} - the formal key import does leave a traceable marker in this configuration"
     else
         verdict="PASS"
-        msg="P7: ORIGIN=${origin_target} (see comparison table above)"
+        msg="P7: ORIGIN=${origin_target} for key ${ts_mek} - recorded, see the comparison above"
     fi
 
     print_verdict "${verdict}" "${msg}"
