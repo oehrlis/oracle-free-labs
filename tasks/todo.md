@@ -1455,3 +1455,64 @@ Vergleich laesst eine erfolgreiche Rotation wie einen Fehlschlag aussehen.
 `UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(key_id))` liefert die
 ASCII-Darstellung des Hex-Strings statt der Bytes und haette **still** nie
 gematcht - die Dekodierung gehoert nach aussen, nicht ins SQL.
+
+## Statusanalyse vor dem E2E-Lauf (2026-09-06)
+
+### Was steht
+
+Alle 21 Schritte haben mindestens einmal bestanden. Die PDB-Serie 61 bis 69
+lief erstmals ueberhaupt gegen eine Datenbank und ist jetzt vollstaendig gruen.
+`shellcheck -S warning` und `bash -n` sind fuer alle 23 Skripte sauber.
+
+### Gemessene Kernaussagen
+
+| Weg | Schluesselmaterial | Canary-Chiffrat |
+|---|---|---|
+| RMAN A (RESTORE) | erhalten | identisch |
+| RMAN C (DUPLICATE) | erhalten | identisch |
+| RMAN B1/B2 (`AS ENCRYPTED USING KEY`) | bricht ab | ORA-00600 / ORA-28374 |
+| RMAN D (DECRYPT, neuer MEK, OFFLINE ENCRYPT) | erhalten | 313 / 0 identisch |
+| Variante F (Database Key erneuert) | **neu** | 0 / 313 identisch |
+| Variante G (`ONLINE REKEY`) | **neu** | 0 / 313 identisch |
+| PDB P1 (lokaler Klon) | **neu** | 0 / 313 identisch |
+| PDB P2 (Archiv-Transport) | erhalten | 313 / 313 identisch |
+| PDB P3 (ohne Key-Export) | - | `ORA-46680`, Unplug verweigert |
+| PDB P4 (Remote-Klon) | **neu** | 0 / 313 identisch |
+| PDB P5 (MEK-Rotation) | Re-wrap | 313 / 313 identisch, read-only bleibt gebunden |
+| PDB P6 (`ONLINE REKEY` in PDB) | **neu** | 0 / 313 identisch |
+
+Positivkontrolle: identischer Inhalt unter zwei verschiedenen Tablespace-Keys
+ergibt in **allen** 313 Canary-Bloecken anderes Chiffrat. Damit ist belegt,
+dass die Methode einen Schluesselwechsel erkennt - ohne diesen Schritt waere
+jedes "identisch" wertlos.
+
+Entzugstest: ohne Prods MEK scheitert der Zugriff mit `ORA-28374`.
+
+### Antwort auf die Kundenfrage
+
+`RESTORE ... AS ENCRYPTED USING KEY` erneuert den Tablespace-Key **nicht**.
+Kein RMAN-Pfad tut das. Wer aus Produktion eine Kopie mit neuem
+Schluesselmaterial braucht, hat drei belegte Wege:
+
+1. **PDB-Klon** (lokal oder remote via DB-Link) - ein Kommando, regulaer
+   unterstuetzt, erzeugt neues Schluesselmaterial und verschluesselt neu.
+2. **`ONLINE REKEY`** nach dem Restore - erzeugt neues Material, schreibt alle
+   Bloecke neu.
+3. **Discard-Pfad** (Variante F) - nur mit Hidden Parameter und Freigabe durch
+   Oracle Support.
+
+Der **Archiv-Transport** (unplug/plug) erhaelt dagegen Schluessel *und*
+Chiffrat bitgenau - er ist der falsche Weg, wenn Unabhaengigkeit das Ziel ist.
+
+### Offene Punkte
+
+- Der eine unterbrechungsfreie Lauf 00 bis 90 fehlt noch. Das ist der Beweis.
+- Danach: Dokumentation gegen die neuen Messwerte abgleichen. Insbesondere die
+  widerlegte Annahme "P1: TEK identisch zur Quelle" in `doc/`.
+- Danach: Deck im Accenture-Branding.
+
+### Zum E2E-Lauf
+
+Schritt 00 loescht **beide** Services vollstaendig. Erwartete Dauer 45 bis 75
+Minuten. Der Speicher steht jetzt auf 2 GiB je Container, was den OOM-Kill
+adressiert, der einen Lauf abgeschossen hat.
