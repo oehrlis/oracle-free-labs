@@ -102,6 +102,19 @@ main() {
     local dbid
     dbid=$(read_state "SOURCE_DBID")
 
+    # Named source autobackup. Without it the clone falls back to
+    # FROM AUTOBACKUP and picks the newest control file - which by the time
+    # this step runs knows the PDBs that steps 61 to 69 created in the source,
+    # while the backup from step 15 predates them. RMAN then aborts with
+    # RMAN-06023 for datafiles that were never backed up. The clone script
+    # warns about exactly this when the flag is missing.
+    local cf_piece
+    cf_piece=$(read_state "BACKUP_CF_PIECE")
+    if [[ -z "${cf_piece}" ]]; then
+        lib_err "BACKUP_CF_PIECE is unset - run step 15 first"
+        return 1
+    fi
+
     # Reset odbencdev
     step_header "Reset odbencdev"
     reset_service "${DEV_SERVICE}"
@@ -111,11 +124,12 @@ main() {
     # Phase 1: variant A base (RESTORE with transported prod keystore)
     step_header "Phase 1: Variant A base (RESTORE with prod keystore)"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant a --dbid ${dbid} --delete"
+        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant a --dbid ${dbid} --cf-piece ${cf_piece} --delete"
     else
         "${CLONE_SCRIPT}" \
             --variant a \
             --dbid   "${dbid}" \
+            --cf-piece "${cf_piece}" \
             --delete \
             "${CLONE_EXTRA_ARGS[@]}"
     fi
