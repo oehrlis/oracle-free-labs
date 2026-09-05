@@ -35,6 +35,7 @@ VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
 CLONE_SRC_PDB="PDBCLONE"
+CLONE_TS_ENC="CLONE_ENC"
 
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
@@ -83,7 +84,7 @@ done
 # ------------------------------------------------------------------------------
 main() {
     lib_info "Starting ${SCRIPT_NAME} ${VERSION}"
-    step_header "Step 68: PDB P7 - ORIGIN comparison"
+    step_header "Step 66: PDB P7 - ORIGIN of the transported key"
 
     require_command docker
     require_container "${PROD_SERVICE}"

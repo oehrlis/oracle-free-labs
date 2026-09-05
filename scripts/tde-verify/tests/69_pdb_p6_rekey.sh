@@ -83,7 +83,7 @@ done
 # ------------------------------------------------------------------------------
 main() {
     lib_info "Starting ${SCRIPT_NAME} ${VERSION}"
-    step_header "Step 67: PDB P6 - ONLINE REKEY in target PDB"
+    step_header "Step 69: PDB P6 - ONLINE REKEY in target PDB"
 
     require_command docker
     require_container "${DEV_SERVICE}"

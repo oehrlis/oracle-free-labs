@@ -83,7 +83,7 @@ done
 # ------------------------------------------------------------------------------
 main() {
     lib_info "Starting ${SCRIPT_NAME} ${VERSION}"
-    step_header "Step 69: PDB P8 - KEY_VERSION after plug-in to foreign CDB"
+    step_header "Step 67: PDB P8 - KEY_VERSION after plug-in to foreign CDB"
 
     require_command docker
     require_container "${PROD_SERVICE}"
