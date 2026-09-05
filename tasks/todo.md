@@ -1516,3 +1516,22 @@ Chiffrat bitgenau - er ist der falsche Weg, wenn Unabhaengigkeit das Ziel ist.
 Schritt 00 loescht **beide** Services vollstaendig. Erwartete Dauer 45 bis 75
 Minuten. Der Speicher steht jetzt auf 2 GiB je Container, was den OOM-Kill
 adressiert, der einen Lauf abgeschossen hat.
+
+### Dokumentation gegen die PDB-Messungen abgleichen (nach dem E2E-Lauf)
+
+`doc/tde-restore-as-encrypted.md` Zeile 130 und 132, beide durch die PDB-Serie
+betroffen:
+
+1. "`KEY_VERSION` resettet zudem auf 0 nach einem Plug-in in eine fremde DB"
+   - P8 hat das **nicht** beobachtet: `KEY_VERSION` war vor und nach dem
+     Plug-in in die fremde CDB 0. Da der Ausgangswert bereits 0 war, ist der
+     Reset weder belegt noch widerlegt. Die Aussage muss als dokumentiert,
+     aber im Lab nicht beobachtet gekennzeichnet werden.
+
+2. "`ONLINE REKEY` ist das einzige dokumentierte Verfahren fuer neues
+   Tablespace-Key-Material"
+   - Gemessen erzeugt auch der **PDB-Klon** neues Schluesselmaterial (P1 lokal,
+     P4 remote ueber DB-Link), mit einem einzigen regulaer unterstuetzten
+     Kommando. Die Aussage stimmt fuer den Tablespace an Ort und Stelle, nicht
+     fuer den Weg ueber eine Kopie. Das ist fuer den Kunden die praktisch
+     wichtigere Variante und gehoert in die Variantenuebersicht.
