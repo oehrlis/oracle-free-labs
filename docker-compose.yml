@@ -187,7 +187,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${ODBENCPROD_DB_MEM:-3g}
+          memory: ${ODBENCPROD_DB_MEM:-2g}
 
   # - TDE restore verification test - Dev/target DB (own keystore) -------------
   odbencdev:
@@ -210,5 +210,5 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${ODBENCDEV_DB_MEM:-3g}
+          memory: ${ODBENCDEV_DB_MEM:-2g}
 # - EOF ------------------------------------------------------------------------
