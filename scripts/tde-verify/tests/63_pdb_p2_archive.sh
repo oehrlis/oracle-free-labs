@@ -290,15 +290,34 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
     write_state "PDB_TARGET_NAME"    "${CLONE_P2_PDB}"
     write_state "PDB_TARGET_SERVICE" "${DEV_SERVICE}"
 
+    # Gated on the ciphertext like every other variant. The wrapped key being
+    # identical under an identical MEK is already strong, but the archive
+    # transport claim is that the data blocks travel untouched - so that is
+    # what gets checked.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${CLONE_P2_PDB}" "CANARY_CLONEENC") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all identical - the archive moves files unchanged)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
-    elif [[ "${tek_p2}" == "${tek_src}" ]]; then
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="P2: canary blocks could not be compared - no verdict possible"
+    elif [[ "${tek_p2}" == "${tek_src}" && ${canary_rc} -eq 0 ]]; then
         verdict="PASS"
-        msg="P2: TEK preserved through archive transport, ORIGIN=${origin_p2}, KEY_VERSION=${kv_p2}"
+        msg="P2: the archive transport preserved both the wrapped key and the ciphertext (${canary_cmp}) into a foreign CDB, ORIGIN=${origin_p2}, KEY_VERSION=${kv_p2}. The opposite of the clone in P1/P4, which renews the key"
+    elif [[ "${tek_p2}" != "${tek_src}" ]]; then
+        verdict="FAIL"
+        msg="P2: TEK DIFFERS from source - unexpected for a PDB archive plug-in (${canary_cmp})"
     else
         verdict="FAIL"
-        msg="P2: TEK DIFFERS from source - unexpected for PDB archive plug-in"
+        msg="P2: wrapped key identical but the ciphertext changed (${canary_cmp}) - contradictory"
     fi
 
     print_key_summary "pdb_p2_archive (${CLONE_P2_PDB})" "${mkid_p2}" "${tek_p2}" \
