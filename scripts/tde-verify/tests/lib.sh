@@ -1053,3 +1053,44 @@ wait_for_healthy() {
     lib_err "${svc} did not become healthy within ${timeout}s (last status: ${status})"
     return 1
 }
+
+# ------------------------------------------------------------------------------
+# Function: get_key_id_for_mek
+# Purpose.: Find the base64 KEY_ID belonging to a MEK id given as hex
+# Args....: $1  container name
+#           $2  MEK id as hex, as found in v$encrypted_tablespaces.MASTERKEYID
+# Returns.: 0 a match was found, 1 no key with that id exists
+# Output..: the KEY_ID exactly as v$encryption_keys reports it
+# Depends.: docker, sqlplus, python3
+# Example.: get_key_id_for_mek odbencprod 5D59025BBFEE48CD94EF23CD6CD42CF8
+# Notes...: Runs in CDB$ROOT, because EXPORT KEYS is not allowed inside a PDB
+#           (ORA-65040) while the key is not selectable by the PDB current
+#           con_id either: V$ENCRYPTION_KEYS.CON_ID is the container id from
+#           when the key was created, and every unplug/plug cycle changes the
+#           PDB con_id. Measured: the key of PDBCLONE sat under CON_ID 9 while
+#           v$pdbs reported CON_ID 3 for that PDB. Matching on the key id
+#           itself is the only stable selection.
+# ------------------------------------------------------------------------------
+get_key_id_for_mek() {
+    local svc="$1" want="$2" rows
+    rows=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 300 TRIMSPOOL ON
+SELECT key_id FROM v\$encryption_keys;
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null)
+    printf '%s' "${rows}" | python3 -c '
+import base64, sys
+want = sys.argv[1].upper()
+for line in sys.stdin.read().split():
+    line = line.strip()
+    if len(line) < 40:
+        continue
+    try:
+        raw = base64.b64decode(line + "=" * (-len(line) % 4))
+    except Exception:
+        continue
+    if raw[1:17].hex().upper() == want:
+        print(line)
+        sys.exit(0)
+sys.exit(1)
+' "${want}"
+}

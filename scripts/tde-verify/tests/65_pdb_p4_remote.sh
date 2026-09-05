@@ -227,23 +227,33 @@ SQL
     step_header "Remove a leftover key export file if present"
     lib_run in_prod "if [ -f ${KEYS_FILE} ]; then rm -f ${KEYS_FILE} && echo 'removed leftover key export ${KEYS_FILE}'; else echo 'no leftover key export at ${KEYS_FILE}'; fi"
 
+    # Resolve the key the source tablespace actually depends on, so the export
+    # names it explicitly instead of guessing from a container id.
+    local SRC_KEY_ID="DRY-RUN-KEY-ID" src_ts_mek="DRY-RUN"
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        src_ts_mek=$(get_masterkeyid "${PROD_SERVICE}" "${CLONE_SRC_PDB}" "${CLONE_TS_ENC}")
+        if ! SRC_KEY_ID=$(get_key_id_for_mek "${PROD_SERVICE}" "${src_ts_mek}"); then
+            lib_err "no key with id ${src_ts_mek} found in ${PROD_SERVICE}"
+            exit 1
+        fi
+        lib_info "source tablespace depends on MEK ${src_ts_mek} (KEY_ID ${SRC_KEY_ID})"
+    fi
+
     step_header "Phase 5: Export keys from prod for ${CLONE_SRC_PDB}"
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod_stdin '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
--- Export from inside the PDB. Queried from CDB$ROOT, v$encryption_keys
--- returns no row for the PDB con_id, so the WITH IDENTIFIER subquery came
--- back empty and EXPORT KEYS failed with ORA-28362, "master key not found".
--- The key is only visible in the container that owns it.
-ALTER SESSION SET CONTAINER='"${CLONE_SRC_PDB}"';
+-- Runs in CDB$ROOT and names the key explicitly. EXPORT KEYS is rejected
+-- inside a PDB with ORA-65040, and selecting by the PDB current con_id finds
+-- nothing: V$ENCRYPTION_KEYS.CON_ID is the container id from when the key was
+-- created, and every unplug/plug cycle changes the PDB con_id. Measured: the
+-- key sat under CON_ID 9 while v$pdbs reported CON_ID 3 for the same PDB.
 ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET "'"${P4_KEY_SECRET}"'"
   TO '"'"''"${KEYS_FILE}"''"'"'
   FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
-  WITH IDENTIFIER IN
-  (SELECT key_id FROM v\$encryption_keys
-    WHERE con_id = sys_context('"'"'userenv'"'"','"'"'con_id'"'"'));
+  WITH IDENTIFIER IN '"'"''"${SRC_KEY_ID}"''"'"';
 SELECT '"'"'keys exported'"'"' AS status FROM dual;
 EXIT
 SQL
