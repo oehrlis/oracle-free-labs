@@ -120,6 +120,14 @@ FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE n
 EXIT
 "
 
+    # Evidence of the target BEFORE the rotation. Comparing against prod's
+    # baseline would be wrong here: the target is PDBCLONE_P2 or PDBCLONE_P4
+    # depending on what ran, and the clone in P4 already differs from prod by
+    # design. The question this step answers - did the rotation touch the data
+    # - can only be asked against the target own prior state.
+    step_header "Collect evidence set '${LABEL}_before' (target before rotation)"
+    collect_evidence "${DEV_SERVICE}" "${target_pdb}" "${LABEL}_before" "${CLONE_TS_ENC}"
+
     # MEK rotation in the target PDB
     step_header "MEK rotation in ${target_pdb}"
     # shellcheck disable=SC1078,SC1079
@@ -128,7 +136,10 @@ KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
 sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER='"${target_pdb}"';
-ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}"
+-- FORCE KEYSTORE is required: the dev keystore is open as LOCAL_AUTOLOGIN,
+-- and a password operation against it fails with ORA-28417 otherwise. Step 61
+-- needs it for the same reason.
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
   WITH BACKUP CONTAINER=CURRENT;
 SELECT '"'"'MEK rotation done'"'"' AS status FROM dual;
 EXIT
@@ -176,15 +187,13 @@ EXIT
     # condition only checked that the MASTERKEYID had changed. This is the
     # customer question in its PDB form - "we only swap the MEK" - so it has to
     # be answered on the ciphertext: after a pure MEK rotation the data blocks
-    # must be untouched. The reference is prod's pre-transport baseline, which
-    # makes the statement stronger than a before/after inside the target: the
-    # dev ciphertext is still bit-identical to prod after transport *and*
-    # rotation.
+    # must be untouched. Reference is the target own state before the
+    # rotation, collected above.
     local canary_cmp canary_rc
     canary_cmp=""
     canary_rc=0
     if [[ "${DRY_RUN}" != "TRUE" ]]; then
-        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+        canary_cmp=$(compare_canary_blocks "${LABEL}_before" "${LABEL}" \
                        "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_rc=$?
         echo "canary blocks:   ${canary_cmp} (expect all identical - re-wrap only)"
     fi
@@ -197,7 +206,7 @@ EXIT
         msg="P5: MASTERKEYID unchanged after SET KEY - rotation may have failed"
     elif [[ ${canary_rc} -eq 0 ]]; then
         verdict="PASS"
-        msg="P5: MASTERKEYID changed, ciphertext still byte-identical to prod's pre-transport baseline (${canary_cmp}) - transport plus MEK rotation left the data blocks untouched, so the rotation is a re-wrap"
+        msg="P5: MASTERKEYID changed while the ciphertext in ${target_pdb} stayed byte-identical (${canary_cmp}) - the rotation re-wrapped the tablespace key and left every data block untouched"
     elif [[ ${canary_rc} -eq 2 ]]; then
         verdict="FAIL"
         msg="P5: MEK rotated but the canary blocks could not be compared - no verdict possible"
