@@ -925,3 +925,48 @@ ensure_independent_dev_cdb() {
     fi
     lib_info "dev CDB rebuilt, DBID now ${dbid_dev} (prod ${dbid_prod})"
 }
+
+# ------------------------------------------------------------------------------
+# Function: get_pdb_active_mek
+# Purpose.: Read the currently active master key id of a PDB, in hex
+# Args....: $1  container name
+#           $2  PDB name
+# Returns.: 0 on success, 1 if nothing could be read
+# Output..: the MEK id as hex, without the leading 01 type byte
+# Depends.: docker, sqlplus
+# Example.: get_pdb_active_mek odbencdev PDBCLONE_P4
+# Notes...: v$encryption_keys reports KEY_ID base64 encoded with a leading 0x01
+#           type byte, while v$encrypted_tablespaces.MASTERKEYID is plain hex.
+#           Comparing the two without decoding is what makes a successful
+#           rotation look like a failed one.
+# ------------------------------------------------------------------------------
+get_pdb_active_mek() {
+    local svc="$1" pdb="$2" key_id mek
+    key_id=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 200 TRIMSPOOL ON
+ALTER SESSION SET CONTAINER=${pdb};
+SELECT key_id FROM v\$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id')
+   AND activation_time = (SELECT MAX(activation_time) FROM v\$encryption_keys
+                           WHERE con_id = sys_context('userenv','con_id'));
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
+        | awk 'NF && $1 ~ /^[A-Za-z0-9+\/]{40,}$/ { print $1; exit }')
+    if [[ -z "${key_id}" ]]; then
+        lib_err "could not read the active KEY_ID of ${pdb} in ${svc}"
+        return 1
+    fi
+    # Decoded here rather than in SQL: UTL_ENCODE.BASE64_DECODE returned the
+    # ASCII of the hex string instead of the bytes, which silently produced a
+    # value that could never match MASTERKEYID.
+    mek=$(printf '%s' "${key_id}" | python3 -c '
+import base64, sys
+s = sys.stdin.read().strip()
+raw = base64.b64decode(s + "=" * (-len(s) % 4))
+print(raw[1:17].hex().upper())
+')
+    if [[ -z "${mek}" ]]; then
+        lib_err "could not decode the KEY_ID of ${pdb} in ${svc}"
+        return 1
+    fi
+    printf '%s\n' "${mek}"
+}

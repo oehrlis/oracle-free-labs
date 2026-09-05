@@ -98,8 +98,9 @@ main() {
 
     # Record key state BEFORE rotation
     step_header "Key state BEFORE MEK rotation"
-    local mkid_before tek_before
-    mkid_before=""; tek_before=""
+    local mkid_before tek_before mek_before
+    mkid_before=""; tek_before=""; mek_before="DRY-RUN-MEK-BEFORE"
+    [[ "${DRY_RUN}" == "TRUE" ]] || mek_before=$(get_pdb_active_mek "${DEV_SERVICE}" "${target_pdb}")
     if [[ "${DRY_RUN}" != "TRUE" ]]; then
         mkid_before=$(get_masterkeyid "${DEV_SERVICE}" "${target_pdb}" "${CLONE_TS_ENC}")
         tek_before=$(get_encryptedkey  "${DEV_SERVICE}" "${target_pdb}" "${CLONE_TS_ENC}")
@@ -170,56 +171,118 @@ FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE n
 EXIT
 "
 
-    # Collect evidence AFTER rotation
-    step_header "Collect evidence set '${LABEL}'"
+    local mek_after_ro="DRY-RUN-MEK-A"
+    [[ "${DRY_RUN}" == "TRUE" ]] || mek_after_ro=$(get_pdb_active_mek "${DEV_SERVICE}" "${target_pdb}")
+
+    # Collect evidence AFTER the rotation on the READ ONLY tablespace
+    step_header "Collect evidence set '${LABEL}' (after rotation, tablespace READ ONLY)"
     collect_evidence "${DEV_SERVICE}" "${target_pdb}" "${LABEL}" "${CLONE_TS_ENC}"
 
-    # Compare against pdb_baseline - expect RE-WRAP (only header blocks differ)
-    step_header "Compare '${LABEL}' vs 'pdb_baseline' (expect RE-WRAP: data blocks identical)"
-    compare_evidence "pdb_baseline" "${LABEL}"
+    step_header "Compare '${LABEL}' vs '${LABEL}_before'"
+    compare_evidence "${LABEL}_before" "${LABEL}"
+
+    # ---------------------------------------------------------------------
+    # Phase B: the same rotation on a READ WRITE tablespace.
+    # Phase A leaves the tablespace pointing at the OLD master key because it
+    # is READ ONLY and cannot be re-wrapped. That is the operationally
+    # important half of the answer, but on its own it would look like a failed
+    # rotation. Measuring both makes the difference explicit.
+    # ---------------------------------------------------------------------
+    step_header "Phase B: set ${CLONE_TS_ENC} READ WRITE and rotate again"
+    sqlplus_dev "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER=${target_pdb};
+ALTER TABLESPACE ${CLONE_TS_ENC} READ WRITE;
+SELECT tablespace_name, status FROM dba_tablespaces WHERE tablespace_name='${CLONE_TS_ENC}';
+EXIT
+"
+    # shellcheck disable=SC1078,SC1079
+    lib_run in_dev '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER='"${target_pdb}"';
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
+  WITH BACKUP CONTAINER=CURRENT;
+EXIT
+SQL
+'
+    local mkid_rw tek_rw mek_after_rw
+    mkid_rw="DRY-RUN"; tek_rw="DRY-RUN"; mek_after_rw="DRY-RUN"
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        mkid_rw=$(get_masterkeyid "${DEV_SERVICE}" "${target_pdb}" "${CLONE_TS_ENC}")
+        tek_rw=$(get_encryptedkey  "${DEV_SERVICE}" "${target_pdb}" "${CLONE_TS_ENC}")
+        mek_after_rw=$(get_pdb_active_mek "${DEV_SERVICE}" "${target_pdb}")
+    fi
+
+    step_header "Collect evidence set '${LABEL}_rw' (after rotation, tablespace READ WRITE)"
+    collect_evidence "${DEV_SERVICE}" "${target_pdb}" "${LABEL}_rw" "${CLONE_TS_ENC}"
+
+    # Back to READ ONLY so the later steps keep a stable ciphertext reference
+    sqlplus_dev "
+WHENEVER SQLERROR CONTINUE
+ALTER SESSION SET CONTAINER=${target_pdb};
+ALTER TABLESPACE ${CLONE_TS_ENC} READ ONLY;
+EXIT
+"
 
     write_state "PDB_P5_MKID_BEFORE" "${mkid_before}"
     write_state "PDB_P5_TEK_BEFORE"  "${tek_before}"
     write_state "PDB_P5_MKID_AFTER"  "${mkid_after}"
     write_state "PDB_P5_TEK_AFTER"   "${tek_after}"
 
-    # The message used to claim "ciphertext comparison shows RE-WRAP" while the
-    # condition only checked that the MASTERKEYID had changed. This is the
-    # customer question in its PDB form - "we only swap the MEK" - so it has to
-    # be answered on the ciphertext: after a pure MEK rotation the data blocks
-    # must be untouched. Reference is the target own state before the
-    # rotation, collected above.
-    local canary_cmp canary_rc
-    canary_cmp=""
-    canary_rc=0
+    # Two questions, two measurements. The customer form is "we only swap the
+    # MEK", and it has to be answered on the ciphertext, not on a stored key.
+    #   Phase A - tablespace READ ONLY: the PDB master key changes, but the
+    #             tablespace entry keeps pointing at the OLD key. It cannot be
+    #             re-wrapped while read only, so it stays bound to the source.
+    #   Phase B - tablespace READ WRITE: the entry follows to the new master
+    #             key, the wrapped key changes, and the data stays untouched.
+    # In both phases the ciphertext must be byte-identical: a rotation
+    # re-wraps, it never re-encrypts.
+    local canary_a canary_a_rc canary_b canary_b_rc
+    canary_a=""; canary_a_rc=0; canary_b=""; canary_b_rc=0
     if [[ "${DRY_RUN}" != "TRUE" ]]; then
-        canary_cmp=$(compare_canary_blocks "${LABEL}_before" "${LABEL}" \
-                       "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_rc=$?
-        echo "canary blocks:   ${canary_cmp} (expect all identical - re-wrap only)"
+        canary_a=$(compare_canary_blocks "${LABEL}_before" "${LABEL}" \
+                     "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_a_rc=$?
+        echo "canary A (read only):  ${canary_a} (expect all identical)"
+        canary_b=$(compare_canary_blocks "${LABEL}" "${LABEL}_rw" \
+                     "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_b_rc=$?
+        echo "canary B (read write): ${canary_b} (expect all identical)"
     fi
+
+    write_state "PDB_P5_MEK_BEFORE"   "${mek_before}"
+    write_state "PDB_P5_MEK_AFTER_RO" "${mek_after_ro}"
+    write_state "PDB_P5_MEK_AFTER_RW" "${mek_after_rw}"
+    write_state "PDB_P5_MKID_RW"      "${mkid_rw}"
+    write_state "PDB_P5_TEK_RW"       "${tek_rw}"
 
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
-    elif [[ "${mkid_after}" == "${mkid_before}" ]]; then
+    elif [[ ${canary_a_rc} -eq 2 || ${canary_b_rc} -eq 2 ]]; then
         verdict="FAIL"
-        msg="P5: MASTERKEYID unchanged after SET KEY - rotation may have failed"
-    elif [[ ${canary_rc} -eq 0 ]]; then
+        msg="P5: canary blocks could not be compared - no verdict possible"
+    elif [[ "${mek_after_ro}" == "${mek_before}" ]]; then
+        verdict="FAIL"
+        msg="P5: the PDB master key did not change (${mek_before}) - the rotation itself failed"
+    elif [[ ${canary_a_rc} -ne 0 || ${canary_b_rc} -ne 0 ]]; then
+        verdict="FAIL"
+        msg="P5: the rotation changed the ciphertext (A: ${canary_a}, B: ${canary_b}) - a rotation re-wraps and must never rewrite data blocks"
+    elif [[ "${mkid_after}" == "${mkid_before}" && "${mkid_rw}" == "${mek_after_rw}" && "${tek_rw}" != "${tek_after}" ]]; then
         verdict="PASS"
-        msg="P5: MASTERKEYID changed while the ciphertext in ${target_pdb} stayed byte-identical (${canary_cmp}) - the rotation re-wrapped the tablespace key and left every data block untouched"
-    elif [[ ${canary_rc} -eq 2 ]]; then
-        verdict="FAIL"
-        msg="P5: MEK rotated but the canary blocks could not be compared - no verdict possible"
+        msg="P5: rotating the PDB master key (${mek_before} -> ${mek_after_ro} -> ${mek_after_rw}) left the ciphertext byte-identical in both phases (A: ${canary_a}, B: ${canary_b}). While READ ONLY the tablespace could not be re-wrapped and kept pointing at the old key ${mkid_before}; only after READ WRITE did it follow to ${mkid_rw}. A read-only tablespace therefore stays bound to the source master key across a rotation"
     else
         verdict="FAIL"
-        msg="P5: MEK rotation changed the ciphertext (${canary_cmp}) - unexpected, a rotation re-wraps and must not rewrite data blocks"
+        msg="P5: unexpected combination - ts key before ${mkid_before}, after read-only rotation ${mkid_after}, after read-write rotation ${mkid_rw}, active PDB key ${mek_after_rw}"
     fi
 
-    print_key_summary "before rotation" "${mkid_before}" "${tek_before}"
-    print_key_summary "after  rotation" "${mkid_after}"  "${tek_after}"
+    print_key_summary "before rotation      " "${mkid_before}" "${tek_before}"
+    print_key_summary "after rotation (RO)  " "${mkid_after}"  "${tek_after}"
+    print_key_summary "after rotation (RW)  " "${mkid_rw}"     "${tek_rw}"
     echo ""
-    echo "MASTERKEYID changed: $( [[ "${mkid_after}" != "${mkid_before}" ]] && echo "YES (expected)" || echo "NO")"
-    echo "ENCRYPTEDKEY changed: $( [[ "${tek_after}" != "${tek_before}" ]] && echo "YES (rewrap)" || echo "NO")"
+    echo "PDB master key:        ${mek_before} -> ${mek_after_ro} -> ${mek_after_rw}"
+    echo "Tablespace key follows: read only $( [[ "${mkid_after}" == "${mkid_before}" ]] && echo "NO - still bound to the old master key" || echo "yes" ), read write $( [[ "${mkid_rw}" == "${mek_after_rw}" ]] && echo "yes" || echo "NO" )"
 
     print_verdict "${verdict}" "${msg}"
     lib_info "Done."
