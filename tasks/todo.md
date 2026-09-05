@@ -1414,3 +1414,44 @@ verweigert Oracle bereits das Erzeugen des Archivs: von einer PDB mit
 verschluesselten Tablespaces laesst sich kein schluessellose Archiv anlegen.
 Das ist ein staerkeres Ergebnis als erwartet und muss im Testfall so
 formuliert werden.
+
+## Gemessen: read-only Tablespaces ueberleben die MEK-Rotation unveraendert
+
+Schritt 66 (P5), Ziel `PDBCLONE_P4` in der frischen Dev-CDB:
+
+| Phase | aktiver PDB-MEK | `V$ENCRYPTED_TABLESPACES.MASTERKEYID` | Canary-Chiffrat |
+|---|---|---|---|
+| vorher | `CCDB873C3E72403282C76CFDB54870CB` | `5D59025BBFEE48CD94EF23CD6CD42CF8` | - |
+| A: Rotation, Tablespace READ ONLY | `F3C2047CF54E494BB9EA013FD22DA94D` | `5D59025B...2CF8` **unveraendert** | 313 identisch / 0 |
+| B: READ WRITE, erneute Rotation | `A1157527D5774822A220EE49713A1DB1` | `A1157527...1DB1` folgt | 313 identisch / 0 |
+
+Zwei Aussagen, beide belegt:
+
+1. **Die Rotation wickelt neu ein, sie verschluesselt nie neu.** In beiden
+   Phasen ist das Chiffrat byteidentisch - 313 von 313 Canary-Bloecken.
+2. **Ein read-only Tablespace bleibt an den Schluessel der Quelle gebunden.**
+   Er hat zwei Rotationen unveraendert ueberstanden und zeigt weiterhin auf
+   `5D59025B...2CF8` - den aus Produktion transportierten MEK.
+
+### Konsequenz fuer den Kunden
+
+Wer Prod nach Dev kopiert und dort den MEK dreht, hat fuer jeden read-only
+Tablespace **nichts** gewonnen: der alte Produktionsschluessel muss im
+Keystore bleiben, sonst sind die Daten unlesbar. Die Rotation erzeugt den
+Eindruck einer Trennung, die fuer diese Tablespaces nicht existiert.
+
+Praktisch relevant, weil read-only Tablespaces in grossen Umgebungen der
+Normalfall sind: historische Partitionen, abgeschlossene Geschaeftsjahre,
+archivierte Mandanten.
+
+### Messfalle, die das beinahe als Skriptfehler getarnt haette
+
+`V$ENCRYPTION_KEYS.KEY_ID` ist Base64 mit vorangestelltem Typ-Byte `0x01`,
+`V$ENCRYPTED_TABLESPACES.MASTERKEYID` dagegen reines Hex. Der undekodierte
+Vergleich laesst eine erfolgreiche Rotation wie einen Fehlschlag aussehen.
+`AV1ZAlu/7kjNlO8jzWzULPg...` dekodiert zu
+`01` + `5D59025BBFEE48CD94EF23CD6CD42CF8`.
+
+`UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(key_id))` liefert die
+ASCII-Darstellung des Hex-Strings statt der Bytes und haette **still** nie
+gematcht - die Dekodierung gehoert nach aussen, nicht ins SQL.
