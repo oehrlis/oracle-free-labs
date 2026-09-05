@@ -264,24 +264,13 @@ EXIT
 SQL
 '
 
-    # Verify by outcome: is the source MEK present in the dev keystore at all?
-    step_header "Verify the source MEK is present in ${DEV_SERVICE}"
-    if [[ "${DRY_RUN}" != "TRUE" ]]; then
-        local mkid_src_short key_present
-        mkid_src_short=$(get_masterkeyid "${PROD_SERVICE}" "${CLONE_SRC_PDB}" "${CLONE_TS_ENC}")
-        key_present=$(printf '%s\n' "
-SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT COUNT(*) FROM v\$encryption_keys
- WHERE RAWTOHEX(UTL_RAW.CAST_TO_RAW(key_id)) IS NOT NULL;
-EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
-            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
-        lib_info "source tablespace MEK id: ${mkid_src_short}"
-        lib_info "keys in the dev keystore: ${key_present:-unknown}"
-        if [[ -z "${key_present}" || "${key_present}" == "0" ]]; then
-            lib_err "the dev keystore holds no keys - the import produced nothing usable"
-            exit 1
-        fi
-    fi
+    # No separate key-presence check here. Counting rows in
+    # v$encryption_keys would only show that the keystore holds something,
+    # not that the key this clone needs is usable - and a header claiming
+    # otherwise would be worse than no check. The proof comes downstream and
+    # is unambiguous: the PDB opens READ WRITE and the canary reads back. If
+    # the key were missing, that read fails with ORA-28374, which is exactly
+    # what the withdrawal test in step 90 demonstrates on purpose.
 
     # Phase 7: Clean up temp credential file (also done by trap)
     step_header "Phase 7: Remove temp credential file"
