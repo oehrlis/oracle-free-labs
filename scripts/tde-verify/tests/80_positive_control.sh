@@ -198,26 +198,28 @@ EXIT
         verdict="PASS"
         msg="DRY-RUN"
     else
-        local fp_a fp_b
-        fp_a=$(find "${EVIDENCE_ROOT}/${LABEL_A}" -name "*.fp" | head -1)
-        fp_b=$(find "${EVIDENCE_ROOT}/${LABEL_B}" -name "*.fp" | head -1)
-        if [[ -z "${fp_a}" || -z "${fp_b}" ]]; then
+        # The comparison tool prints a summary, not one line per block, so the
+        # previous grep -c "^diff" counted heading lines and reported
+        # "1 differing / 1 total" while the actual comparison found 1140. This
+        # step is what licenses every "identical" result in the suite, so it
+        # gets the same canary-block comparison as the rest. The block numbers
+        # come from CANARY_CTRL_A and apply to both files: the two tablespaces
+        # were created identically and filled with identical content.
+        local canary_cmp canary_rc
+        canary_cmp=""
+        canary_rc=0
+        canary_cmp=$(compare_canary_blocks "${LABEL_A}" "${LABEL_B}" \
+                       "${PROD_SERVICE}" "${PROD_PDB}" "CANARY_CTRL_A") || canary_rc=$?
+        lib_info "canary block comparison: ${canary_cmp}"
+        if [[ ${canary_rc} -eq 2 ]]; then
             verdict="FAIL"
-            msg="fingerprint files not found in evidence directories"
+            msg="canary blocks could not be compared - the method cannot be validated"
+        elif [[ ${canary_rc} -eq 1 ]]; then
+            verdict="PASS"
+            msg="the method is sensitive: identical content under two different tablespace keys produces different ciphertext in every canary block (${canary_cmp}). An 'identical' result elsewhere in the suite therefore means the key really is unchanged"
         else
-            local diff_count total_count
-            diff_count=$(python3 "${FINGERPRINT_TOOL}" compare "${fp_a}" "${fp_b}" \
-                2>/dev/null | grep -c "^diff" || true)
-            total_count=$(python3 "${FINGERPRINT_TOOL}" compare "${fp_a}" "${fp_b}" \
-                2>/dev/null | grep -cE "^(same|diff)" || true)
-            lib_info "block comparison: ${diff_count} differing / ${total_count} total"
-            if [[ "${diff_count}" -gt 0 ]]; then
-                verdict="PASS"
-                msg="method is sensitive: ${diff_count}/${total_count} blocks differ (different TEKs confirmed)"
-            else
-                verdict="FAIL"
-                msg="all blocks identical despite different TEKs - measurement method may be broken"
-            fi
+            verdict="FAIL"
+            msg="canary ciphertext identical despite two different tablespace keys (${canary_cmp}) - the measurement method would not detect a key change and every 'identical' result in the suite is worthless"
         fi
     fi
 
