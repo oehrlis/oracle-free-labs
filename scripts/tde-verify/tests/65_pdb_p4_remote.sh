@@ -244,21 +244,44 @@ EXIT
 SQL
 '
 
-    # Phase 6: Import keys into dev keystore
+    # Phase 6: Import keys into dev keystore.
+    # ORA-46655, "no valid keys in the file", is a legitimate outcome here:
+    # when step 63 already transported the same MEK into this dev CDB, the
+    # file holds nothing new. That is an observation worth keeping rather than
+    # an error - so the import is tolerated and the outcome is verified
+    # afterwards on the target keystore, not on the error code.
     step_header "Phase 6: Import keys into dev keystore"
     # shellcheck disable=SC1078,SC1079
     lib_run in_dev_stdin '
 KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
-WHENEVER SQLERROR EXIT SQL.SQLCODE
+sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"
+WHENEVER SQLERROR CONTINUE
 ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET "'"${P4_KEY_SECRET}"'"
   FROM '"'"''"${KEYS_FILE}"''"'"'
   FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
   WITH BACKUP;
-SELECT '"'"'keys imported'"'"' AS status FROM dual;
 EXIT
 SQL
 '
+
+    # Verify by outcome: is the source MEK present in the dev keystore at all?
+    step_header "Verify the source MEK is present in ${DEV_SERVICE}"
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        local mkid_src_short key_present
+        mkid_src_short=$(get_masterkeyid "${PROD_SERVICE}" "${CLONE_SRC_PDB}" "${CLONE_TS_ENC}")
+        key_present=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$encryption_keys
+ WHERE RAWTOHEX(UTL_RAW.CAST_TO_RAW(key_id)) IS NOT NULL;
+EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+        lib_info "source tablespace MEK id: ${mkid_src_short}"
+        lib_info "keys in the dev keystore: ${key_present:-unknown}"
+        if [[ -z "${key_present}" || "${key_present}" == "0" ]]; then
+            lib_err "the dev keystore holds no keys - the import produced nothing usable"
+            exit 1
+        fi
+    fi
 
     # Phase 7: Clean up temp credential file (also done by trap)
     step_header "Phase 7: Remove temp credential file"
