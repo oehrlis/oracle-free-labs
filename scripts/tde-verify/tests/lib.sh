@@ -888,17 +888,22 @@ ensure_independent_dev_cdb() {
         wait_for_ready "${DEV_SERVICE}" 600
     fi
 
-    # An unhealthy dev has to be rebuilt too, and the check has to happen here
-    # rather than in a precheck: the broken CDB temp file is what makes the
-    # health check fail in the first place, so a precheck would abort before
-    # the repair could run.
+    # The decision is made on a real query, not on the docker health flag. The
+    # check runs every 60s with a 30s timeout, so under load a single timed-out
+    # probe marks the container unhealthy - and rebuilding on that signal
+    # destroys the transported PDB from the previous step for no reason. If the
+    # database answers, it is fine whatever docker currently thinks.
     health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
              "${DEV_SERVICE}" 2>/dev/null || echo unknown)
-    if [[ "${health}" != "healthy" ]]; then
-        lib_warn "dev container health is '${health}' - rebuilding ${DEV_SERVICE}"
+    if dbid_dev=$(get_dbid "${DEV_SERVICE}" 2>/dev/null); then
+        [[ "${health}" == "healthy" ]] || \
+            lib_info "docker reports '${health}' for ${DEV_SERVICE}, but the database answers - no rebuild"
+    else
+        lib_warn "${DEV_SERVICE} does not answer (docker health: ${health}) - rebuilding"
         reset_service "${DEV_SERVICE}"
         start_service "${DEV_SERVICE}"
         wait_for_ready "${DEV_SERVICE}" 600
+        wait_for_healthy "${DEV_SERVICE}"
         dbid_dev=$(get_dbid "${DEV_SERVICE}") || return 1
         if [[ "${dbid_prod}" == "${dbid_dev}" ]]; then
             lib_err "dev still carries prod DBID ${dbid_dev} after the rebuild"
@@ -908,7 +913,6 @@ ensure_independent_dev_cdb() {
         return 0
     fi
 
-    dbid_dev=$(get_dbid "${DEV_SERVICE}")   || return 1
     if [[ "${dbid_prod}" != "${dbid_dev}" ]]; then
         lib_info "dev CDB is independent (DBID ${dbid_dev} vs prod ${dbid_prod})"
         return 0
@@ -918,6 +922,7 @@ ensure_independent_dev_cdb() {
     reset_service "${DEV_SERVICE}"
     start_service "${DEV_SERVICE}"
     wait_for_ready "${DEV_SERVICE}" 600
+    wait_for_healthy "${DEV_SERVICE}"
     dbid_dev=$(get_dbid "${DEV_SERVICE}") || return 1
     if [[ "${dbid_prod}" == "${dbid_dev}" ]]; then
         lib_err "dev still carries prod DBID ${dbid_dev} after the reset"
@@ -1013,4 +1018,38 @@ for line in sys.stdin.read().splitlines():
 print("NOT-IN-KEYSTORE")
 sys.exit(1)
 ' "${want}"
+}
+
+# ------------------------------------------------------------------------------
+# Function: wait_for_healthy
+# Purpose.: Wait until the container health check reports healthy
+# Args....: $1  container name
+#           $2  timeout in seconds, default 180
+# Returns.: 0 healthy, 1 timed out
+# Output..: progress and the final status
+# Depends.: docker
+# Example.: wait_for_healthy odbencdev
+# Notes...: The health check runs every 60s with a 300s start period, so the
+#           status stays "starting" for up to a minute after the database is
+#           already open. Asserting health right after wait_for_ready fails on
+#           a perfectly healthy container.
+# ------------------------------------------------------------------------------
+wait_for_healthy() {
+    local svc="$1" timeout="${2:-180}" waited=0 status
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: skipping wait_for_healthy for '${svc}'"
+        return 0
+    fi
+    while (( waited < timeout )); do
+        status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+                 "${svc}" 2>/dev/null || echo absent)
+        case "${status}" in
+            healthy|none) lib_info "${svc} health: ${status}"; return 0 ;;
+            absent)       lib_err "${svc} does not exist"; return 1 ;;
+        esac
+        sleep 5
+        waited=$(( waited + 5 ))
+    done
+    lib_err "${svc} did not become healthy within ${timeout}s (last status: ${status})"
+    return 1
 }
