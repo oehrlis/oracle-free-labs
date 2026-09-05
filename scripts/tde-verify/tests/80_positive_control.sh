@@ -98,6 +98,9 @@ main() {
     require_healthy   "${PROD_SERVICE}"
 
     # Create two fresh encrypted tablespaces with the same DDL
+    # Required for the datafile placement below.
+    ensure_omf "${PROD_SERVICE}"
+
     step_header "Create CTRL_ENC_A (encrypted, AES256)"
     sqlplus_prod "
 WHENEVER SQLERROR EXIT SQL.SQLCODE
@@ -111,8 +114,12 @@ EXIT
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 CREATE BIGFILE TABLESPACE CTRL_ENC_A
-  DATAFILE '/opt/oracle/oradata/FREE/ODBENCPROD/ctrl_enc_a01.dbf'
-  SIZE 20M AUTOEXTEND ON MAXSIZE 200M
+  -- No file name: db_create_file_dest is configured, so Oracle places the
+  -- datafile under the PDB own OMF directory. The hard-coded path
+  -- /opt/oracle/oradata/FREE/ODBENCPROD/ does not exist - the PDB files
+  -- live under FREE/<GUID>/datafile/ - and the create failed with
+  -- ORA-01119 plus 'Linux Error: 2: No such file or directory'.
+  DATAFILE SIZE 20M AUTOEXTEND ON MAXSIZE 200M
   ENCRYPTION USING 'AES256' DEFAULT STORAGE (ENCRYPT);
 EXIT
 "
@@ -129,8 +136,12 @@ EXIT
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 CREATE BIGFILE TABLESPACE CTRL_ENC_B
-  DATAFILE '/opt/oracle/oradata/FREE/ODBENCPROD/ctrl_enc_b01.dbf'
-  SIZE 20M AUTOEXTEND ON MAXSIZE 200M
+  -- No file name: db_create_file_dest is configured, so Oracle places the
+  -- datafile under the PDB own OMF directory. The hard-coded path
+  -- /opt/oracle/oradata/FREE/ODBENCPROD/ does not exist - the PDB files
+  -- live under FREE/<GUID>/datafile/ - and the create failed with
+  -- ORA-01119 plus 'Linux Error: 2: No such file or directory'.
+  DATAFILE SIZE 20M AUTOEXTEND ON MAXSIZE 200M
   ENCRYPTION USING 'AES256' DEFAULT STORAGE (ENCRYPT);
 EXIT
 "
