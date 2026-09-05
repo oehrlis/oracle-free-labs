@@ -219,6 +219,14 @@ SQL
 '
 
     # Phase 5: Export PDBCLONE keys from prod
+    # EXPORT KEYS refuses to overwrite its destination (ORA-46642), so a
+    # retried step would fail on the file left by the previous attempt. Same
+    # class as ORA-65288 for the PDB archive and ORA-46630 for the keystore
+    # directory: every artefact this suite writes has to be cleared before it
+    # is written again.
+    step_header "Remove a leftover key export file if present"
+    lib_run in_prod "if [ -f ${KEYS_FILE} ]; then rm -f ${KEYS_FILE} && echo 'removed leftover key export ${KEYS_FILE}'; else echo 'no leftover key export at ${KEYS_FILE}'; fi"
+
     step_header "Phase 5: Export keys from prod for ${CLONE_SRC_PDB}"
     # shellcheck disable=SC1078,SC1079
     lib_run in_prod_stdin '

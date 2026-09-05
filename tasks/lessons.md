@@ -115,3 +115,24 @@ So lief ein ORA-28374 folgenlos durch und der Schritt blieb gruen.
 findet, liefert 1 und wuerde den Block fälschlich rot machen. Richtig:
 Ausgabe zuerst einfangen, dann filtern - oder `${PIPESTATUS[0]}` explizit
 pruefen.
+
+## 2026-09-05 - Jedes geschriebene Artefakt braucht ein Aufraeumen davor
+
+Dreimal dieselbe Klasse Fehler in derselben Testreihe, jedes Mal erst beim
+zweiten Lauf sichtbar:
+
+| Artefakt | Fehler beim Wiederholen |
+|---|---|
+| PDB-Archiv (`UNPLUG INTO`) | `ORA-65288` PDB archive file already exists |
+| Key-Export (`EXPORT KEYS TO`) | `ORA-46642` key export destination file already exists |
+| Keystore-Verzeichnis (`CREATE KEYSTORE`) | `ORA-46630` keystore cannot be created at location |
+| Evidence-Fingerabdruck | Paarung scheitert, oder - schlimmer - ein alter Stand wird verglichen |
+
+Oracle weigert sich konsequent, solche Dateien zu ueberschreiben. Wer einen
+Schritt idempotent haben will, muss jedes Artefakt vor dem Schreiben
+entfernen - und die Entfernung muss **melden, was sie getan hat**. Ein
+`rm -f` mit anschliessendem "no leftover" ist eine Luege, wenn gerade eine
+Datei geloescht wurde.
+
+verify: fuer jedes `INTO '<pfad>'`, `TO '<pfad>'` und jedes erzeugte
+Verzeichnis existiert ein Aufraeum-Schritt davor
