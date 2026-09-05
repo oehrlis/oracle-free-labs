@@ -970,3 +970,47 @@ print(raw[1:17].hex().upper())
     fi
     printf '%s\n' "${mek}"
 }
+
+# ------------------------------------------------------------------------------
+# Function: get_origin_for_mek
+# Purpose.: Report ORIGIN of the master key a tablespace actually depends on
+# Args....: $1  container name
+#           $2  PDB name
+#           $3  MEK id as hex, as found in v$encrypted_tablespaces.MASTERKEYID
+# Returns.: 0 a match was found, 1 no key with that id is present
+# Output..: the ORIGIN value, or "NOT-IN-KEYSTORE"
+# Depends.: docker, sqlplus, python3
+# Example.: get_origin_for_mek odbencdev PDBCLONE_P2 5D59025BBFEE48CD94EF23CD6CD42CF8
+# Notes...: Listing every key and reading the first ORIGIN answers a different
+#           question - after a rotation the PDB holds several keys and only one
+#           of them is the one the data hangs on. KEY_ID is base64 with a
+#           leading 0x01 type byte, MASTERKEYID is hex, so the match is made
+#           after decoding.
+# ------------------------------------------------------------------------------
+get_origin_for_mek() {
+    local svc="$1" pdb="$2" want="$3" rows
+    rows=$(printf '%s\n' "
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 300 TRIMSPOOL ON
+ALTER SESSION SET CONTAINER=${pdb};
+SELECT key_id || '|' || origin FROM v\$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id');
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null)
+    printf '%s' "${rows}" | python3 -c '
+import base64, sys
+want = sys.argv[1].upper()
+for line in sys.stdin.read().splitlines():
+    line = line.strip()
+    if "|" not in line:
+        continue
+    kid, _, origin = line.partition("|")
+    try:
+        raw = base64.b64decode(kid + "=" * (-len(kid) % 4))
+    except Exception:
+        continue
+    if raw[1:17].hex().upper() == want:
+        print(origin.strip())
+        sys.exit(0)
+print("NOT-IN-KEYSTORE")
+sys.exit(1)
+' "${want}"
+}

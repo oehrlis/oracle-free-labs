@@ -120,10 +120,13 @@ declare -a STEP_REGISTRY=(
     "63|63_pdb_p2_archive.sh|PDB P2: unplug with key export, plug into dev CDB|PDBCLONE_READY|step 61 (PDB testbed)"
     "64|64_pdb_p3_nokeys.sh|PDB P3: unplug without key export - negative test|PDBCLONE_READY|step 61 (PDB testbed)"
     "65|65_pdb_p4_remote.sh|PDB P4: remote clone via DB link as c##clone|PDBCLONE_READY|step 61 (PDB testbed)"
-    "66|66_pdb_p5_mekrot.sh|PDB P5: MEK rotation in target after P2 or P4|PDB_TARGET_READY|step 63 P2 or step 65 P4"
-    "67|67_pdb_p6_rekey.sh|PDB P6: ONLINE REKEY in target after P2 or P4|PDB_TARGET_READY|step 63 P2 or step 65 P4"
-    "68|68_pdb_p7_origin.sh|PDB P7: ORIGIN comparison imported vs copied keystore|PDB_TARGET_READY|step 63 P2 or step 65 P4"
-    "69|69_pdb_p8_keyver.sh|PDB P8: KEY_VERSION after plug-in to foreign CDB|PDB_TARGET_READY|step 63 P2 or step 65 P4"
+    # P7 and P8 run before P5 and P6 on purpose: the rotation and the rekey
+    # replace every key in the target, so the provenance and KEY_VERSION of the
+    # transported key can only be observed while it is still the active one.
+    "66|66_pdb_p7_origin.sh|PDB P7: ORIGIN of the transported key in the target|PDB_TARGET_READY|step 63 P2 or step 65 P4"
+    "67|67_pdb_p8_keyver.sh|PDB P8: KEY_VERSION after plug-in to foreign CDB|PDB_TARGET_READY|step 63 P2 or step 65 P4"
+    "68|68_pdb_p5_mekrot.sh|PDB P5: MEK rotation in target after P2 or P4|PDB_TARGET_READY|step 63 P2 or step 65 P4"
+    "69|69_pdb_p6_rekey.sh|PDB P6: ONLINE REKEY in target after P2 or P4|PDB_TARGET_READY|step 63 P2 or step 65 P4"
     "70|70_variant_g.sh|Variant G: ALTER TABLESPACE ENCRYPTION ONLINE REKEY|BACKUP_READY|step 15 (backup)"
     "80|80_positive_control.sh|Positive control: two tablespaces prove method sensitivity||none"
     "90|90_withdrawal_test.sh|Key withdrawal test: verify cryptographic independence||none"
