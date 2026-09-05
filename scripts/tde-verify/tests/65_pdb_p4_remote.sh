@@ -330,15 +330,37 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
     write_state "PDB_TARGET_NAME"    "${CLONE_P4_PDB}"
     write_state "PDB_TARGET_SERVICE" "${DEV_SERVICE}"
 
+    # Measured, against the original expectation: a remote clone behaves like
+    # the local one in step 62 and renews the tablespace key. Together with P2
+    # this is a controlled comparison - same source, same MEK transported by
+    # EXPORT/IMPORT KEYS, same target CDB. The only variable is the transport:
+    # the archive preserves the key, the clone renews it. Because the
+    # MASTERKEYID is identical across all three, a differing wrapped key cannot
+    # be a re-wrap.
+    local canary_cmp canary_rc
+    canary_cmp=""
+    canary_rc=0
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+                       "${DEV_SERVICE}" "${CLONE_P4_PDB}" "CANARY_CLONEENC") || canary_rc=$?
+        echo "canary blocks:   ${canary_cmp} (expect all differing - a clone re-encrypts)"
+    fi
+
     local verdict msg
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"; msg="DRY-RUN"
-    elif [[ "${tek_p4}" == "${tek_src}" ]]; then
+    elif [[ ${canary_rc} -eq 2 ]]; then
+        verdict="FAIL"
+        msg="P4: canary blocks could not be compared - no verdict possible"
+    elif [[ "${tek_p4}" != "${tek_src}" && ${canary_rc} -eq 1 ]]; then
         verdict="PASS"
-        msg="P4: TEK preserved through remote clone + key import, ORIGIN=${origin_p4}"
+        msg="P4: remote clone produced NEW tablespace key material (${canary_cmp}), ORIGIN=${origin_p4}. The MASTERKEYID matches the source, so the differing wrapped key is not a re-wrap. Same behaviour as the local clone in P1, and the opposite of the archive transport in P2"
+    elif [[ "${tek_p4}" == "${tek_src}" && ${canary_rc} -eq 0 ]]; then
+        verdict="PASS"
+        msg="P4: TEK and ciphertext preserved through remote clone + key import (${canary_cmp}), ORIGIN=${origin_p4}"
     else
         verdict="FAIL"
-        msg="P4: TEK DIFFERS from source - unexpected for remote clone + key import"
+        msg="P4: contradictory - wrapped key $( [[ "${tek_p4}" == "${tek_src}" ]] && echo identical || echo different ) but ciphertext ${canary_cmp}"
     fi
 
     print_key_summary "pdb_p4_remote (${CLONE_P4_PDB})" "${mkid_p4}" "${tek_p4}" \
