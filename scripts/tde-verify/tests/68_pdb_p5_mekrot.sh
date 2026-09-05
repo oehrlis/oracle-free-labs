@@ -81,7 +81,7 @@ done
 # ------------------------------------------------------------------------------
 main() {
     lib_info "Starting ${SCRIPT_NAME} ${VERSION}"
-    step_header "Step 66: PDB P5 - MEK rotation in target PDB"
+    step_header "Step 68: PDB P5 - MEK rotation in target PDB"
 
     require_command docker
     require_container "${DEV_SERVICE}"
