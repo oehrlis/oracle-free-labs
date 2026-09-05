@@ -130,6 +130,13 @@ EXIT
 "
 
     # ONLINE REKEY
+    # Evidence of the target BEFORE the rekey. Prod's baseline is the wrong
+    # reference: the target may be the P4 clone, which already differs from
+    # prod by design, so "all blocks differ" would be trivially true and say
+    # nothing about the rekey.
+    step_header "Collect evidence set '${LABEL}_before' (target before rekey)"
+    collect_evidence "${DEV_SERVICE}" "${target_pdb}" "${LABEL}_before" "${CLONE_TS_ENC}"
+
     step_header "ALTER TABLESPACE ${CLONE_TS_ENC} ENCRYPTION ONLINE REKEY"
     sqlplus_dev "
 WHENEVER SQLERROR EXIT SQL.SQLCODE
@@ -177,7 +184,7 @@ EXIT
     step_header "Compare '${LABEL}' vs 'pdb_baseline' (expect RE-ENCRYPT: blocks differ)"
     lib_info "Note: ONLINE REKEY creates a new datafile; --compare may report no common files."
     lib_info "KEY_VERSION delta and block fingerprint of the new file are the primary evidence."
-    compare_evidence "pdb_baseline" "${LABEL}" || lib_warn "compare returned non-zero (may be expected: new datafile)"
+    compare_evidence "${LABEL}_before" "${LABEL}" || lib_warn "compare returned non-zero (may be expected: new datafile)"
 
     write_state "PDB_P6_TEK_BEFORE"  "${tek_before}"
     write_state "PDB_P6_TEK_AFTER"   "${tek_after}"
@@ -196,12 +203,13 @@ EXIT
     # Counterpart to P5: there the ciphertext had to stay identical, here it
     # has to change. A new tablespace key that does not rewrite the blocks
     # would be a re-wrap wearing a new KEY_VERSION. ONLINE conversion preserves
-    # ROWIDs, so the canary rows keep their block addresses.
+    # ROWIDs, so the canary rows keep their block addresses. Reference is the
+    # target own state before the rekey, collected above.
     local canary_cmp canary_rc
     canary_cmp=""
     canary_rc=0
     if [[ "${DRY_RUN}" != "TRUE" ]]; then
-        canary_cmp=$(compare_canary_blocks "pdb_baseline" "${LABEL}" \
+        canary_cmp=$(compare_canary_blocks "${LABEL}_before" "${LABEL}" \
                        "${DEV_SERVICE}" "${target_pdb}" "CANARY_CLONEENC") || canary_rc=$?
         echo "canary blocks:   ${canary_cmp} (expect all differing)"
     fi
@@ -214,7 +222,7 @@ EXIT
         msg="P6: KEY_VERSION did not increase (${kv_before_int} -> ${kv_after_int}) - ONLINE REKEY may not have executed"
     elif [[ ${canary_rc} -eq 1 ]]; then
         verdict="PASS"
-        msg="P6: ONLINE REKEY created new key material (KEY_VERSION ${kv_before_int} -> ${kv_after_int}) and rewrote the data blocks (${canary_cmp}) - the ciphertext no longer matches prod"
+        msg="P6: ONLINE REKEY created new key material (KEY_VERSION ${kv_before_int} -> ${kv_after_int}) and rewrote the data blocks (${canary_cmp}) - the ciphertext in ${target_pdb} no longer matches its own prior state"
     elif [[ ${canary_rc} -eq 2 ]]; then
         verdict="FAIL"
         msg="P6: KEY_VERSION increased but the canary blocks could not be compared - no verdict possible"
