@@ -281,9 +281,12 @@ SEPS-Store `tde_seps`, der ebenfalls als `LOCAL AUTO_LOGIN` angelegt wird.
 | B2 | AS ENCRYPTED USING KEY ohne Prod-MEK | - | - | ORA-19870 plus ORA-28374 |
 | C | DUPLICATE BACKUP LOCATION AS ENCRYPTED | 313 von 313 | unveraendert | laeuft, neue DBID; unverschluesselte TS erhalten DB Key der Quelle |
 | D | FORCE AS DECRYPTED, SET KEY, OFFLINE ENCRYPT | 313 von 313 | unveraendert | MEK neu, Chiffrat identisch; kein kryptografischer Neuanfang |
-| F | RESTORE, OFFLINE DECRYPT, frischer Keystore, \_db\_discard\_lost\_masterkey, SET KEY, OFFLINE ENCRYPT | 2561 von 2561 | **neu** | Quell-TEK und Quell-MASTERKEYID physisch verschwunden, kein Quell-MEK, Canary lesbar |
-| G | ONLINE REKEY | 2560 von 2561 | **neu** | neues Datafile, altes entfernt, alte TEKs nicht mehr auffindbar |
-| Positivkontrolle | zwei frische verschluesselte TS mit identischem Inhalt und verschiedenen TEKs | - | verschieden | 367 von 501 Canary-Bloecken unterschiedlich; Methode erkennt TEK-Wechsel |
+| F | RESTORE, OFFLINE DECRYPT, Undo-Tausch, frischer Keystore, \_db\_discard\_lost\_masterkey, SET KEY, OFFLINE ENCRYPT | 0 von 313 | **neu** | Quell-TEK und Quell-MASTERKEYID physisch verschwunden, kein Quell-MEK, Canary lesbar |
+| G | ONLINE REKEY | 0 von 313 | **neu** | neues Datafile, altes entfernt, alte TEKs nicht mehr auffindbar |
+| P1 | PDB-Klon in derselben CDB | 0 von 313 | **neu** | MASTERKEYID identisch zur Quelle, gewrappter Schluessel verschieden - unter unveraendertem MEK kein Re-wrap moeglich |
+| P2 | PDB-Archiv in eine fremde CDB | 313 von 313 | unveraendert | gewrappter Schluessel identisch; Transport erhaelt Schluessel und Chiffrat |
+| P4 | PDB-Remote-Klon ueber DB-Link | 0 von 313 | **neu** | wie P1, ueber CDB-Grenze hinweg |
+| Positivkontrolle | zwei frische verschluesselte TS mit identischem Inhalt und verschiedenen TEKs | 0 von 313 | verschieden | die Methode erkennt einen Schluesselwechsel in jedem Canary-Block |
 
 <!-- markdownlint-restore -->
 
@@ -293,6 +296,27 @@ Beide Zeiten sind Einzelbeobachtungen und wurden nicht wiederholt gemessen; sie 
 die Richtung, nicht einen Kennwert.
 `AS ENCRYPTED` leistet bei unverschluesselter Quelle echte Blockarbeit - das Abbrechen
 tritt erst beim bereits verschluesselten Datafile auf.
+
+### Der Kontrast D gegen F belegt die dritte Ebene
+
+Beide Varianten fuehren dieselbe Anweisung aus:
+`ALTER TABLESPACE USERS ENCRYPTION OFFLINE ENCRYPT`. Sie unterscheiden sich in genau einer
+Variablen - ob der Database Key des Containers erneuert wurde.
+
+<!-- markdownlint-disable MD013 MD060 -->
+| | Variante D | Variante F |
+|---|---|---|
+| MEK | neu gesetzt | neu, frischer Keystore |
+| Database Key | unveraendert | erneuert ueber den Discard-Pfad |
+| Operation | `OFFLINE ENCRYPT` | `OFFLINE ENCRYPT` |
+| Canary-Chiffrat | 313 von 313 identisch | 0 von 313 identisch |
+<!-- markdownlint-restore -->
+
+Dieselbe Anweisung, entgegengesetztes Ergebnis. Damit ist gemessen, dass `OFFLINE ENCRYPT`
+sein Tablespace-Schluesselmaterial aus dem **Database Key des Containers** ableitet und nicht
+aus dem MEK: eine MEK-Rotation allein aendert das Chiffrat nachweislich nicht. Oracle
+dokumentiert nur zwei Ebenen; diese Messung ist die Grundlage fuer die dritte in diesem
+Dokument.
 
 Anmerkung zu Variante C: der als "neuer gemeinsamer TEK" gemessene Wert
 `566B2C9C...69CE` ist der Database Key der PDB in der Quelle. AS ENCRYPTED hat die
@@ -310,16 +334,20 @@ flowchart TB
     SRC --> D["D: AS DECRYPTED<br/>SET KEY, OFFLINE ENCRYPT"]
     SRC --> F["F: RESTORE, DECRYPT<br/>frischer Keystore, SET KEY<br/>OFFLINE ENCRYPT"]
     SRC --> G["G: ONLINE REKEY"]
-    SRC --> PK["Positivkontrolle<br/>neuer TS, gleicher Inhalt"]
+    SRC --> P1["P1/P4: PDB-Klon<br/>lokal oder ueber DB-Link"]
+    SRC --> P2["P2: PDB-Archiv<br/>unplug und plug"]
+    SRC --> PK["Positivkontrolle<br/>zwei TS, gleicher Inhalt"]
 
     A --> AR["313 von 313 identisch<br/>TEK unveraendert<br/>ORA-28374 beim Entzug"]
     B1 --> B1R["ORA-00600<br/>kcbtse_encdec_tbsblk_1"]
     B2 --> B2R["ORA-19870<br/>ORA-28374"]
     C --> CR["313 von 313 identisch<br/>USERS TEK unveraendert<br/>unverschluesselte TS: DB Key der Quelle"]
     D --> DR["313 von 313 identisch<br/>TEK unveraendert<br/>MEK neu"]
-    F --> FR["2561 von 2561 unterschiedlich<br/>TEK neu, kein Quell-MEK<br/>Canary lesbar"]
-    G --> GR["2560 von 2561 unterschiedlich<br/>TEK neu, neues Datafile"]
-    PK --> PKR["367 von 501 unterschiedlich<br/>TEK-Wechsel nachweisbar"]
+    F --> FR["0 von 313 identisch<br/>TEK neu, kein Quell-MEK<br/>Canary lesbar"]
+    G --> GR["0 von 313 identisch<br/>TEK neu, neues Datafile"]
+    P1 --> P1R["0 von 313 identisch<br/>TEK neu bei gleichem MEK"]
+    P2 --> P2R["313 von 313 identisch<br/>TEK und Chiffrat erhalten"]
+    PK --> PKR["0 von 313 identisch<br/>TEK-Wechsel nachweisbar"]
 ```
 
 ## Stufenmodell der kryptografischen Unabhaengigkeit
