@@ -13,6 +13,29 @@ welcher Einzelschritt gescheitert ist.
 Aufbau je Schritt: Nummer, ein Satz zum Zweck, der Befehl, die erwartete Ausgabe oder der
 erwartete Zustand, und der Skriptaufruf, der dasselbe automatisch tut.
 
+### Wie die Sollwerte zu lesen sind
+
+Schluessel-IDs sind pro Lauf neu. Eine `MASTERKEYID` oder ein gewrappter Schluessel aus diesem
+Dokument wird bei deinem Lauf **nie** identisch herauskommen - das ist kein Fehler, sondern die
+Natur der Sache. Die konkreten Hex-Werte stehen hier als Beleg dafuer, was gemessen wurde, nicht
+als Zielwert zum Abgleichen.
+
+Vergleichbar und damit pruefbar sind:
+
+- **Die Relationen innerhalb eines Laufs.** Ist der Wert im Ziel gleich dem der Quelle oder
+  verschieden? Ist die `MASTERKEYID` unveraendert, waehrend der gewrappte Schluessel abweicht?
+  Genau diese Beziehungen tragen die Beweisfuehrung.
+- **Die Canary-Blockzahlen.** `313 identisch / 0 abweichend` bedeutet: der Tablespace-Schluessel
+  ist unveraendert. `0 identisch / 313 abweichend` bedeutet: neues Schluesselmaterial. Diese
+  Zahlen sind zwischen Laeufen stabil, solange die Canary-Zeilenzahl gleich bleibt.
+- **Die Fehlercodes.** `ORA-46680` beim schluessellosen Unplug, `ORA-46697` ohne
+  Keystore-Passwort, `ORA-00600` bei Variante B1 - die sind reproduzierbar.
+
+Die Phasen 4a, 5a, 5.10 und 6a zitieren den durchgehenden Lauf vom 2026-09-06
+(`artefacts/tde-e2e-run-20260906.log`, Protokoll in `doc/tde-e2e-protokoll.md`). Die uebrigen
+Phasen tragen noch Werte aus dem Erstlauf. Beide sind gueltige Messungen, aber ihre Hex-Werte
+gehoeren zu verschiedenen Laeufen und duerfen nicht miteinander verglichen werden.
+
 ## Voraussetzungen
 
 - Docker Desktop laeuft, Image `oracle-free-labs:latest` lokal vorhanden
@@ -1771,6 +1794,877 @@ Phase 2 und Phase 5 ist keine Blindheit des Messverfahrens.
 
 Automatisch: `scripts/tde-verify/tde_evidence.sh --compare ctrl_a ctrl_b`
 
+## Phase 6a - PDB-Wege: Klon, Archiv-Transport und Schluesselherkunft
+
+Diese Phase ist nachtraeglich eingefuegt und behaelt die Nummerierung der folgenden Phasen bei.
+Sie deckt die Faelle P1 bis P8 ab: was passiert mit Schluessel und Chiffrat, wenn eine PDB
+geklont, ueber ein Archiv transportiert oder im Ziel umgeschluesselt wird. Automatisch laufen
+die Faelle als `scripts/tde-verify/tests/61_pdb_testbed.sh` bis `69_pdb_p6_rekey.sh`.
+
+Die Kernaussage der Phase vorweg: **Klon und Archiv-Transport verhalten sich entgegengesetzt.**
+Der Klon - lokal wie remote - erzeugt neues Schluesselmaterial und verschluesselt die Daten neu.
+Der Archiv-Transport erhaelt Schluessel und Chiffrat bitgenau, auch ueber CDB-Grenzen hinweg.
+Bei P1 und P4 ist die `MASTERKEYID` identisch zur Quelle, der gewrappte Schluessel aber
+verschieden - unter unveraendertem MEK kann das kein Re-wrap sein, denn ein Re-wrap mit
+demselben Master Key reproduziert denselben Wert. Es ist neues Material, und das Chiffrat
+bestaetigt das unabhaengig.
+
+**Reihenfolge ist Pflicht.** P7 (Herkunft) und P8 (`KEY_VERSION`) muessen vor P5 (MEK-Rotation)
+und P6 (`ONLINE REKEY`) laufen. Rotation und Rekey ersetzen alle Schluessel im Ziel; danach
+haengt der Tablespace an einem im Ziel erzeugten Schluessel und die Frage nach der Herkunft des
+transportierten Schluessels ist nicht mehr stellbar. Dieselbe Messung nach P5 oder P6 misst
+etwas anderes und sieht nur so aus wie das Ergebnis.
+
+Zwei Vorbedingungen gelten fuer die ganze Phase:
+
+- **Jede PDB-Operation ueber verschluesselte Tablespaces verlangt das Keystore-Passwort.** Ohne
+  `KEYSTORE IDENTIFIED BY` scheitert der lokale Klon, der Remote-Klon und das Einpluggen mit
+  ORA-46697 "Keystore password required". Ein Auto-Login-Keystore genuegt fuer keine dieser
+  Operationen.
+- **Das Transport-Secret verlangt doppelte Anfuehrungszeichen.** Einfache ergeben ORA-00922 bei
+  `ENCRYPT USING` und ORA-46609 bei `WITH SECRET`.
+
+### 6a.1 Vorbedingungen pruefen
+
+`CREATE PLUGGABLE DATABASE` legt Datafiles ueber Oracle Managed Files an. Ohne
+`db_create_file_dest` scheitert jeder Aufruf mit ORA-65016 "FILE_NAME_CONVERT must be
+specified".
+
+```bash
+for SVC in odbencprod odbencdev; do
+  docker exec -i "${SVC}" sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
+ALTER SYSTEM SET db_create_file_dest='/opt/oracle/oradata' SCOPE=BOTH;
+SELECT value FROM v$parameter WHERE name = 'db_create_file_dest';
+EXIT
+SQL
+done
+```
+
+Erwartet: `/opt/oracle/oradata` in beiden Containern.
+
+Das Ziel muss eine **echte fremde CDB** sein, kein Restore der Quelle. Ein Restore traegt
+dieselbe DBID; P2, P7 und P8 taugen dann nicht als Beleg, weil Quelle und Ziel derselbe
+Keystore-Kontext sind. Haben die vorangegangenen RMAN-Varianten `odbencdev` als Klon von
+`odbencprod` hinterlassen, ist der Service vor dieser Phase zurueckzusetzen.
+
+```bash
+for SVC in odbencprod odbencdev; do
+  printf '%s: ' "${SVC}"
+  docker exec -i "${SVC}" sqlplus -S / as sysdba <<'SQL'
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT dbid FROM v$database;
+EXIT
+SQL
+done
+```
+
+Erwartet: zwei verschiedene DBIDs. Sind sie gleich, `make reset SERVICE=odbencdev` und
+`make up-odbencdev`, danach erneut pruefen.
+
+Automatisch: `ensure_omf` und `ensure_independent_dev_cdb` in `scripts/tde-verify/tests/lib.sh`.
+`ensure_independent_dev_cdb` setzt `odbencdev` selbst zurueck, wenn es die Prod-DBID traegt.
+
+### 6a.2 Testumgebung anlegen (Schritt 61)
+
+Die Testumgebung ist eine eigene PDB `PDBCLONE` mit einem verschluesselten und einem
+unverschluesselten Tablespace. Der unverschluesselte ist die Kontrollgruppe: was sich dort
+aendert, ist keine Wirkung der Verschluesselung.
+
+PDB aus `PDB$SEED` anlegen. Der Block ist idempotent - ein vorhandenes `PDBCLONE` wird zuerst
+entfernt.
+
+```bash
+docker exec -i odbencprod bash -s <<'INNER'
+set -u
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE CLOSE IMMEDIATE;
+DROP PLUGGABLE DATABASE PDBCLONE INCLUDING DATAFILES;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE PLUGGABLE DATABASE PDBCLONE ADMIN USER pdbadmin IDENTIFIED BY "${ORACLE_PWD}";
+ALTER PLUGGABLE DATABASE PDBCLONE OPEN READ WRITE;
+ALTER PLUGGABLE DATABASE PDBCLONE SAVE STATE;
+SELECT name, open_mode FROM v\$pdbs WHERE name = 'PDBCLONE';
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `PDBCLONE` in `READ WRITE`. Das Passwort wird im Container gelesen und erscheint in
+keinem Host-Befehl; die Ausgabe wird gefiltert.
+
+Eigenen Master Key in der PDB setzen. Eine PDB aus `PDB$SEED` hat keinen eigenen MEK, und ohne
+ihn scheitert das folgende `CREATE TABLESPACE ... ENCRYPTION` mit ORA-28361 "Master key not yet
+set". `FORCE KEYSTORE` ist noetig, weil der Prod-Keystore als LOCAL_AUTOLOGIN offen ist und eine
+Passwortoperation dagegen sonst mit ORA-28417 abbricht.
+
+```bash
+docker exec -i odbencprod bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE;
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" WITH BACKUP;
+SELECT con_id, key_id, origin FROM v\$encryption_keys ORDER BY con_id;
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `keystore altered`, danach ein Schluessel mit `ORIGIN LOCAL` fuer die con_id von
+`PDBCLONE`.
+
+Beide Tablespaces anlegen.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE;
+CREATE TABLESPACE clone_enc DATAFILE SIZE 50M AUTOEXTEND ON
+  ENCRYPTION USING 'AES256' DEFAULT STORAGE(ENCRYPT);
+CREATE TABLESPACE clone_plain DATAFILE SIZE 50M AUTOEXTEND ON;
+SELECT tablespace_name, encrypted FROM dba_tablespaces
+ WHERE tablespace_name IN ('CLONE_ENC','CLONE_PLAIN') ORDER BY 1;
+EXIT
+SQL
+```
+
+Erwartet: `CLONE_ENC` mit `ENCRYPTED YES`, `CLONE_PLAIN` mit `ENCRYPTED NO`.
+
+Canary-Schema und beide Canary-Tabellen anlegen. `PDBCLONE` stammt aus `PDB$SEED` und bringt
+kein `SCOTT` mit - anders als `ODBENCPROD`, wo die Setup-Skripte des Service es anlegen.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE;
+CREATE USER SCOTT NO AUTHENTICATION;
+GRANT CREATE SESSION, CREATE TABLE TO SCOTT;
+ALTER USER SCOTT QUOTA UNLIMITED ON CLONE_ENC;
+ALTER USER SCOTT QUOTA UNLIMITED ON CLONE_PLAIN;
+@/opt/oracle/common/scripts/csenc_canary.sql SCOTT CLONE_ENC OEHRLI-CANARY-2026-09-03 5000 CANARY_CLONEENC
+@/opt/oracle/common/scripts/csenc_canary.sql SCOTT CLONE_PLAIN OEHRLI-CANARY-2026-09-03 5000 CANARY_CLONEPLAIN
+ALTER TABLESPACE clone_enc READ ONLY;
+ALTER TABLESPACE clone_plain READ ONLY;
+SELECT tablespace_name, status FROM dba_tablespaces
+ WHERE tablespace_name IN ('CLONE_ENC','CLONE_PLAIN') ORDER BY 1;
+EXIT
+SQL
+```
+
+Erwartet: je 5000 Zeilen in `CANARY_CLONEENC` und `CANARY_CLONEPLAIN`, danach beide
+Tablespaces `READ ONLY`. Read only haelt das Chiffrat stabil - ohne das waeren spaetere
+Blockvergleiche von normalem Schreibbetrieb ueberlagert.
+
+Gemeinsamen Benutzer `c##clone` anlegen. Er wird in 6a.6 fuer den Remote-Klon ueber den DB-Link
+gebraucht und braucht dafuer genau zwei Rechte.
+
+```bash
+docker exec -i odbencprod bash -s <<'INNER'
+set -u
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+DROP USER c##clone CASCADE;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE USER c##clone IDENTIFIED BY "${ORACLE_PWD}" CONTAINER=ALL;
+GRANT CREATE SESSION TO c##clone CONTAINER=ALL;
+GRANT CREATE PLUGGABLE DATABASE TO c##clone CONTAINER=ALL;
+SELECT username, common, account_status FROM dba_users WHERE username = 'C##CLONE';
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `C##CLONE` mit `COMMON YES` und `OPEN`. Der Name wird unquoted angelegt, Oracle
+speichert ihn in Grossbuchstaben - der DB-Link in 6a.6 muss ihn genauso unquoted nennen, sonst
+ORA-01017.
+
+Ausgangswerte festhalten. Alle spaeteren Vergleiche beziehen sich auf diese beiden Werte.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+ALTER SESSION SET CONTAINER = PDBCLONE;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid, RAWTOHEX(encryptedkey) AS encryptedkey,
+       key_version, encryptionalg
+  FROM v$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+```
+
+Erwartet im E2E-Lauf vom 2026-09-06: `MASTERKEYID A7D954A5F5B9423D8C4EF9084DAE347D`,
+`ENCRYPTEDKEY FC11003A257C8515095D64B4E961E7328964A6DE12A90D729147009A85E38760`,
+`KEY_VERSION 0`.
+
+Automatisch: `61_pdb_testbed.sh`. Es sammelt zusaetzlich den Evidence-Satz `pdb_baseline`.
+
+### 6a.3 P1 - lokaler Klon in derselben CDB (Schritt 62)
+
+Der Referenzfall: gleiche CDB, gleicher Keystore, kein Schluesseltransport noetig. Trotzdem ist
+das Keystore-Passwort Pflicht.
+
+```bash
+docker exec -i odbencprod bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE_P1 CLOSE IMMEDIATE;
+DROP PLUGGABLE DATABASE PDBCLONE_P1 INCLUDING DATAFILES;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE PLUGGABLE DATABASE PDBCLONE_P1 FROM PDBCLONE
+  KEYSTORE IDENTIFIED BY "${KSPWD}";
+ALTER PLUGGABLE DATABASE PDBCLONE_P1 OPEN READ WRITE;
+SELECT name, open_mode FROM v\$pdbs WHERE name = 'PDBCLONE_P1';
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `PDBCLONE_P1` in `READ WRITE`. Laesst man `KEYSTORE IDENTIFIED BY` weg, endet der
+Aufruf mit ORA-46697 - auch innerhalb derselben CDB und bei offenem Auto-Login-Keystore.
+
+Schluesselkette im Klon lesen.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE_P1;
+SELECT key_id, key_use, keystore_type, origin, backed_up
+  FROM v$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id') ORDER BY creation_time;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid, RAWTOHEX(encryptedkey) AS encryptedkey,
+       key_version, encryptionalg
+  FROM v$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+```
+
+Erwartet: `MASTERKEYID A7D954A5F5B9423D8C4EF9084DAE347D` - unveraendert gegenueber der Quelle -
+aber `ENCRYPTEDKEY A341ABA714216D48A156995247C13AC058D67B07E62CA9812642E6C7382FA239`, also ein
+anderer gewrappter Schluessel. Weil der Master Key derselbe ist, kann das kein Re-wrap sein: ein
+Re-wrap unter unveraendertem MEK ergaebe denselben gewrappten Wert. Der Blockvergleich gegen
+`pdb_baseline` bestaetigt es unabhaengig mit 0 identischen und 313 geaenderten Canary-Bloecken.
+`KEY_VERSION` ist in Quelle und Klon 0 und sagt hier nichts.
+
+Automatisch: `62_pdb_p1_local.sh`. Der Test wertet nur dann PASS, wenn abweichender TEK **und**
+veraendertes Chiffrat zusammenfallen; eine der beiden Aussagen allein gilt als widerspruechlich.
+
+### 6a.4 P2 - Unplug mit Key-Export, Einpluggen in die fremde Dev-CDB (Schritt 63)
+
+Der Gegenfall zum Klon. Das Archiv nimmt den Schluessel mit, `ENCRYPT USING` schuetzt ihn im
+Transport. Das Secret gilt nur fuer diesen einen Lauf und wird deshalb frisch erzeugt statt fest
+im Repository zu stehen.
+
+```bash
+SECRET="$(openssl rand -base64 48 | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-24)"
+```
+
+Ein Archiv aus einem frueheren Versuch verhindert das Unplug mit ORA-65288 und wird zuerst
+entfernt.
+
+```bash
+docker exec odbencprod rm -f /opt/oracle/xchange/pdbclone_p2.pdb
+```
+
+Unplug mit Schluessel-Export, danach die Quell-PDB entfernen. Das aeussere Here-Doc ist bewusst
+nicht gequotet, damit der Host `${SECRET}` in den ueber stdin uebergebenen Skripttext einsetzt -
+so steht das Secret in keiner Kommandozeile. Container-seitige Expansionen sind entsprechend mit
+`\$` geschuetzt.
+
+```bash
+docker exec -i odbencprod bash -s <<INNER
+set -u
+sqlplus -S / as sysdba <<SQL | grep -viE "encrypt using"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE CLOSE IMMEDIATE;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER PLUGGABLE DATABASE PDBCLONE
+  UNPLUG INTO '/opt/oracle/xchange/pdbclone_p2.pdb'
+  ENCRYPT USING "${SECRET}";
+DROP PLUGGABLE DATABASE PDBCLONE INCLUDING DATAFILES;
+SELECT 'PDBCLONE unplugged and dropped' AS status FROM dual;
+EXIT
+SQL
+INNER
+```
+
+Erwartet: das Archiv `/opt/oracle/xchange/pdbclone_p2.pdb` existiert, `PDBCLONE` ist weg. Mit
+einfachen Anfuehrungszeichen um das Secret bricht der Aufruf mit ORA-00922 ab.
+
+`PDBCLONE` in der Quelle aus demselben Archiv wieder einpluggen - Fall P4 in 6a.6 braucht die
+Quell-PDB noch. Beim Re-Plug in **dieselbe** CDB ist `TEMPFILE REUSE` richtig: der im Archiv
+vermerkte Tempfile-Pfad ist hier tatsaechlich die eigene Tempfile.
+
+```bash
+docker exec -i odbencprod bash -s <<INNER
+set -u
+KSPWD="\$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by|decrypt using"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE PLUGGABLE DATABASE PDBCLONE
+  USING '/opt/oracle/xchange/pdbclone_p2.pdb'
+  DECRYPT USING "${SECRET}"
+  KEYSTORE IDENTIFIED BY "\${KSPWD}"
+  COPY TEMPFILE REUSE;
+ALTER PLUGGABLE DATABASE PDBCLONE OPEN READ WRITE;
+ALTER PLUGGABLE DATABASE PDBCLONE SAVE STATE;
+SELECT name, open_mode FROM v\\\$pdbs WHERE name = 'PDBCLONE';
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `PDBCLONE` wieder in `READ WRITE`. Auch das Einpluggen braucht das Keystore-Passwort,
+derselbe ORA-46697 wie beim Klon.
+
+Dasselbe Archiv in die fremde Dev-CDB einpluggen. Hier **kein** `TEMPFILE REUSE`: der im Archiv
+vermerkte Tempfile-Pfad `/opt/oracle/oradata/FREE/temp01.dbf` ist in der Ziel-CDB deren eigene
+Tempfile - beide Container laufen aus demselben Image. `REUSE` versucht sie zu uebernehmen und
+scheitert mit ORA-01187 auf Datafile 1025. Ohne die Klausel legt Oracle eine frische Tempfile
+unter `db_create_file_dest` an.
+
+```bash
+docker exec -i odbencdev bash -s <<INNER
+set -u
+KSPWD="\$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by|decrypt using"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE_P2 CLOSE IMMEDIATE;
+DROP PLUGGABLE DATABASE PDBCLONE_P2 INCLUDING DATAFILES;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE PLUGGABLE DATABASE PDBCLONE_P2
+  USING '/opt/oracle/xchange/pdbclone_p2.pdb'
+  DECRYPT USING "${SECRET}"
+  KEYSTORE IDENTIFIED BY "\${KSPWD}"
+  COPY;
+ALTER PLUGGABLE DATABASE PDBCLONE_P2 OPEN READ WRITE;
+SELECT name, open_mode FROM v\\\$pdbs WHERE name = 'PDBCLONE_P2';
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `PDBCLONE_P2` in der Dev-CDB in `READ WRITE`.
+
+Schluesselkette im Ziel lesen.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+SELECT key_id, key_use, keystore_type, origin, backed_up
+  FROM v$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id') ORDER BY creation_time;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid, RAWTOHEX(encryptedkey) AS encryptedkey,
+       key_version, encryptionalg
+  FROM v$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+```
+
+Erwartet: `MASTERKEYID A7D954A5F5B9423D8C4EF9084DAE347D` und `ENCRYPTEDKEY FC11003A...8760`,
+beide unveraendert gegenueber der Quelle, `KEY_VERSION 0`. Der Blockvergleich gegen
+`pdb_baseline` ergibt 313 identische und 0 geaenderte Canary-Bloecke: das Archiv bewegt die
+Dateien unveraendert. Das ist das genaue Gegenteil des Klons in P1.
+
+Automatisch: `63_pdb_p2_archive.sh --yes`. Es erzeugt das Secret selbst, pluggt `PDBCLONE` in
+der Quelle wieder ein und haelt Ziel-PDB und Ziel-Service im Zustand fest, damit P7, P8, P5 und
+P6 darauf aufsetzen koennen.
+
+### 6a.5 P3 - Unplug ohne Key-Export, Negativtest (Schritt 64)
+
+Die Frage: kann eine verschluesselte PDB ohne ihre Schluessel weggetragen werden?
+
+```bash
+docker exec odbencprod rm -f /opt/oracle/xchange/pdbclone_p3.pdb
+
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE PDBCLONE
+  UNPLUG INTO '/opt/oracle/xchange/pdbclone_p3.pdb';
+EXIT
+SQL
+
+docker exec odbencprod bash -c \
+  '[ -f /opt/oracle/xchange/pdbclone_p3.pdb ] && echo "archive present" || echo "no archive"'
+```
+
+Erwartet: ORA-46680 "Pluggable database (PDB) master keys must be exported" und `no archive`.
+Oracle verweigert bereits das Unplug; es entsteht gar kein Archiv. Die Sperre sitzt damit
+frueher, als der Testfall urspruenglich annahm - geplant war, dass das Archiv entsteht und erst
+das Einpluggen scheitert. Ueber das Ergebnis entscheidet die Existenz der Datei, nicht die
+Meldung.
+
+Das `CLOSE IMMEDIATE` hat die PDB geschlossen, obwohl nichts unplugged wurde. Sie muss wieder
+geoeffnet werden.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE OPEN READ WRITE;
+ALTER PLUGGABLE DATABASE PDBCLONE SAVE STATE;
+SELECT name, open_mode FROM v$pdbs WHERE name = 'PDBCLONE';
+EXIT
+SQL
+```
+
+Erwartet: `PDBCLONE` wieder in `READ WRITE`.
+
+Automatisch: `64_pdb_p3_nokeys.sh --yes`. Der `DROP` steht dort bewusst nicht im selben Block
+wie das `UNPLUG` - mit `SQLERROR CONTINUE` wuerde er auch nach einem gescheiterten Unplug laufen
+und die Quell-PDB ohne Archiv loeschen.
+
+### 6a.6 P4 - Remote-Klon ueber DB-Link (Schritt 65)
+
+Kontrollierter Vergleich zu P2: dieselbe Quelle, derselbe MEK, dasselbe Ziel. Die einzige
+Variable ist der Transportweg.
+
+DB-Link in der Dev-CDB anlegen. Der Benutzername darf nicht gequotet werden - `"c##clone"`
+benennt einen anderen, nicht existierenden Benutzer und der Link scheitert mit ORA-01017. Das
+Passwort wird aus dem Quellcontainer gelesen und ueber stdin in den Skripttext gesetzt.
+
+```bash
+CLONE_PWD="$(docker exec odbencprod bash -c 'printf %s "${ORACLE_PWD}"')"
+
+docker exec -i odbencdev bash -s <<INNER
+set -u
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+DROP DATABASE LINK prod_cdb_link;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE DATABASE LINK prod_cdb_link
+  CONNECT TO c##clone IDENTIFIED BY "${CLONE_PWD}"
+  USING '(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=odbencprod)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=FREE.oradba.ch)))';
+SELECT 'DB link ok' AS link_status FROM dual@prod_cdb_link;
+EXIT
+SQL
+INNER
+unset CLONE_PWD
+```
+
+Erwartet: `DB link ok`. Der Link laeuft ueber das interne Docker-Netz, Port 1521, Service
+`FREE.oradba.ch` - nicht ueber den vom Host gemappten Port.
+
+Remote-Klon anlegen. `KEYSTORE IDENTIFIED BY` ist auch hier Pflicht.
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE PDBCLONE_P4 CLOSE IMMEDIATE;
+DROP PLUGGABLE DATABASE PDBCLONE_P4 INCLUDING DATAFILES;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE PLUGGABLE DATABASE PDBCLONE_P4
+  FROM PDBCLONE@prod_cdb_link
+  KEYSTORE IDENTIFIED BY "${KSPWD}";
+SELECT name, open_mode FROM v\$pdbs WHERE name = 'PDBCLONE_P4';
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `PDBCLONE_P4` existiert, zunaechst `MOUNTED`.
+
+Den Schluessel, an dem der Tablespace haengt, aus der Quelle exportieren. Zwei Fallen liegen
+hier dicht beieinander:
+
+- `EXPORT KEYS` ist innerhalb einer PDB mit ORA-65040 gesperrt und muss in `CDB$ROOT` laufen.
+- Dort ist der Schluessel **nicht** ueber die aktuelle con_id auffindbar. `V$ENCRYPTION_KEYS.CON_ID`
+  ist die Container-ID zum Erzeugungszeitpunkt, und jeder Unplug/Plug-Zyklus aendert die con_id
+  der PDB. Gemessen: der Schluessel lag unter `CON_ID 9`, waehrend `V$PDBS` fuer dieselbe PDB
+  `CON_ID 3` meldete. Die Auswahl erfolgt deshalb ueber die Schluessel-ID selbst.
+
+`V$ENCRYPTION_KEYS.KEY_ID` ist base64-kodiert und traegt ein fuehrendes Typ-Byte `0x01`,
+`V$ENCRYPTED_TABLESPACES.MASTERKEYID` ist reines Hex. Der Vergleich braucht eine Dekodierung.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL' > /tmp/p4_keys.txt
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 300 TRIMSPOOL ON
+SELECT key_id FROM v$encryption_keys;
+EXIT
+SQL
+
+python3 - /tmp/p4_keys.txt <<'PY'
+import base64, sys
+for token in open(sys.argv[1]).read().split():
+    if len(token) < 40:
+        continue
+    try:
+        raw = base64.b64decode(token + "=" * (-len(token) % 4))
+    except Exception:
+        continue
+    print(raw[1:17].hex().upper(), token)
+PY
+```
+
+Erwartet: eine Zeile mit `A7D954A5F5B9423D8C4EF9084DAE347D` und der zugehoerigen `KEY_ID`. Diese
+`KEY_ID` ist der Wert fuer `WITH IDENTIFIER IN`.
+
+```bash
+docker exec odbencprod rm -f /opt/oracle/xchange/pdbclone_p4_keys.exp
+KEY_SECRET="$(openssl rand -base64 48 | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-24)"
+SRC_KEY_ID="<KEY_ID aus dem vorigen Schritt>"
+
+docker exec -i odbencprod bash -s <<INNER
+set -u
+KSPWD="\$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by|with secret"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET "${KEY_SECRET}"
+  TO '/opt/oracle/xchange/pdbclone_p4_keys.exp'
+  FORCE KEYSTORE IDENTIFIED BY "\${KSPWD}"
+  WITH IDENTIFIER IN '${SRC_KEY_ID}';
+SELECT 'keys exported' AS status FROM dual;
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `keys exported`. `EXPORT KEYS` ueberschreibt sein Ziel nicht und endet sonst mit
+ORA-46642 - die Datei muss vorher weg. Einfache Anfuehrungszeichen um das Secret ergeben
+ORA-46609.
+
+Schluessel in den Dev-Keystore importieren.
+
+```bash
+docker exec -i odbencdev bash -s <<INNER
+set -u
+KSPWD="\$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by|with secret"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET "${KEY_SECRET}"
+  FROM '/opt/oracle/xchange/pdbclone_p4_keys.exp'
+  FORCE KEYSTORE IDENTIFIED BY "\${KSPWD}"
+  WITH BACKUP;
+EXIT
+SQL
+INNER
+unset KEY_SECRET
+```
+
+Erwartet: `keystore altered`. ORA-46655 "no valid keys in the file" ist hier ein zulaessiges
+Ergebnis und kein Fehler: hat P2 denselben MEK bereits in diese Dev-CDB transportiert, enthaelt
+die Datei nichts Neues. Der Beleg kommt im naechsten Schritt - die PDB oeffnet und der Canary
+liest sich.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER PLUGGABLE DATABASE PDBCLONE_P4 OPEN READ WRITE;
+WHENEVER SQLERROR CONTINUE
+ALTER SESSION SET CONTAINER = PDBCLONE_P4;
+@/opt/oracle/common/scripts/ssenc_canary.sql SCOTT OEHRLI-CANARY-2026-09-03 CANARY_CLONEENC
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid, RAWTOHEX(encryptedkey) AS encryptedkey,
+       key_version, encryptionalg
+  FROM v$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+```
+
+Erwartet: der Canary ist lesbar, `MASTERKEYID A7D954A5F5B9423D8C4EF9084DAE347D` unveraendert,
+`ENCRYPTEDKEY F19A97984D1DA8EBFEEE076E9C11D365B6AFE027EA3C8172630A4368BC4FE608` - wieder ein
+anderer gewrappter Schluessel bei identischem Master Key. Blockvergleich gegen `pdb_baseline`:
+0 identisch, 313 geaendert. Der Remote-Klon verhaelt sich wie der lokale in P1 und
+entgegengesetzt zum Archiv-Transport in P2.
+
+Automatisch: `65_pdb_p4_remote.sh`. Es liest das `c##clone`-Passwort in den Speicher und
+uebergibt es dem Container ueber stdin - `docker exec bash -c` wuerde es in die
+Host-Prozessliste stellen.
+
+### 6a.7 P7 - Herkunft des transportierten Schluessels (Schritt 66)
+
+**Vor** P5 und P6 ausfuehren. Nach einer Rotation oder einem Rekey haengt der Tablespace an
+einem im Ziel erzeugten Schluessel; die Herkunftsfrage laesst sich dann nicht mehr stellen.
+
+Die Frage lautet: laesst sich einem Schluessel im Ziel ansehen, dass er aus der Produktion
+stammt? Massgeblich ist der Schluessel, an dem die Daten haengen - nicht die erste Zeile von
+`V$ENCRYPTION_KEYS`. Eine PDB kann mehrere Schluessel halten.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+SELECT key_id, key_use, keystore_type, origin, backed_up, creation_time
+  FROM v$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id') ORDER BY creation_time;
+EXIT
+SQL
+
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE;
+SELECT key_id, key_use, keystore_type, origin, backed_up, creation_time
+  FROM v$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id') ORDER BY creation_time;
+EXIT
+SQL
+```
+
+Die Zuordnung Schluessel zu Tablespace ueber dieselbe Dekodierung wie in 6a.6.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL' > /tmp/p7_keys.txt
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 300 TRIMSPOOL ON
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+SELECT key_id || '|' || origin FROM v$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id');
+EXIT
+SQL
+
+python3 - /tmp/p7_keys.txt <<'PY'
+import base64, sys
+for line in open(sys.argv[1]):
+    kid, sep, origin = line.strip().partition("|")
+    if not sep:
+        continue
+    try:
+        raw = base64.b64decode(kid + "=" * (-len(kid) % 4))
+    except Exception:
+        continue
+    print(raw[1:17].hex().upper(), origin.strip())
+PY
+```
+
+Erwartet: fuer `A7D954A5F5B9423D8C4EF9084DAE347D` steht im Ziel `ORIGIN LOCAL` - obwohl der
+Schluessel per `EXPORT KEYS` und `IMPORT KEYS` aus der Produktion transportiert wurde. Nichts in
+`V$ENCRYPTION_KEYS` unterscheidet einen transportierten Produktionsschluessel von einem vor Ort
+erzeugten. Die Herkunftsfrage ist aus der Datenbank heraus nicht beantwortbar. Fuer den
+kopierten Keystore in Variante A gilt dasselbe: auch dort meldet das Ziel `LOCAL`.
+
+Automatisch: `66_pdb_p7_origin.sh`. Der Schritt beobachtet nur; der `ORIGIN`-Wert ist das
+Ergebnis, kein Bestehenskriterium. FAIL gibt es allein dann, wenn der Schluessel des Tablespace
+im Ziel-Keystore gar nicht auffindbar ist.
+
+### 6a.8 P8 - `KEY_VERSION` nach dem Plug-in (Schritt 67)
+
+Ebenfalls **vor** P5 und P6 auszufuehren - beide erhoehen `KEY_VERSION` und ueberschreiben damit
+die Messung.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE;
+SELECT t.name, et.encryptionalg, et.key_version, RAWTOHEX(et.masterkeyid) AS masterkeyid
+  FROM v$encrypted_tablespaces et, v$tablespace t
+ WHERE et.ts# = t.ts# AND et.con_id = t.con_id
+   AND t.name IN ('CLONE_ENC','CLONE_PLAIN') ORDER BY t.name;
+EXIT
+SQL
+
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+SELECT t.name, et.encryptionalg, et.key_version, RAWTOHEX(et.masterkeyid) AS masterkeyid
+  FROM v$encrypted_tablespaces et, v$tablespace t
+ WHERE et.ts# = t.ts# AND et.con_id = t.con_id
+   AND t.name IN ('CLONE_ENC','CLONE_PLAIN') ORDER BY t.name;
+EXIT
+SQL
+```
+
+Erwartet: `KEY_VERSION 0` in Quelle und Ziel. Die Dokumentation nennt einen Reset auf 0 nach dem
+Einpluggen in eine fremde CDB; im Lauf vom 2026-09-06 war der Wert schon vorher 0, ein Reset war
+also nicht beobachtbar. `CLONE_PLAIN` erscheint in `V$ENCRYPTED_TABLESPACES` erwartungsgemaess
+nicht.
+
+Automatisch: `67_pdb_p8_keyver.sh`. Der Schritt ist rein informativ und wertet immer PASS; er
+haelt den gemessenen Wert fest.
+
+### 6a.9 P5 - MEK-Rotation im Ziel, READ ONLY und READ WRITE (Schritt 68)
+
+Die Kundenfrage lautet meist "wir tauschen nur den Master Key". Die Antwort muss am Chiffrat
+gemessen werden, nicht an einem gespeicherten Schluessel. Und sie faellt je nach Zustand des
+Tablespace unterschiedlich aus - deshalb beide Phasen.
+
+Zustand vor der Rotation festhalten.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+SELECT key_id, key_use, origin, keystore_type FROM v$encryption_keys
+ WHERE con_id = sys_context('userenv','con_id') ORDER BY creation_time;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid_before, RAWTOHEX(encryptedkey) AS encryptedkey_before,
+       key_version
+  FROM v$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+```
+
+Phase A - Rotation bei `READ ONLY` gesetztem Tablespace. `FORCE KEYSTORE` ist noetig, weil der
+Dev-Keystore als LOCAL_AUTOLOGIN offen ist.
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
+  WITH BACKUP CONTAINER=CURRENT;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid_after, RAWTOHEX(encryptedkey) AS encryptedkey_after,
+       key_version
+  FROM v\$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v\$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+INNER
+```
+
+Erwartet: der PDB-Master-Key wechselt, der Tablespace-Eintrag zeigt aber weiter auf
+`A7D954A5F5B9423D8C4EF9084DAE347D`, und `ENCRYPTEDKEY` bleibt unveraendert. Ein read-only
+Tablespace kann nicht neu gewrappt werden und bleibt damit an den Quellschluessel gebunden.
+Canary-Bloecke: 313 identisch, 0 geaendert.
+
+Phase B - denselben Vorgang bei `READ WRITE` wiederholen. Ohne diese zweite Haelfte saehe Phase
+A wie eine fehlgeschlagene Rotation aus.
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+ALTER TABLESPACE clone_enc READ WRITE;
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
+  WITH BACKUP CONTAINER=CURRENT;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid_rw, RAWTOHEX(encryptedkey) AS encryptedkey_rw,
+       key_version
+  FROM v\$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v\$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `MASTERKEYID EFDFB56CEFC94900AD4D5A6D836EDC5F` und
+`ENCRYPTEDKEY 3BA00862D0CF075555E19B082EB622EDA9D17F5B321E6159D0E2F89CD1D9AC36`. Der Eintrag
+folgt dem neuen Master Key, der Tablespace-Schluessel wird neu gewrappt - die Daten bleiben
+unberuehrt: 313 identische, 0 geaenderte Canary-Bloecke. Eine Rotation wrappt neu, sie
+verschluesselt nie neu.
+
+Danach wieder auf `READ ONLY` setzen, damit P6 eine stabile Chiffrat-Referenz hat.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR CONTINUE
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+ALTER TABLESPACE clone_enc READ ONLY;
+EXIT
+SQL
+```
+
+Automatisch: `68_pdb_p5_mekrot.sh`. Referenz fuer den Blockvergleich ist der Zustand des Ziels
+vor der Rotation, nicht die Prod-Baseline - das Ziel kann der P4-Klon sein, der sich von Prod
+schon konstruktionsbedingt unterscheidet.
+
+### 6a.10 P6 - `ONLINE REKEY` im Ziel (Schritt 69)
+
+Das Gegenstueck zu P5: dort musste das Chiffrat identisch bleiben, hier muss es sich aendern.
+Ein neuer Tablespace-Schluessel, der die Bloecke nicht neu schreibt, waere ein Re-wrap mit neuer
+`KEY_VERSION`.
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+sqlplus -S / as sysdba <<SQL
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE_P2;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid_before, RAWTOHEX(encryptedkey) AS encryptedkey_before,
+       key_version
+  FROM v\$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v\$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+ALTER TABLESPACE clone_enc READ WRITE;
+ALTER TABLESPACE clone_enc ENCRYPTION ONLINE REKEY;
+SELECT RAWTOHEX(masterkeyid) AS masterkeyid_after, RAWTOHEX(encryptedkey) AS encryptedkey_after,
+       key_version, encryptionalg
+  FROM v\$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v\$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `KEY_VERSION` steigt von 0 auf 1, `MASTERKEYID EFDFB56CEFC94900AD4D5A6D836EDC5F`
+bleibt der aus P5, `ENCRYPTEDKEY` wechselt auf
+`9D876AE771F96273105E81BB7298FC51052A380DEF7B6DB2B4A67D2B5E026C87`. Blockvergleich gegen den
+Zustand des Ziels unmittelbar vor dem Rekey: 0 identisch, 313 geaendert. Der `ONLINE REKEY`
+erzeugt neues Schluesselmaterial und schreibt die Nutzdaten neu.
+
+`ONLINE REKEY` legt ein neues Datafile an. Ein Dateivergleich ueber Pfade findet danach keine
+gemeinsame Datei mehr; massgeblich sind `KEY_VERSION` und der Blockfingerabdruck der neuen
+Datei. Die Online-Konvertierung erhaelt die ROWIDs, die Canary-Zeilen behalten also ihre
+Blockadressen und bleiben vergleichbar.
+
+Automatisch: `69_pdb_p6_rekey.sh`.
+
+### 6a.11 Messwerte aus dem E2E-Lauf
+
+Werte aus dem durchgehenden Lauf vom 2026-09-06 (`tasks/e2e-facts.md`). Ausgangswert ist
+`PDBCLONE.CLONE_ENC` mit `MASTERKEYID A7D954A5F5B9423D8C4EF9084DAE347D` und
+`ENCRYPTEDKEY FC11003A257C8515095D64B4E961E7328964A6DE12A90D729147009A85E38760`.
+
+<!-- markdownlint-disable MD013 MD060 -->
+| Fall | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
+|---|---|---|---|---|
+| P1 lokaler Klon | `A7D954A5...347D` unveraendert | `A341ABA714216D48A156995247C13AC058D67B07E62CA9812642E6C7382FA239` | 0 identisch / 313 geaendert | neues Material - bei gleichem MEK kein Re-wrap moeglich |
+| P2 Archiv-Transport in fremde CDB | `A7D954A5...347D` unveraendert | `FC11003A...8760` unveraendert | 313 identisch / 0 geaendert | Schluessel und Chiffrat erhalten |
+| P3 Unplug ohne Key-Export | - | - | - | ORA-46680, Oracle verweigert das Unplug, kein Archiv entsteht |
+| P4 Remote-Klon via DB-Link | `A7D954A5...347D` unveraendert | `F19A97984D1DA8EBFEEE076E9C11D365B6AFE027EA3C8172630A4368BC4FE608` | 0 identisch / 313 geaendert | neues Material |
+| P5 MEK-Rotation, Tablespace READ ONLY | zeigt weiter auf `A7D954A5...347D` | unveraendert | 313 identisch / 0 geaendert | read only bleibt an den Quellschluessel gebunden |
+| P5 MEK-Rotation, Tablespace READ WRITE | `EFDFB56CEFC94900AD4D5A6D836EDC5F` | `3BA00862D0CF075555E19B082EB622EDA9D17F5B321E6159D0E2F89CD1D9AC36` | 313 identisch / 0 geaendert | Re-wrap, Chiffrat unveraendert |
+| P6 `ONLINE REKEY` in der PDB | `EFDFB56C...DC5F` | `9D876AE771F96273105E81BB7298FC51052A380DEF7B6DB2B4A67D2B5E026C87` | 0 identisch / 313 geaendert | neues Material, `KEY_VERSION` 0 -> 1 |
+| P7 Herkunft des transportierten Schluessels | - | - | - | `ORIGIN = LOCAL` im Ziel, obwohl per `EXPORT`/`IMPORT KEYS` aus Prod transportiert |
+| P8 `KEY_VERSION` nach Plug-in | - | - | - | unveraendert 0; der dokumentierte Reset auf 0 wurde nicht beobachtet |
+<!-- markdownlint-restore -->
+
+Aussage: der Transportweg entscheidet. Das PDB-Archiv erhaelt Schluessel und Chiffrat bitgenau,
+auch in eine fremde CDB. Der Klon - lokal wie remote - erzeugt neues Schluesselmaterial und
+verschluesselt neu, obwohl der Master Key derselbe bleibt. Eine MEK-Rotation wrappt nur neu und
+laesst die Daten unberuehrt, und sie greift bei einem read-only Tablespace gar nicht durch. Der
+einzige PDB-Weg, der das Chiffrat wirklich austauscht, ist `ONLINE REKEY`.
+
 ## Phase 7 - Entzugstests
 
 ### 7.1 Dev-eigenes Wallet zurueckspielen und neu starten
@@ -1871,6 +2765,10 @@ gilt das Protokoll als abgenommen.
 Automatisch: die Phasen 1 bis 7 ueber `tde_evidence.sh` und `tde_clone.sh`.
 
 ## Sollwerte zum Abgleich
+
+> Die Hex-Werte in diesem Abschnitt stammen aus dem Erstlauf. Sie belegen, was gemessen wurde,
+> und sind kein Zielwert - Schluessel-IDs sind pro Lauf neu. Pruefbar sind die Relationen, die
+> Canary-Blockzahlen und die Fehlercodes, siehe "Wie die Sollwerte zu lesen sind" am Anfang.
 
 ### Baseline odbencprod
 
