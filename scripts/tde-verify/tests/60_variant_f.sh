@@ -167,6 +167,61 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
         lib_info "Gate OK: V\$ENCRYPTED_TABLESPACES = 0 rows, all tablespaces decrypted"
     fi
 
+    # Phase 2b: replace the PDB undo tablespace.
+    # Measured: the OFFLINE DECRYPT leaves the *data* readable, but the undo
+    # segments still hold records written while USERS was encrypted, wrapped
+    # under the source master key. Once phase 3 removes that keystore and
+    # phase 4 discards the lost key handles, those undo blocks can no longer be
+    # decrypted and the next tablespace operation dies with ORA-28304,
+    # "Oracle encrypted block is corrupt" - on the undo datafile, not on USERS.
+    #
+    # This is the precondition the hidden parameter carries in its MOS note:
+    # it may be used once nothing encrypted is left. Encrypted undo is exactly
+    # the residue that quietly violates it, and whether it bites depends on
+    # which undo blocks happen to be reused - which is why an earlier run of
+    # this step passed. A fresh undo tablespace removes the residue instead of
+    # relying on that.
+    step_header "Phase 2b: swap the PDB undo tablespace to drop encrypted undo"
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        sqlplus_dev "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER=${PROD_PDB};
+CREATE UNDO TABLESPACE UNDOTBS_CLEAN DATAFILE SIZE 100M AUTOEXTEND ON;
+ALTER SYSTEM SET undo_tablespace='UNDOTBS_CLEAN' SCOPE=BOTH;
+EXIT
+"
+        # The old undo cannot be dropped while segments are still active, so
+        # give it a few attempts rather than a single hopeful try.
+        local dropped="no" attempt
+        for attempt in 1 2 3 4 5 6; do
+            if sqlplus_dev "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER=${PROD_PDB};
+DROP TABLESPACE UNDOTBS1 INCLUDING CONTENTS AND DATAFILES;
+EXIT
+" >/dev/null 2>&1; then
+                dropped="yes"
+                lib_info "old undo tablespace dropped on attempt ${attempt}"
+                break
+            fi
+            lib_info "undo segments still active, retrying (${attempt}/6)"
+            sleep 10
+        done
+        if [[ "${dropped}" != "yes" ]]; then
+            lib_err "UNDOTBS1 could not be dropped - encrypted undo would survive the discard"
+            lib_err "and the next tablespace operation would fail with ORA-28304"
+            exit 1
+        fi
+        sqlplus_dev "
+SET HEADING ON FEEDBACK ON PAGESIZE 100 LINESIZE 200
+ALTER SESSION SET CONTAINER=${PROD_PDB};
+SELECT tablespace_name, status, contents FROM dba_tablespaces WHERE contents='UNDO';
+EXIT
+"
+    else
+        lib_info "DRY-RUN: would swap the PDB undo tablespace to UNDOTBS_CLEAN"
+    fi
+
     # Phase 3: Remove prod keystore, create a fresh dev keystore
     step_header "Phase 3: Remove prod keystore, create fresh dev keystore"
     lib_run in_dev "
