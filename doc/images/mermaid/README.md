@@ -12,6 +12,6 @@ the source of truth is the Mermaid block in the markdown file listed below.
 | `tde-key-architecture.md` | 4 | Read-only-Tablespaces | `tde-key-architecture-04.png` |
 | `tde-key-architecture.md` | 5 | UNITED gegen ISOLATED | `tde-key-architecture-05.png` |
 | `tde-key-architecture.md` | 6 | Keystore-Portabilitaet | `tde-key-architecture-06.png` |
-| `tde-key-architecture.md` | 7 | Die Varianten im Vergleich | `tde-key-architecture-07.png` |
+| `tde-key-architecture.md` | 7 | Der Kontrast D gegen F belegt die dritte Ebene | `tde-key-architecture-07.png` |
 | `tde-key-architecture.md` | 8 | Stufenmodell der kryptografischen Unabhaengigkeit | `tde-key-architecture-08.png` |
 | `tde-okv-argumentation.md` | 1 | Die Angriffskette | `tde-okv-argumentation-01.png` |
