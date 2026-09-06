@@ -137,14 +137,52 @@ ls -la ${WALLET_DIR_CONTAINER}/tde/
         lib_info "DRY-RUN: would restore ${pristine} to ${WALLET_DIR_CONTAINER}"
     fi
 
-    # Step 2: Restart the dev instance
+    # Step 2: Restart the dev instance and record how far it gets.
+    # Without the source master key the database may not open at all - it stops
+    # at MOUNTED with ORA-28374. That is a stronger dependency result than a
+    # failing query, and it has to be captured here: with no PDB open, the
+    # canary read below can produce neither an error nor a row, which the
+    # verdict would otherwise have to call "unclear".
     step_header "Step 2: Restart ${DEV_SERVICE} (STARTUP FORCE)"
-    sqlplus_dev "
+    local startup_output db_open_mode=""
+    if [[ "${DRY_RUN}" != "TRUE" ]]; then
+        startup_output=$(sqlplus_dev "
 WHENEVER SQLERROR CONTINUE
 STARTUP FORCE;
-SELECT name, open_mode FROM v\$database;
+SELECT 'OPEN_MODE=' || open_mode AS state FROM v\$database;
 EXIT
-"
+" 2>&1 || true)
+        echo "${startup_output}"
+        db_open_mode=$(printf '%s' "${startup_output}" \
+            | sed -n 's/.*OPEN_MODE=\([A-Z ]*[A-Z]\).*/\1/p' | head -1)
+        lib_info "database open mode after restart: ${db_open_mode:-unknown}"
+    else
+        lib_info "DRY-RUN: would restart ${DEV_SERVICE} with STARTUP FORCE"
+        db_open_mode="READ WRITE"
+    fi
+
+    # The database never opened - no point asking the canary anything.
+    if [[ "${DRY_RUN}" != "TRUE" && "${db_open_mode}" != *"READ"* ]]; then
+        local msg2
+        if printf '%s' "${startup_output}" | grep -q "ORA-28374"; then
+            msg2="the database does not open at all without the source master key: it stops at ${db_open_mode:-MOUNTED} with ORA-28374. Dependency is total - not a single tablespace is unreadable, the whole database is unusable"
+        else
+            msg2="the database stopped at ${db_open_mode:-MOUNTED} but without ORA-28374 - see the output above"
+        fi
+        write_state "WITHDRAWAL_AFTER_${AFTER_VARIANT}" "DEPENDENT"
+        echo ""
+        echo "Withdrawal test result:"
+        printf '  After variant : %s\n' "${AFTER_VARIANT}"
+        printf '  Independence  : %s\n' "DEPENDENT"
+        printf '  Open mode     : %s\n' "${db_open_mode:-unknown}"
+        if printf '%s' "${startup_output}" | grep -q "ORA-28374"; then
+            print_verdict "PASS" "${msg2}"
+        else
+            print_verdict "FAIL" "${msg2}"
+        fi
+        lib_info "Done."
+        return 0
+    fi
 
     # Step 3: Attempt to read the canary (deliberate error is the result)
     step_header "Step 3: Attempt to read canary (result defines dependency)"
