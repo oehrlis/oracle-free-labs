@@ -1,9 +1,15 @@
 # TDE und Oracle Key Vault: Angriffsflaechen und Argumentation
 
 Adressiert an DBAs und Security-Architekten, die zwei spezifische Kundeneinwaende
-klaeren wollen. Faktengrundlage: Labmessungen 2026-09-03 und 2026-09-04 an Oracle AI
-Database Free 26ai, sowie Oracle-Primaerdokumentation, Standards und Sekundaerquellen.
-Quellen am Ende des Dokuments.
+klaeren wollen. Faktengrundlage: Labmessungen 2026-09-03 und 2026-09-04 sowie der
+durchgehende E2E-Lauf vom 2026-09-06 an Oracle AI Database Free 26ai, dazu
+Oracle-Primaerdokumentation, Standards und Sekundaerquellen. Quellen am Ende des Dokuments.
+
+Das Dokument trennt zwei Arten von Aussagen und benennt sie jeweils:
+
+- **Gemessen** - im Lab beobachtet, mit Fehlercode, Schluessel-ID oder Blockzahl belegt.
+- **Argumentativ** - aus Architektur, Kryptografie oder Dokumentation abgeleitet, nicht
+  im Lab nachgestellt.
 
 ## Die beiden Kundeneinwaende
 
@@ -18,9 +24,15 @@ entschluesseln. Was bringt da OKV?"
 Beide Einwaende haben einen realen Kern, ziehen aber die falschen Schluesse.
 
 Einwand 1 beschreibt das Verhalten korrekt: eine MEK-Rotation aendert nur den Wrapper,
-nicht das Chiffrat. Die Frage ist nicht, ob die Bloecke gleich bleiben - sie bleiben es.
-Die Frage ist, wo der Prod-Schluessel liegt. Beim file-basierten Modell wandert der
-Keystore mit dem Klon, und damit die vollstaendige Schluesselhistorie.
+nicht das Chiffrat. Gemessen: 313 von 313 Canary-Bloecken sind vor wie nach der Rotation
+byteidentisch, und zwar in beiden Tablespace-Zustaenden. Die Frage ist also nicht, ob die
+Bloecke gleich bleiben - sie bleiben es. Die Frage ist, wo der Prod-Schluessel liegt. Beim
+file-basierten Modell wandert der Keystore mit dem Klon, und damit die vollstaendige
+Schluesselhistorie.
+
+Einen technisch sauberen Ausweg gibt es allerdings, und er gehoert fair benannt: der
+**PDB-Klon** erzeugt neues Schluesselmaterial (siehe Abschnitt "Der PDB-Klon"). Er
+entschaerft Einwand 1 auf der technischen Seite, loest das Herkunftsproblem aber nicht.
 
 Einwand 2 beschreibt in seiner strikten Lesart ein Szenario, das nicht zutrifft: ein
 Tablespace-Key aus einer Test-Datenbank erlaubt keinen Zugriff auf Prod. Das wurde gemessen.
@@ -61,7 +73,9 @@ Datenbankzugriff - ohne den MEK nuetzen sie nichts.
 | Ciphertext-Existenzvergleich Prod gegen Non-Prod | real, geringer Aufwand | Lesezugriff auf Non-Prod-Datafiles und Prod-Backups, kein Keystore noetig | ja (byteidentische Bloecke in Variante A, D) |
 | Rueckschluss auf Datenaenderungen ueber Backup-Generationen | real, geringer Aufwand | mehrere Prod-Backups, kein Keystore noetig | ja, aus Variante A ableitbar |
 | Test-DB ohne Prod-MEK restauriert Prod-Daten | nicht moeglich | - | ja, Gegenbeweis gemessen: ORA-19870 plus ORA-28374 |
-| Test-DB liest Prod-Daten ueber TS-Key-Info | nicht moeglich | - | ja, Gegenbeweis: Entzugstest mit ORA-28374 |
+| Test-DB liest Prod-Daten ueber TS-Key-Info | nicht moeglich | - | ja, Gegenbeweis: Entzugstest, Datenbank bleibt MOUNTED mit ORA-28374 |
+| Transportierter Prod-Schluessel im Ziel als lokal erzeugt getarnt | real, kein Angriff im engeren Sinn, sondern fehlende Nachweisbarkeit | EXPORT/IMPORT KEYS oder Keystore-Kopie | ja (P7: ORIGIN = LOCAL in fremder CDB, gleiche Erzeugungszeit wie in der Quelle) |
+| Verschluesselte PDB ohne Schluessel wegtragen | nicht moeglich | - | ja, Gegenbeweis: Unplug ohne Key-Export scheitert mit ORA-46680, es entsteht kein Archiv |
 | Known-Plaintext gegen AES-256-XTS | theoretisch, praktisch nicht ausnutzbar | 2^32 Klartextbloecke und 2^96 Operationen; fuer 128-Bit-Blockchiffren nicht praktikabel | nein |
 | Brute Force gegen AES-256 | hypothetisch | 2^256 Schluesselraum; NIST empfiehlt AES-256 bis mindestens 2031 | nein |
 
@@ -85,6 +99,27 @@ ORA-28374: typed master key not found in wallet
 Der Restore bricht ab, bevor ueberhaupt gelesen wird. Die Test-Datenbank kennt alle
 eigenen TS-Key-Werte aus ihren V$-Views - das ist ohne Belang.
 
+Der Entzugstest des E2E-Laufs vom 2026-09-06 faellt noch schaerfer aus als bisher
+dokumentiert: wird der Quell-MEK nachtraeglich entzogen, **oeffnet die Zieldatenbank nicht
+mehr**. Sie bleibt mit `ORA-28374` auf `MOUNTED` stehen. Es ist also nicht ein einzelner
+Tablespace unlesbar, sondern die Datenbank unbrauchbar. Fuer die Argumentation heisst das:
+der Prod-Schluessel ist im Ziel nicht optional, und er laesst sich nach dem Klon nicht
+einfach wieder herausnehmen.
+
+### Gemessener Kernbefund: die Herkunft eines Schluessels ist nicht feststellbar
+
+Ein per `EXPORT KEYS` / `IMPORT KEYS` aus der Produktion in eine **fremde** CDB
+transportierter Schluessel meldet dort `ORIGIN = LOCAL`, mit derselben Erzeugungszeit wie
+in der Quelle. Die Ziel-CDB hat eine eigene DBID und einen eigenen Keystore aus ihrem
+eigenen Setup - und trotzdem unterscheidet nichts in `V$ENCRYPTION_KEYS` den transportierten
+Produktionsschluessel von einem vor Ort erzeugten.
+
+Damit ist die Frage "woher stammt dieser Schluessel" mit einem Software-Keystore aus der
+Datenbank heraus nicht beantwortbar. Das ist der Kern des OKV-Arguments, und es steht jetzt
+auf einer Messung statt auf einer Ableitung. Wer Herkunft nachweisen muss - fuer ein Audit,
+eine Zonentrennung oder eine Compliance-Aussage - braucht dafuer eine Instanz ausserhalb der
+Datenbank.
+
 ## Der reale Befund: der Keystore wandert mit
 
 Die gaengige Klon-Praxis (Variante A) kopiert den Prod-Keystore in die Non-Prod, inklusive
@@ -94,21 +129,52 @@ sieht alle Prod-MEKs - aber mit `ORIGIN = LOCAL`, nicht `ORIGIN = IMPORTED`.
 Gemessener Befund:
 
 - Transportierte Prod-Schluessel zeigen in `V$ENCRYPTION_KEYS` den Wert `LOCAL`, nicht
-  `IMPORTED`. Die Herkunft des Schluessels ist an den Views nicht erkennbar.
+  `IMPORTED` - und dieselbe Erzeugungszeit wie in der Quelle. Die Herkunft des Schluessels
+  ist an den Views nicht erkennbar, auch nicht in einer CDB mit eigener DBID und eigenem
+  Keystore.
 - `ORIGIN` taugt deshalb nicht als Nachweis lokaler Schluesselerzeugung.
 - Eine MEK-Rotation raeumt die Schluesselhistorie nicht ab. Alle alten MEKs bleiben im
   Keystore, damit aeltere Backups weiterhin entschluesselbar bleiben.
   Quelle: Oracle Advanced Security 19c, Introduction to TDE.
-- Read-only-Tablespaces werden bei einer MEK-Rotation nicht umgewickelt. Oracle kann den
-  Datafile-Header eines Read-only-Tablespace nicht schreiben.
-  Gemessener Befund: nach SET KEY verwies `CANARY_PLAIN (READ ONLY)` weiter auf den
-  alten MEK `B0A4B54D...0B74`, waehrend `USERS (READ WRITE)` bereits auf
-  `DEFA0240...6A3A` zeigte. Der alte MEK bleibt zwingend erforderlich.
+- Read-only-Tablespaces koennen bei einer MEK-Rotation gar nicht neu eingewickelt werden.
+  Oracle kann den Datafile-Header eines Read-only-Tablespace nicht schreiben.
+  Gemessener Befund (P5): nach der Rotation zeigte der READ-ONLY-Tablespace weiter auf den
+  Quellschluessel `A7D954A5...347D`, waehrend der READ-WRITE-Tablespace bereits auf
+  `EFDFB56C...DC5F` verwies. Der alte MEK bleibt zwingend erforderlich, sonst sind die Daten
+  unlesbar.
+- Kein RMAN-Weg erneuert das Schluesselmaterial. Weder `RESTORE`, noch
+  `DUPLICATE ... AS ENCRYPTED`, noch der Umweg ueber `AS DECRYPTED` mit anschliessendem
+  Neuverschluesseln. Neues Material entsteht nur ueber PDB-Klon, `ONLINE REKEY` oder den
+  Discard-Pfad.
 
 Konsequenz: wer nach einem Klon nur den aktiven MEK rotiert, entfernt keinen einzigen
 Prod-Schluessel aus dem Non-Prod-Keystore. Wer den Prod-Keystore kopiert hat und dann
 in Non-Prod eine MEK-Rotation durchfuehrt, hat danach mehr Schluessel im Keystore als
 vorher - alle Prod-MEKs aus der Historie plus den neuen Non-Prod-MEK.
+
+## Der PDB-Klon - was er loest und was nicht
+
+Der PDB-Klon ist der einzige gemessene Weg, der mit einem einzigen regulaer unterstuetzten
+Kommando zugleich kopiert und das Schluesselmaterial erneuert - lokal (P1) wie remote ueber
+DB-Link (P4), in beiden Faellen 0 von 313 Canary-Bloecken identisch zur Quelle. Die
+Beweisfuehrung kommt ohne Annahmen aus: die `MASTERKEYID` bleibt unveraendert
+(`A7D954A5...347D`), der gewrappte Schluessel unterscheidet sich - unter unveraendertem MEK
+kann das kein Re-wrap sein.
+
+**Was der Klon loest:** Einwand 1 auf der technischen Seite. Es gibt einen praktikablen Weg
+zu einer Kopie mit eigener Schluesselbasis. Wer argumentiert, eine Trennung sei ohne OKV
+technisch unmoeglich, argumentiert falsch.
+
+**Was der Klon nicht loest:** das Herkunftsproblem. Auch nach einem Klon bleibt unsichtbar,
+welche Schluessel im Keystore woher stammen - der Klon aendert nichts daran, dass `ORIGIN`
+fuer jeden Schluessel `LOCAL` meldet. Und der Klon setzt weiterhin voraus, dass der
+Quell-MEK im Ziel-Keystore verfuegbar ist: jede PDB-Operation ueber verschluesselte
+Tablespaces verlangt das Keystore-Passwort (`ORA-46697`), ein Auto-Login-Keystore genuegt
+fuer keine davon.
+
+Der Gegenpol dazu ist der Archiv-Transport (P2): Unplug und Plug-in verschieben die Dateien
+unveraendert und transportieren die Schluessel mit - gewrappter Schluessel identisch,
+313 von 313 Bloecken identisch, und das in eine CDB mit eigener DBID und eigenem Keystore.
 
 ## Was OKV daran aendert
 
@@ -192,6 +258,14 @@ Quelle: OKV Concepts Guide 21.2.
 Die enthaltenen Restricted-Use-Lizenzen gelten nur fuer den OKV-Betrieb selbst.
 Quelle: OKV Licensing Information 18.6.
 
+**Ein Teil des Problems ist auch ohne OKV loesbar:** der PDB-Klon erzeugt nachweislich neues
+Schluesselmaterial (P1 lokal, P4 remote, je 0 von 313 identischen Bloecken). Wer Test von
+Prod auf der Datenebene trennen will, braucht dafuer kein zentrales Key-Management, sondern
+ein sauberes Klon-Verfahren. Das ist ein realer Einwand gegen die Begruendung "OKV, weil
+sonst keine Trennung moeglich ist" - diese Begruendung traegt nicht. Was OKV zusaetzlich
+liefert, ist die Nachweisbarkeit der Herkunft und der Entzug des Zugriffs, nicht die
+Trennung als solche.
+
 **Betriebsaufwand und Netzwerkabhaengigkeit:** OKV kommuniziert ueber KMIP/TLS. Das
 erfordert Zertifikatsverwaltung, Netzwerksegmentierung und einen eigenen Betriebsprozess.
 Das ist aus der Architektur ableitbar; Oracle benennt es in der Dokumentation nicht
@@ -225,17 +299,30 @@ Controls explizit mandatiert.
 ### Antwort auf Einwand 1: "MEK-Rotation genuegt, danach ist Test von Prod getrennt"
 
 Die MEK-Rotation nach dem Klon aendert ausschliesslich den Wrapper des Tablespace-Keys,
-nicht den Schluessel selbst. Das ist im Lab gemessen und vom Oracle Alert-Log bestaetigt:
-`KZTDE: Set Master Key: Tablespace key rewrap done`. Die vollstaendige Prod-Schluesselhistorie
-bleibt im Non-Prod-Keystore. Eine Rotation entfernt keinen einzigen alten Schluessel - sie
-fuegt einen neuen hinzu.
+nicht den Schluessel selbst. Gemessen: 313 von 313 Canary-Bloecken sind vor wie nach der
+Rotation byteidentisch, in beiden Tablespace-Zustaenden. Das Oracle Alert-Log bestaetigt es
+im Wortlaut: `KZTDE: Set Master Key: Tablespace key rewrap done`. Die vollstaendige
+Prod-Schluesselhistorie bleibt im Non-Prod-Keystore. Eine Rotation entfernt keinen einzigen
+alten Schluessel - sie fuegt einen neuen hinzu.
 
-Read-only-Tablespaces werden bei der Rotation nicht umgewickelt und bleiben dauerhaft am
-alten Prod-MEK haengen. Wer also nach dem Klon eine MEK-Rotation durchfuehrt, hat
-anschliessend noch mehr Prod-Schluessel im Non-Prod-Keystore als vorher.
+Read-only-Tablespaces koennen gar nicht neu eingewickelt werden und zeigen nach der Rotation
+weiter auf den Schluessel der Quelle. Wer rotiert und sich getrennt glaubt, hat fuer jeden
+read-only Tablespace nichts gewonnen: der alte Produktionsschluessel muss im Keystore
+bleiben, sonst sind die Daten unlesbar. In grossen Umgebungen ist das der Normalfall -
+historische Partitionen, abgeschlossene Geschaeftsjahre, archivierte Mandanten. Wer nach dem
+Klon eine MEK-Rotation durchfuehrt, hat anschliessend mehr Prod-Schluessel im
+Non-Prod-Keystore als vorher.
 
-OKV loest das strukturell: Non-Prod bekommt einen eigenen Virtual Wallet ohne Zugriff auf
-den Prod-Wallet. Kein Kopieren, kein `ORIGIN`-Artefakt, kein manueller Bereinigungsprozess.
+Kein RMAN-Weg erneuert das Schluesselmaterial. Neues Material entsteht nur ueber PDB-Klon,
+`ONLINE REKEY` oder den Discard-Pfad. Von diesen dreien ist der **PDB-Klon** der
+praxistauglichste: ein einziges regulaer unterstuetztes Kommando, gemessen mit 0 von 313
+identischen Bloecken (P1 lokal, P4 remote). Damit ist der technische Teil des Einwands
+entkraeftet - eine Kopie mit eigener Schluesselbasis ist ohne OKV erreichbar.
+
+Was bleibt, ist die Herkunftsfrage. Auch nach einem Klon meldet jeder Schluessel im Keystore
+`ORIGIN = LOCAL`, gleich ob vor Ort erzeugt oder aus Produktion transportiert. OKV loest
+diesen Teil strukturell: Non-Prod bekommt einen eigenen Virtual Wallet ohne Zugriff auf den
+Prod-Wallet. Kein Kopieren, kein `ORIGIN`-Artefakt, kein manueller Bereinigungsprozess.
 
 ### Antwort auf Einwand 2: "TS-Key-Infos aus Test reichen fuer Prod-Entschluesselung"
 
@@ -244,6 +331,16 @@ jeweiligen Datenbank gewrappt. Ohne den Prod-MEK ist er kryptografisch wertlos. 
 zeigt: ein Restore von Prod-Daten in eine Test-DB ohne Prod-MEK scheitert mit
 `ORA-19870 / ORA-28374`, bevor ueberhaupt ein Block gelesen wird.
 
+Der Entzugstest schaerft das Ergebnis: wird der Quell-MEK nachtraeglich entfernt, oeffnet
+die Zieldatenbank nicht mehr und bleibt mit `ORA-28374` auf `MOUNTED`. Es ist nicht ein
+Tablespace unlesbar, sondern die Datenbank unbrauchbar. Zwei weitere Messungen zeigen
+dieselbe Richtung:
+
+- Ein Unplug ohne Key-Export wird von Oracle verweigert (`ORA-46680`) - es entsteht nicht
+  einmal ein Archiv. Eine verschluesselte PDB laesst sich ohne Schluessel nicht wegtragen.
+- Jede PDB-Operation ueber verschluesselte Tablespaces verlangt das Keystore-Passwort
+  (`ORA-46697`); ein Auto-Login-Keystore genuegt fuer keine davon.
+
 Der reale Angriffspunkt liegt anders: in der gaengigen Klon-Praxis (Variante A) wird der
 Prod-Keystore in die Non-Prod kopiert, inklusive aller MEKs. Danach liegt der Prod-MEK in
 der Non-Prod, und zwar als `ORIGIN LOCAL` - unsichtbar als Prod-Schluessel. Wer in der
@@ -251,7 +348,10 @@ Non-Prod-Umgebung den Keystore plus Passphrase kennt, kann damit Prod-Backups
 entschluesseln.
 
 Der Einwand adressiert also die falsche Angriffsflaeche. Die richtige ist der Keystore-
-Transport, nicht der TS-Key-Wert.
+Transport, nicht der TS-Key-Wert. Und der Transport ist aus der Datenbank heraus nicht
+nachweisbar: ein per `EXPORT`/`IMPORT KEYS` in eine fremde CDB transportierter
+Produktionsschluessel meldet dort `ORIGIN = LOCAL` mit der Erzeugungszeit der Quelle. Genau
+dieser fehlende Herkunftsnachweis ist das Argument fuer ein zentrales Key-Management.
 
 ## Quellen
 
