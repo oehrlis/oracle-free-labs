@@ -284,6 +284,14 @@ damit ein Blockvergleich ueber Testlaeufe hinweg stabil bleibt). Kontrollgruppe
 
 ## Messungen
 
+> **Zwei Laeufe, zwei Wertesaetze.** Die Abschnitte "Variantenvergleich", "Messmatrix" und
+> "Bewertung und Empfehlung" zitieren den durchgehenden Lauf vom 2026-09-06
+> (`artefacts/tde-e2e-run-20260906.log`, Protokoll in `doc/tde-e2e-protokoll.md`). Die
+> folgenden Detailmessungen stammen aus dem Erstlauf und tragen dessen Schluessel-IDs. Beide
+> sind gueltige Messungen, aber ihre Hex-Werte gehoeren zu verschiedenen Laeufen und duerfen
+> nicht miteinander verglichen werden - Schluessel-IDs sind pro Lauf neu. Vergleichbar sind
+> die Relationen innerhalb eines Laufs, die Canary-Blockzahlen und die Fehlercodes.
+
 ### Phase 0 - Prod-Baseline auf odbencprod
 
 Messsatz `data/xchange/evidence/baseline/`, gemessen 2026-09-03.
