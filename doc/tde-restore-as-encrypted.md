@@ -55,34 +55,47 @@ Die Varianten unterscheiden sich in nur zwei Punkten: dem Zustand des Ziel-Keyst
 Ergebnis nicht aus dem Verfahren stammen kann.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Variante | Datenbloecke gegen Prod | TEK | Prod-MEK beim Klon noetig | Keystore beim Restore offen noetig | Ergebnis | Eignung fuer kryptografische Trennung |
-|---|---|---|---|---|---|---|
-| A - normaler `RESTORE` | 313 von 313 Canary-Bloecken byteidentisch; gesamt 1269 von 2561 identisch | unveraendert, Prod-TEK unter Prod-MEK | ja, ueber das transportierte Prod-Wallet | nein - ein normaler RESTORE kopiert Chiffrat | erfolgreich | keine |
-| B1 - `AS ENCRYPTED USING KEY` mit Prod-MEK | nicht messbar, Abbruch vor dem verschluesselten Datafile | nicht messbar | ja, sonst kein Lesen der Quellbloecke | ja, sonst ORA-28365 | ORA-00600 `[kcbtse_encdec_tbsblk_1]`, dreimal reproduziert | nicht nutzbar |
-| B2 - `AS ENCRYPTED USING KEY` ohne Prod-MEK | nicht messbar, Abbruch beim ersten Backup-Piece | nicht messbar | ja - genau dieser fehlende Schluessel ist die Abbruchursache | ja | ORA-19870 plus ORA-28374 | nicht nutzbar |
-| C - `DUPLICATE ... AS ENCRYPTED` | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | offen |
-| D - `AS DECRYPTED` plus `SET KEY` plus `OFFLINE ENCRYPT` | Bloecke 2 bis 1407 einschliesslich aller 313 Canary-Bloecke byteidentisch; gesamt 1406 von 2561 identisch | Material unveraendert, neu gewrappt unter Dev-MEK | ja, fuer den `AS DECRYPTED`-Lauf | ja | erfolgreich | keine fuer die Datenbloecke; die MEK-Abhaengigkeit ist loesbar |
-| Positivkontrolle - neuer verschluesselter Tablespace | 367 von 501 Bloecken im Canary-Bereich abweichend, 134 identisch | neues Material | entfaellt | entfaellt | erfolgreich | ja - so sieht ein echter TEK-Wechsel aus |
+| Weg | Canary-Datenbloecke gegen die Quelle | Tablespace-Schluessel | Prod-MEK beim Klon noetig | Ergebnis | Eignung fuer kryptografische Trennung |
+|---|---|---|---|---|---|
+| A - normaler `RESTORE` | 313 von 313 identisch | unveraendert, Prod-TEK unter Prod-MEK | ja, ueber das transportierte Prod-Wallet | erfolgreich | keine |
+| B1 - `AS ENCRYPTED USING KEY` mit Prod-MEK | nicht messbar, Abbruch vor dem verschluesselten Datafile | nicht messbar | ja, sonst kein Lesen der Quellbloecke | `ORA-00600` `[kcbtse_encdec_tbsblk_1]` | nicht nutzbar |
+| B2 - `AS ENCRYPTED USING KEY` ohne Prod-MEK | nicht messbar, Abbruch beim ersten Backup-Piece | nicht messbar | ja - genau dieser fehlende Schluessel ist die Abbruchursache | `ORA-19870` plus `ORA-28374` | nicht nutzbar |
+| C - `DUPLICATE ... AS ENCRYPTED` | 313 von 313 identisch | unveraendert | ja | erfolgreich | keine |
+| D - `AS DECRYPTED` plus `SET KEY` plus `OFFLINE ENCRYPT` | 313 von 313 identisch | Material unveraendert, neu gewrappt unter Dev-MEK | ja, fuer den `AS DECRYPTED`-Lauf | erfolgreich | keine fuer die Datenbloecke |
+| F - Discard-Pfad mit erneuertem Database Key | 0 von 313 identisch | **neu** | ja, fuer den Restore | erfolgreich, aber Hidden Parameter | ja, mit erheblichen Auflagen |
+| G - `ALTER TABLESPACE ... ENCRYPTION ONLINE REKEY` | 0 von 313 identisch | **neu**, `KEY_VERSION 1 -> 2` | ja, fuer den Restore davor | erfolgreich | ja |
+| P1 - PDB-Klon in derselben CDB | 0 von 313 identisch | **neu**, bei unveraendertem MEK | entfaellt | erfolgreich | ja |
+| P2 - PDB-Archiv in eine fremde CDB | 313 von 313 identisch | unveraendert, gewrappter Wert identisch | ja, per `EXPORT`/`IMPORT KEYS` | erfolgreich | keine |
+| P3 - PDB-Unplug ohne Key-Export | entfaellt | entfaellt | entfaellt | `ORA-46680`, kein Archiv entsteht | entfaellt |
+| P4 - PDB-Remote-Klon ueber DB-Link | 0 von 313 identisch | **neu**, bei unveraendertem MEK | ja, im Ziel-Keystore | erfolgreich | ja |
+| Positivkontrolle - zwei Tablespaces gleichen Inhalts unter verschiedenen Schluesseln | 0 von 313 identisch | verschieden | entfaellt | erfolgreich | belegt die Sensitivitaet der Messmethode |
 <!-- markdownlint-restore -->
 
-In Worten: Variante A ist der Ist-Zustand beim Kunden und liefert eine Kopie, die
-kryptografisch vollstaendig an Prod haengt - identisches Chiffrat, identischer gewrappter TEK,
-identische `MASTERKEYID`. Variante B2 zeigt, dass es keinen RMAN-Weg gibt, der ohne den
-Prod-Schluessel auskommt: RMAN muss die Quellbloecke lesen, dazu braucht es den Quell-MEK.
-Variante B1 erfuellt genau den dokumentierten Anwendungsfall - unverschluesselte Quelldateien
-werden beim Restore verschluesselt, messbar an der Laufzeit von 5:45 gegenueber 3 Sekunden, je Einzellauf -
-scheitert aber beim ersten bereits verschluesselten Datafile mit einem internen Fehler.
-Variante C wurde nicht gemessen und bleibt offen.
+In Worten: **kein RMAN-Weg erneuert den Tablespace-Schluessel.** Variante A ist der
+Ist-Zustand beim Kunden und liefert eine Kopie, die kryptografisch vollstaendig an Prod
+haengt. Variante C verhaelt sich identisch - `DUPLICATE ... AS ENCRYPTED` erhaelt den
+Schluessel einer bereits verschluesselten Quelle. Variante B2 zeigt, dass es keinen RMAN-Weg
+ohne den Prod-Schluessel gibt: RMAN muss die Quellbloecke lesen. Variante B1 erfuellt genau
+den dokumentierten Anwendungsfall - unverschluesselte Quelldateien werden beim Restore
+verschluesselt - scheitert aber beim ersten bereits verschluesselten Datafile mit einem
+internen Fehler.
 
-Variante D ist der einzige Weg, der im Lab bis zum Ende durchlief und im Ziel eine neue
-Schluesselverpackung hinterliess. Sie loest die Keystore-Abhaengigkeit, nicht aber die
-Datenabhaengigkeit: die Canary-Datenbloecke sind nach dem Zyklus wieder Byte fuer Byte
-dieselben wie in Prod. Erst die Positivkontrolle - ein neu angelegter verschluesselter
-Tablespace - erzeugt Chiffrat, das sich vom Original unterscheidet.
+Variante D loest die Keystore-Abhaengigkeit, nicht die Datenabhaengigkeit: `MASTERKEYID` und
+gewrappter TEK sind danach dev-eigen, die Canary-Datenbloecke aber Byte fuer Byte dieselben
+wie in der Quelle.
 
-> Benennung: `D` bezeichnet in diesem Protokoll den Entschluesselungspfad. Die Referenzmessung
-> mit garantiert neuem TEK ist als Positivkontrolle gefuehrt, weil sie kein Klonverfahren ist,
-> sondern die Sensitivitaet des Messverfahrens belegt.
+**Neues Schluesselmaterial entsteht auf drei belegten Wegen:** dem PDB-Klon (P1 lokal, P4
+remote ueber DB-Link), dem `ONLINE REKEY` und dem Discard-Pfad. Der PDB-Klon ist davon der
+praktisch wichtigste: ein einziges regulaer unterstuetztes Kommando, kein Hidden Parameter,
+und er erledigt Kopie und Schluesselwechsel in einem Schritt.
+
+Der **Archiv-Transport** einer PDB ist der Gegenpol zum Klon: er verschiebt die Dateien
+unveraendert und transportiert die Schluessel mit. Wer eine Kopie mit eigener Schluesselbasis
+will, darf diesen Weg nicht waehlen.
+
+> Benennung: `D` bezeichnet in diesem Protokoll den Entschluesselungspfad, `F` den
+> Discard-Pfad, `G` den Online-Rekey. `P1` bis `P8` sind die PDB-Faelle. Die Positivkontrolle
+> ist kein Klonverfahren, sondern belegt die Sensitivitaet des Messverfahrens.
 
 ## Zwei-Ebenen-Schluesselarchitektur
 
@@ -127,11 +140,16 @@ Oracle-Dokumenten.
   Oracle-Doku nicht belegt. Das ist die Luecke, die dieser Test schliesst.
 - Kein V$-View zeigt TEK-Material oder eine TEK-ID. `ENCRYPTEDKEY` und `KEY_VERSION` aendern
   sich sowohl bei einem neuen TEK als auch bei einem reinen Re-wrap - sie sind kein
-  Unterscheidungsmerkmal allein. `KEY_VERSION` resettet zudem auf 0 nach einem Plug-in in
-  eine fremde DB oder nach einer Control-File-Recreation.
+  Unterscheidungsmerkmal allein. Laut Doku resettet `KEY_VERSION` zudem auf 0 nach einem
+  Plug-in in eine fremde DB oder nach einer Control-File-Recreation; **im Lab wurde das nicht
+  beobachtet**: der Wert war vor und nach dem Plug-in in die fremde CDB 0. Da der
+  Ausgangswert bereits 0 war, ist der Reset weder belegt noch widerlegt.
 - `ALTER TABLESPACE ... ENCRYPTION USING 'AES256' ONLINE REKEY` ist das einzige dokumentierte
-  Verfahren fuer neues Tablespace-Key-Material; fuer Spalten zusaetzlich
-  `ALTER TABLE ... REKEY`. Verfuegbar seit 12.2.0.1. OFFLINE-Operationen sind laut Doku nicht
+  Verfahren, das einem **bestehenden** Tablespace an Ort und Stelle neues Schluesselmaterial
+  gibt; fuer Spalten zusaetzlich `ALTER TABLE ... REKEY`. Verfuegbar seit 12.2.0.1.
+  Fuer den Weg ueber eine **Kopie** gilt das nicht: gemessen erzeugt auch der PDB-Klon neues
+  Schluesselmaterial, lokal wie remote ueber DB-Link, mit einem einzigen Kommando. Das ist
+  fuer den Anwendungsfall "Produktion nach Dev" die praktisch wichtigere Variante. OFFLINE-Operationen sind laut Doku nicht
   fuer Rekeying vorgesehen. Quelle: Oracle Database Advanced Security Guide 19c, Configuring
   Transparent Data Encryption.
 - `ALTER TABLESPACE ... ENCRYPTION ONLINE REKEY` ist in Oracle Database Free nicht unterstuetzt.
@@ -570,45 +588,98 @@ Variante A und beim Entschluesselungspfad ist keine Blindheit des Messverfahrens
 
 ## Messmatrix
 
+Alle Werte aus dem durchgehenden Lauf vom 2026-09-06, Protokoll in
+`doc/tde-e2e-protokoll.md`, Rohlog in `artefacts/tde-e2e-run-20260906.log`.
+
 <!-- markdownlint-disable MD013 MD060 -->
-| Variante | Ciphertext-Diff (geaendert / verglichen) | Canary-Datenbloecke identisch | Gewrappter TEK im Header geaendert | `MASTERKEYID` | `KEY_VERSION` | `ORIGIN` | Prod-MEK beim Klon noetig | Entzugstest | Bewertung |
-|---|---|---|---|---|---|---|---|---|---|
-| A - normaler RESTORE | 1292 / 2561 | 313 von 313 | nein | 8A2758...F962, wie Prod | 1, wie Prod | LOCAL (auch fuer den transportierten Prod-Schluessel) | ja | schlaegt fehl: ORA-28374 | Re-wrap-frei, kein neuer TEK, vollstaendig von Prod abhaengig |
-| B1 - AS ENCRYPTED mit Prod-MEK | nicht messbar | nicht messbar | nicht messbar | nicht messbar | nicht messbar | nicht messbar | ja | nicht erreicht | Abbruch mit ORA-00600 `[kcbtse_encdec_tbsblk_1]` |
-| B2 - AS ENCRYPTED ohne Prod-MEK | nicht messbar | nicht messbar | nicht messbar | nicht messbar | nicht messbar | nicht messbar | ja | nicht erreicht | Abbruch mit ORA-19870 plus ORA-28374 |
-| C - DUPLICATE AS ENCRYPTED | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | nicht gemessen | offen |
-| D - AS DECRYPTED plus SET KEY plus offline ENCRYPT | 1155 / 2561 | 313 von 313 | ja - 8FBDA2A8...3E41 statt BAD537AD...FA55 | 8252C3B0...BCA7, dev-eigen | 3, im Wiederholungslauf 5 | nicht gemessen | ja, fuer den AS DECRYPTED-Lauf | nicht gemessen | neue Schluesselverpackung, identisches Datenchiffrat |
-| Positivkontrolle - neuer Tablespace | 367 / 501 im Canary-Bereich | 134 von 501 Bloecken im Bereich | ja - unterschiedliche TEKs unter demselben MEK | 8A2758...F962 fuer beide | nicht gemessen | nicht gemessen | entfaellt | entfaellt | echtes neues TEK-Material |
+| Weg | Canary-Bloecke identisch | Gewrappter TEK geaendert | `MASTERKEYID` danach | Prod-MEK noetig | Bewertung |
+|---|---|---|---|---|---|
+| A - normaler RESTORE | 313 von 313 | nein | `EC574AF1...297A`, wie Quelle | ja | kein neuer Schluessel, vollstaendig von der Quelle abhaengig |
+| B1 - AS ENCRYPTED mit Prod-MEK | nicht messbar | nicht messbar | nicht messbar | ja | Abbruch mit `ORA-00600` `[kcbtse_encdec_tbsblk_1]` |
+| B2 - AS ENCRYPTED ohne Prod-MEK | nicht messbar | nicht messbar | nicht messbar | ja | Abbruch mit `ORA-19870` plus `ORA-28374` |
+| C - DUPLICATE AS ENCRYPTED | 313 von 313 | nein | `EC574AF1...297A`, wie Quelle | ja | kein neuer Schluessel |
+| D - AS DECRYPTED plus SET KEY plus OFFLINE ENCRYPT | 313 von 313 | ja, `74D071CF...C926` statt `059EFEB1...30F3` | `DC68C44C...ADC4`, dev-eigen | ja | neue Verpackung, identisches Datenchiffrat |
+| F - Discard-Pfad, Database Key erneuert | 0 von 313 | ja, `A0BB56AF...E2AC` | `C7A38A0C...74A3` | ja, fuer den Restore | neues Schluesselmaterial |
+| G - ONLINE REKEY | 0 von 313 | ja | dev-eigen | ja, fuer den Restore | neues Schluesselmaterial, `KEY_VERSION 1 -> 2` |
+| P1 - PDB-Klon lokal | 0 von 313 | ja, `A341ABA7...A239` statt `FC11003A...8760` | `A7D954A5...347D` **unveraendert** | entfaellt | neues Material - bei gleichem MEK kein Re-wrap moeglich |
+| P2 - PDB-Archiv in fremde CDB | 313 von 313 | nein, `FC11003A...8760` unveraendert | `A7D954A5...347D` unveraendert | ja | Schluessel und Chiffrat erhalten |
+| P4 - PDB-Remote-Klon | 0 von 313 | ja, `F19A9798...E608` | `A7D954A5...347D` **unveraendert** | ja, im Ziel | neues Material |
+| P5 - MEK-Rotation, Tablespace READ ONLY | 313 von 313 | nein | Tablespace zeigt weiter auf `A7D954A5...347D` | entfaellt | read-only bleibt an den Quellschluessel gebunden |
+| P5 - MEK-Rotation, Tablespace READ WRITE | 313 von 313 | ja, `3BA00862...AC36` | `EFDFB56C...DC5F` | entfaellt | Re-wrap, Chiffrat unveraendert |
+| P6 - ONLINE REKEY in der PDB | 0 von 313 | ja, `9D876AE7...6C87` | `EFDFB56C...DC5F` | entfaellt | neues Material, `KEY_VERSION 0 -> 1` |
+| Positivkontrolle | 0 von 313 | ja, zwei verschiedene TEKs unter demselben MEK | identisch fuer beide | entfaellt | die Methode erkennt einen Schluesselwechsel |
 <!-- markdownlint-restore -->
+
+Der Entzugstest steht bewusst ausserhalb der Matrix, weil sein Ergebnis kein Blockvergleich
+ist: nach dem Entfernen des Quell-MEK **oeffnet die Zieldatenbank nicht mehr**. Sie bleibt
+mit `ORA-28374` auf `MOUNTED` stehen. Es ist also nicht ein Tablespace unlesbar, sondern die
+Datenbank unbrauchbar.
 
 ## Bewertung und Empfehlung fuer den Kunden
 
-- **Jeder RMAN-basierte Weg erhaelt den Tablespace-Encryption-Key.** Auch der Umweg ueber
-  `AS DECRYPTED` und anschliessendes Neuverschluesseln erzeugt kein neues Schluesselmaterial:
-  die Canary-Datenbloecke sind nach dem vollstaendigen Zyklus wieder byteidentisch zur Quelle,
-  und der gewrappte TEK bleibt ueber einen zweiten Zyklus hinweg unveraendert.
-- **Der MEK laesst sich im Ziel auf einen eigenen drehen.** Damit ist die
-  Keystore-Abhaengigkeit loesbar - `MASTERKEYID` und gewrappter TEK im Header sind danach
-  dev-eigen, die Prod-Werte physisch nicht mehr im Datafile. Das Chiffrat der Daten bleibt aber
-  identisch zur Quelle. Wer die Datenabhaengigkeit als Risiko fuehrt, hat sie damit nicht
-  behoben.
-- **Neues TEK-Material entsteht nachweislich beim Anlegen eines neuen verschluesselten
-  Tablespace.** Das ist der einzige im Lab belegte Weg zu echtem neuem Schluesselmaterial.
-  `ONLINE REKEY` verspricht laut Doku "independent encryption keys", ist in Oracle Database
-  Free aber nicht unterstuetzt und wurde daher nicht gemessen.
-- **Ein kopierter Keystore behaelt alle historischen Quell-Schluessel.** Das ist kein
-  Nebeneffekt, sondern Voraussetzung: laut Doku muessen alle historischen Master Keys im
-  transportierten Wallet enthalten sein, weil sie zum Wiederherstellen aelterer Backups
-  gebraucht werden. Wer im Ziel wirklich nur eigene Schluessel haben will, braucht einen
-  frischen Keystore mit selektivem Import. `ORIGIN` hilft dabei nicht als Kontrolle: der
-  transportierte Prod-Schluessel zeigt im Ziel LOCAL.
-- **Ein REKEY nach dem Klon ist der dokumentierte Schritt**, damit Prod- und Non-Prod-MEK
-  auseinanderlaufen. Er loest die MEK-Abhaengigkeit, nicht die Datenabhaengigkeit - das belegt
-  Variante D.
-- **Der Prod-Schluessel muss fuer jeden RMAN-Klon einer verschluesselten Quelle
+- **Kein RMAN-Weg erneuert den Tablespace-Schluessel.** Weder `RESTORE`, noch
+  `DUPLICATE ... AS ENCRYPTED`, noch der Umweg ueber `AS DECRYPTED` mit anschliessendem
+  Neuverschluesseln: die Canary-Datenbloecke sind nach jedem dieser Wege byteidentisch zur
+  Quelle. `RESTORE ... AS ENCRYPTED USING KEY` bricht bei einer bereits verschluesselten
+  Quelle ab und ist damit keine Option.
+- **Der MEK laesst sich im Ziel drehen, die Daten bleiben davon unberuehrt.** Nach der
+  Rotation sind `MASTERKEYID` und gewrappter TEK dev-eigen, das Chiffrat der Daten ist
+  unveraendert. Wer die Datenabhaengigkeit als Risiko fuehrt, hat sie damit nicht behoben -
+  das ist der Kern der Antwort auf die Ausgangsfrage.
+- **Neues Schluesselmaterial entsteht auf drei gemessenen Wegen**, in dieser Reihenfolge der
+  Praxistauglichkeit:
+  1. **PDB-Klon**, lokal oder remote ueber DB-Link. Ein einziges regulaer unterstuetztes
+     Kommando, das Kopie und Schluesselwechsel zugleich erledigt. Beweisfuehrung ohne
+     Annahmen: die `MASTERKEYID` ist in Quelle und Klon identisch, der gewrappte Schluessel
+     unterscheidet sich - unter unveraendertem MEK kann das kein Re-wrap sein.
+  2. **`ONLINE REKEY`** nach dem Restore. Erzeugt neues Material und schreibt alle Bloecke
+     neu. Technisch im Lab durchgelaufen; die Verfuegbarkeit in der eingesetzten Edition ist
+     eine Lizenz- und Supportfrage, keine technische.
+  3. **Discard-Pfad** mit `_db_discard_lost_masterkey`. Funktioniert, verlangt aber einen
+     Hidden Parameter und die Freigabe durch Oracle Support - und eine Vorbedingung, die
+     leicht uebersehen wird, siehe unten.
+- **Der Archiv-Transport einer PDB ist der Gegenpol zum Klon.** Unplug und Plug-in
+  verschieben die Dateien unveraendert und transportieren die Schluessel mit: gewrappter
+  Schluessel identisch, Chiffrat 313 von 313 Bloecken identisch, und das in eine CDB mit
+  eigener DBID und eigenem Keystore. Fuer eine Kopie mit eigener Schluesselbasis ist dieser
+  Weg ungeeignet.
+- **Ohne Schluessel geht gar nichts.** Ein Unplug ohne Key-Export wird von Oracle verweigert
+  (`ORA-46680`), es entsteht nicht einmal ein Archiv. Und jede PDB-Operation ueber
+  verschluesselte Tablespaces verlangt das Keystore-Passwort (`ORA-46697`) - ein
+  Auto-Login-Keystore genuegt fuer keine davon.
+- **Read-only Tablespaces ueberstehen die MEK-Rotation unveraendert.** Sie koennen nicht neu
+  eingewickelt werden und zeigen danach weiter auf den Schluessel der Quelle. Wer nach Dev
+  kopiert und dort den MEK dreht, hat fuer jeden read-only Tablespace nichts gewonnen: der
+  alte Produktionsschluessel muss im Keystore bleiben, sonst sind die Daten unlesbar. In
+  grossen Umgebungen ist das der Normalfall - historische Partitionen, abgeschlossene
+  Geschaeftsjahre, archivierte Mandanten.
+- **Die Herkunft eines Schluessels ist aus der Datenbank nicht feststellbar.** Ein per
+  `EXPORT`/`IMPORT KEYS` aus Produktion transportierter Schluessel meldet im Ziel
+  `ORIGIN = LOCAL`, mit derselben Erzeugungszeit wie in der Quelle. Nichts in
+  `V$ENCRYPTION_KEYS` unterscheidet ihn von einem vor Ort erzeugten. Das ist das zentrale
+  Argument fuer ein zentrales Key-Management: die Frage "woher stammt dieser Schluessel"
+  laesst sich mit einem Software-Keystore nicht beantworten.
+- **Der Quell-Schluessel muss fuer jeden RMAN-Klon einer verschluesselten Quelle
   voruebergehend ins Ziel.** Variante B2 belegt das durch den Abbruch. Die relevante Frage ist
   damit nicht, ob der Prod-Schluessel ins Ziel gelangt, sondern ob er danach wieder entfernt
-  werden kann - und was dann noch lesbar ist.
+  werden kann - und was dann noch lesbar ist. Der Entzugstest beantwortet das eindeutig: nach
+  dem Entfernen oeffnet die Datenbank nicht mehr.
+
+### Vorbedingung des Discard-Pfads, die leicht uebersehen wird
+
+`_db_discard_lost_masterkey` darf laut MOS-Note eingesetzt werden, wenn nichts mehr
+verschluesselt ist. Diese Bedingung schliesst **Undo** ein, und `V$ENCRYPTED_TABLESPACES`
+zeigt Undo nicht an.
+
+Im Lauf hat das zugeschlagen: nach `OFFLINE DECRYPT` meldete die View korrekt 0 Zeilen, die
+Undo-Saetze aus der Zeit davor hingen aber weiter am Quellschluessel. Nach dem
+Keystore-Austausch scheiterte die naechste Tablespace-Operation mit
+`ORA-28304: Oracle encrypted block is corrupt` - auf dem **Undo-Datafile**, nicht auf dem
+Daten-Tablespace. Ob es zuschlaegt, haengt davon ab, welche Undo-Bloecke gerade
+wiederverwendet werden; ein frueherer Lauf desselben Wegs war deshalb gruen.
+
+Wer diesen Weg geht, muss vor dem Discard das Undo-Tablespace austauschen, nicht nur die
+Daten-Tablespaces entschluesseln.
 
 ## Offene Punkte und Risiken
 
