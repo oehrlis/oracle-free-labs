@@ -1535,3 +1535,48 @@ betroffen:
      Kommando. Die Aussage stimmt fuer den Tablespace an Ort und Stelle, nicht
      fuer den Weg ueber eine Kopie. Das ist fuer den Kunden die praktisch
      wichtigere Variante und gehoert in die Variantenuebersicht.
+
+## Befund: verschluesseltes Undo bricht den Discard-Pfad (2026-09-06)
+
+Im E2E-Lauf scheiterte Variante F an
+
+```text
+ORA-28304: Oracle encrypted block is corrupt (file # 18, block # 1320)
+```
+
+Datei 18 ist **`UNDOTBS1` der PDB**, nicht `USERS` (das ist Datei 20). Der
+Fehler trat beim `ALTER TABLESPACE USERS OFFLINE NORMAL` in Phase 6 auf,
+also nach dem Keystore-Austausch und dem Discard.
+
+### Mechanik
+
+1. Phase 2 entschluesselt `USERS` - die Daten sind danach im Klartext.
+2. Das **Undo** aus der Zeit davor bleibt verschluesselt und haengt am
+   Master Key der Quelle.
+3. Phase 3 entfernt den Quell-Keystore, Phase 4 verwirft die Handles.
+4. Die naechste Operation, die dieses Undo lesen muss, scheitert.
+
+Der Gate in Phase 2 prueft `V$ENCRYPTED_TABLESPACES = 0` und meldete korrekt
+0 Zeilen - Undo taucht dort nicht auf. Die Pruefung war also richtig und
+trotzdem unzureichend.
+
+### Warum es vorher durchlief
+
+Ob es zuschlaegt, haengt davon ab, welche Undo-Bloecke zum Zeitpunkt der
+Operation noch gebraucht werden. Ein frueherer Lauf desselben Schritts war
+gruen - nicht weil der Pfad sicher war, sondern weil die betroffenen Bloecke
+zufaellig bereits ueberschrieben waren. Ein Testergebnis, das von der
+Wiederverwendung von Undo-Bloecken abhaengt, ist kein Ergebnis.
+
+### Konsequenz fuer den Kunden
+
+Die MOS-Vorbedingung fuer `_db_discard_lost_masterkey` - nutzbar, wenn nichts
+mehr verschluesselt ist - schliesst **Undo** ein. Wer den Discard-Pfad geht,
+muss vorher das Undo-Tablespace austauschen, nicht nur die Daten-Tablespaces
+entschluesseln. Das verstaerkt die Empfehlung: fuer eine Kopie mit neuem
+Schluesselmaterial sind **PDB-Klon** und **`ONLINE REKEY`** die Wege, nicht
+der Discard-Pfad.
+
+Behoben in `60_variant_f.sh` als Phase 2b: neues Undo-Tablespace anlegen,
+umschalten, altes verwerfen - und hart scheitern, wenn das alte nicht
+wegzubekommen ist.
