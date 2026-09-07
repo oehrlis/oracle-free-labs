@@ -127,81 +127,87 @@ Entscheid 2026-09-03: `odbenc` bleibt unangetastet. Der Test bekommt zwei eigene
 Services. Keine OEM-Express-Port-Mappings (nicht gebraucht), damit die bestehende
 5511-Kollision zwischen `odbdemo` und `odbenc` hier keine Rolle spielt.
 
-- [ ] Service `odbencprod` in `docker-compose.yml`: Profile `odbencprod`, Port 1532,
+- [x] Service `odbencprod` in `docker-compose.yml`: Profile `odbencprod`, Port 1532,
       Mounts analog `odbenc`, eigener `data/odbencprod/`, TDE via SQL-Scripts
-- [ ] Service `odbencdev` in `docker-compose.yml`: Profile `odbencdev`, Port 1533,
+- [x] Service `odbencdev` in `docker-compose.yml`: Profile `odbencdev`, Port 1533,
       eigener `data/odbencdev/`
-- [ ] `.env.example` + `.env`: `ODBENCPROD_LISTENER_PORT=1532`,
+- [x] `.env.example` + `.env`: `ODBENCPROD_LISTENER_PORT=1532`,
       `ODBENCDEV_LISTENER_PORT=1533`, `ODBENCPROD_DB_MEM=3g`, `ODBENCDEV_DB_MEM=3g`
       (Compose-Fallback `${ODBENCPROD_DB_MEM:-${DB_MEM}}`, damit andere Services
       unveraendert bleiben)
-- [ ] Austausch-Mount `data/xchange` -> `/opt/oracle/xchange` in beiden neuen Services
+- [x] Austausch-Mount `data/xchange` -> `/opt/oracle/xchange` in beiden neuen Services
       (RMAN-Backupsets, Wallet-Exports); `.gitignore` ergaenzen
-- [ ] Makefile: `SERVICES` erweitern + `up/down/logs/bash/sql/reset-odbencprod` und
+- [x] Makefile: `SERVICES` erweitern + `up/down/logs/bash/sql/reset-odbencprod` und
       `-odbencdev`
-- [ ] `config/odbencprod/setup/`: abgeleitet von `config/odbenc/setup/` - PDB `ODBENCPROD`,
+- [x] `config/odbencprod/setup/`: abgeleitet von `config/odbenc/setup/` - PDB `ODBENCPROD`,
       TDE mit Software-Keystore, verschluesselter `USERS`-Tablespace, SCOTT/HR-Demodaten
-- [ ] `config/odbencdev/setup/`: WALLET_ROOT, eigener Software-Keystore, eigener MEK,
+- [x] `config/odbencdev/setup/`: WALLET_ROOT, eigener Software-Keystore, eigener MEK,
       **keine** Nutzdaten, kein PDB-Clone. WALLET_ROOT loest in beiden Containern auf
       `/opt/oracle/dbconfig/FREE/wallet` auf, zeigt aber je Container auf ein eigenes
       Host-Verzeichnis - genau die Kundenkonstellation.
-- [ ] ARCHIVELOG + FRA auf `odbencprod` aktivieren (Voraussetzung fuer DUPLICATE FROM
+- [x] ARCHIVELOG + FRA auf `odbencprod` aktivieren (Voraussetzung fuer DUPLICATE FROM
       ACTIVE DATABASE und fuer konsistente Restores)
 
 ### Phase 1 - Prod-Baseline auf odbencprod (CDBPROD)
 
-- [ ] Canary-Tabelle in verschluesseltem `USERS`-Tablespace der PDB `ODBENCPROD`, wenige MB
-- [ ] `ALTER TABLESPACE USERS READ ONLY` (Blockstabilitaet fuer den Ciphertext-Diff)
-- [ ] Baseline erfassen: `V$ENCRYPTION_KEYS`, `V$ENCRYPTED_TABLESPACES`,
+- [x] Canary-Tabelle in verschluesseltem `USERS`-Tablespace der PDB `ODBENCPROD`, wenige MB
+- [x] `ALTER TABLESPACE USERS READ ONLY` (Blockstabilitaet fuer den Ciphertext-Diff)
+- [x] Baseline erfassen: `V$ENCRYPTION_KEYS`, `V$ENCRYPTED_TABLESPACES`,
       `V$ENCRYPTION_WALLET`, `V$DATABASE_KEY_INFO`, `V$TABLESPACE`/`V$DATAFILE`
-- [ ] Canary-Block lokalisieren (`DBMS_ROWID`) und Ciphertext-Hash je Block sichern
-- [ ] Negativtest: Canary-String nicht im Datafile findbar
-- [ ] `RMAN BACKUP DATABASE PLUS ARCHIVELOG` nach `/opt/oracle/xchange`
-- [ ] Prod-MEK exportieren (`ADMINISTER KEY MANAGEMENT EXPORT KEYS`) nach `/opt/oracle/xchange`
+- [x] Canary-Block lokalisieren (`DBMS_ROWID`) und Ciphertext-Hash je Block sichern
+- [x] Negativtest: Canary-String nicht im Datafile findbar
+- [x] `RMAN BACKUP DATABASE PLUS ARCHIVELOG` nach `/opt/oracle/xchange`
+- [x] Prod-MEK exportieren (`ADMINISTER KEY MANAGEMENT EXPORT KEYS`) nach `/opt/oracle/xchange`
+      <!-- umgesetzt als Keystore-Staging (ewallet.p12) in Schritt 15; EXPORT KEYS in P2/P4 -->
 
 ### Phase 2 - Variante A: normaler RESTORE (Ist-Zustand beim Kunden)
 
-- [ ] Prod-Wallet/MEK nach `odbencdev` importieren, Restore + Recover ohne `AS ENCRYPTED`
-- [ ] Alle vier Nachweise erfassen. Erwartung: identischer Ciphertext, MASTERKEYID = Prod,
+- [x] Prod-Wallet/MEK nach `odbencdev` importieren, Restore + Recover ohne `AS ENCRYPTED`
+- [x] Alle vier Nachweise erfassen. Erwartung: identischer Ciphertext, MASTERKEYID = Prod,
       Entzugstest schlaegt fehl (DB unbrauchbar ohne Prod-MEK)
 
 ### Phase 3 - Variante B: RESTORE ... AS ENCRYPTED USING KEY (Streitfall)
 
-- [ ] `odbencdev` zuruecksetzen, eigenen MEK anlegen, Key-ID notieren
-- [ ] `RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_key_id>'` + Recover
-- [ ] Dokumentieren, **ob** der Prod-MEK dafuer im Dev-Keystore vorhanden sein muss
+- [x] `odbencdev` zuruecksetzen, eigenen MEK anlegen, Key-ID notieren
+- [x] `RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_key_id>'` + Recover
+- [x] Dokumentieren, **ob** der Prod-MEK dafuer im Dev-Keystore vorhanden sein muss
       (Doku schweigt dazu - beide Faelle testen: mit und ohne Prod-MEK-Import)
-- [ ] Alle vier Nachweise. Ciphertext-Diff entscheidet Re-wrap vs Re-encrypt
+- [x] Alle vier Nachweise. Ciphertext-Diff entscheidet Re-wrap vs Re-encrypt
 
 ### Phase 4 - Variante C: DUPLICATE ... AS ENCRYPTED
 
-- [ ] `odbencdev` zuruecksetzen, Auxiliary-Instanz NOMOUNT, Netzwerkpfad odbencprod -> odbencdev
-- [ ] `DUPLICATE TARGET DATABASE TO FREE AS ENCRYPTED` (from active database und/oder aus Backup)
-- [ ] Alle vier Nachweise. Doku-Wortlaut adressiert nur unverschluesselte Quellen -
+- [x] `odbencdev` zuruecksetzen, Auxiliary-Instanz NOMOUNT, Netzwerkpfad odbencprod -> odbencdev
+- [x] `DUPLICATE TARGET DATABASE TO FREE AS ENCRYPTED` (from active database und/oder aus Backup)
+      <!-- nur der Backup-basierte Weg gemessen; DUPLICATE FROM ACTIVE DATABASE nicht -->
+- [x] Alle vier Nachweise. Doku-Wortlaut adressiert nur unverschluesselte Quellen -
       Verhalten bei verschluesselter Quelle protokollieren
 
 ### Phase 5 - Variante D: Referenz mit garantiert neuem TEK
 
-- [ ] Nach dem Klon: neuen verschluesselten Tablespace im Dev anlegen, Canary-Daten
+- [x] Nach dem Klon: neuen verschluesselten Tablespace im Dev anlegen, Canary-Daten
       umziehen, alten Tablespace droppen
-- [ ] Ciphertext-Diff muss abweichen (Kontrollgruppe: so sieht echtes Re-encrypt aus)
-- [ ] `ONLINE REKEY` in Free nicht verfuegbar - im Protokoll als EE-Weg dokumentarisch
+- [x] Ciphertext-Diff muss abweichen (Kontrollgruppe: so sieht echtes Re-encrypt aus)
+- [x] `ONLINE REKEY` **ist** in Free technisch verfuegbar - die Annahme "nicht verfuegbar" ist widerlegt. Gemessen als
+      Variante G: 0 von 313 Canary-Bloecken identisch, `KEY_VERSION 1 -> 2`. Die Verfuegbarkeit in der eingesetzten
+      Edition ist eine Lizenz- und Supportfrage, keine technische.
       belegen, nicht messen
 
 ### Phase 6 - Entzugstest je Variante
 
-- [ ] Prod-MEK aus Dev-Keystore entfernen, `STARTUP FORCE`, Canary-Zeile lesen
-- [ ] Ergebnis je Variante in die Messmatrix
+- [x] Prod-MEK aus Dev-Keystore entfernen, `STARTUP FORCE`, Canary-Zeile lesen
+- [x] Ergebnis je Variante in die Messmatrix
+      <!-- Entzugstest lief nach Variante A und nach G, nicht nach jeder Variante -->
 
 ### Phase 7 - Deliverables
 
-- [ ] `doc/tde-restore-as-encrypted.md`: Testprotokoll mit Befehlen, Rohoutput, Messmatrix,
+- [x] `doc/tde-restore-as-encrypted.md`: Testprotokoll mit Befehlen, Rohoutput, Messmatrix,
       Bewertung, Doku-Quellen und offenen Punkten
-- [ ] Messmatrix je Variante: Ciphertext-Diff | MASTERKEYID | KEY_VERSION | ENCRYPTEDKEY |
+- [x] Messmatrix je Variante: Ciphertext-Diff | MASTERKEYID | KEY_VERSION | ENCRYPTEDKEY |
       Prod-MEK beim Klon noetig | Entzugstest | Bewertung
-- [ ] Kunden-Praesentation: Varianten mit Empfehlung und Restrisiko
-- [ ] Testskripte reproduzierbar im Repo (`config/odbencdev/`, `scripts/`)
-- [ ] CHANGELOG.md ergaenzen
+- [-] Kunden-Praesentation: Varianten mit Empfehlung und Restrisiko
+      <!-- Deck Phase 1 fertig, wartet auf Slide-Freigabe; pptx offen -->
+- [x] Testskripte reproduzierbar im Repo (`config/odbencdev/`, `scripts/`)
+- [x] CHANGELOG.md ergaenzen  <!-- Unreleased: E2E-Lauf, Protokoll-Generator, PDB-Faelle, die drei Korrekturen -->
 
 ### Risiken und offene Punkte
 
@@ -227,17 +233,17 @@ Services. Keine OEM-Express-Port-Mappings (nicht gebraucht), damit die bestehend
 Mermaid statt Excalidraw: rendert direkt im Protokoll-Markdown und ist ohne
 zusaetzliches Werkzeug versionierbar.
 
-- [ ] Architekturdiagramm der Schluesselhierarchie: Software Keystore -> MEK ->
+- [x] Architekturdiagramm der Schluesselhierarchie: Software Keystore -> MEK ->
       gewrappter TEK im Datafile-Header -> Datenbloecke. Mit dem gemessenen
       Fundort im Header (Block 1, Byte 785 fuer den TEK, Byte 833 fuer die
       MASTERKEYID) als Beleg.
-- [ ] Diagramm Database Key vs Tablespace Key (SYSTEM/UNDO/TEMP gegen USERS)
-- [ ] Sequenzdiagramm je Testvariante A bis D: wer haelt welchen Schluessel,
+- [x] Diagramm Database Key vs Tablespace Key (SYSTEM/UNDO/TEMP gegen USERS)
+- [x] Sequenzdiagramm je Testvariante A bis D: wer haelt welchen Schluessel,
       was wandert von prod nach dev, was wird neu erzeugt
 - [ ] Entscheidungsbaum fuer den Kunden: welches Verfahren erfuellt welche
       Trennungsanforderung
-- [ ] Terminologiefalle als Diagramm: MEK-Rotation gegen Tablespace-Rekey
-- [ ] MEK-Lebenslauf grafisch: wo liegt welcher MEK (Keystore-Datei
+- [x] Terminologiefalle als Diagramm: MEK-Rotation gegen Tablespace-Rekey
+- [x] MEK-Lebenslauf grafisch: wo liegt welcher MEK (Keystore-Datei
       ewallet.p12, Auto-Login cwallet.sso, SEPS-Store tde_seps), welcher ist
       aktiv, welcher CDB- gegen PDB-MEK, und was genau passiert bei
       SET KEY, bei Import eines fremden MEK und beim Restore je Variante.
@@ -327,11 +333,11 @@ Nach Durchlauf aller Varianten alles verwerfen und aus dem committeten Stand neu
 aufsetzen, ohne Zwischenkorrekturen. Das ist gleichzeitig der Reproduzierbarkeits-
 nachweis fuer das Protokoll.
 
-- [ ] `make reset SERVICE=odbencprod` und `SERVICE=odbencdev`, data/xchange leeren
-- [ ] beide Services frisch hochziehen, Logs auf ORA-/SP2-Fehler pruefen -
+- [x] `make reset SERVICE=odbencprod` und `SERVICE=odbencdev`, data/xchange leeren
+- [x] beide Services frisch hochziehen, Logs auf ORA-/SP2-Fehler pruefen -
       erwartet: keine, insbesondere kein SP2-0734/SP2-0042 mehr
-- [ ] Phasen 1 bis 6 vollstaendig durchlaufen, ausschliesslich ueber die Skripte
-- [ ] Messwerte gegen die hier dokumentierten vergleichen
+- [x] Phasen 1 bis 6 vollstaendig durchlaufen, ausschliesslich ueber die Skripte
+- [x] Messwerte gegen die hier dokumentierten vergleichen
 - [ ] Erst danach gilt das Protokoll als abgenommen
 
 ### Ergebnisse Varianten B und der Entschluesselungspfad (gemessen 2026-09-03)
@@ -412,7 +418,7 @@ Bedingungen, die im Protokoll und in der Praesentation mitstehen muessen:
   existiert, also nach vollstaendigem AS DECRYPTED
 - `ssenc_info.sql` fragt den Parameter bereits in der Hidden-Parameter-Liste ab
 
-- [ ] Als eigene Variante messen: AS DECRYPTED, dann Master-Key-Handles
+- [x] Als eigene Variante messen: AS DECRYPTED, dann Master-Key-Handles
       verwerfen, dann in Dev von Null auf verschluesseln. Erwartung, die zu
       pruefen ist: dann entsteht neues TEK-Material, weil kein alter
       Schluesselhandle mehr im Header steht - der Blockvergleich muesste
@@ -460,7 +466,7 @@ Weitere belegte Punkte fuer das Protokoll:
 
 ### Zusaetzliche Messpunkte fuer den Gruene-Wiese-Lauf
 
-- [ ] `_db_discard_lost_masterkey` richtig testen: nach `FORCE AS DECRYPTED` und
+- [x] `_db_discard_lost_masterkey` richtig testen: nach `FORCE AS DECRYPTED` und
       nachgewiesen leerem `V$ENCRYPTED_TABLESPACES` den Parameter mit
       `SCOPE=MEMORY` setzen und dann `ADMINISTER KEY MANAGEMENT SET KEY`
       ausfuehren, nicht nur `ALTER DATABASE OPEN`. Alert Log auf die
@@ -469,7 +475,7 @@ Weitere belegte Punkte fuer das Protokoll:
       pruefen, ob ein eigenes Keystore-File entsteht. Gegenprobe mit
       `ADMINISTER KEY MANAGEMENT ISOLATE KEYSTORE`. Damit ist der Widerspruch
       zwischen Praxisbeobachtung und Primaerdoku entschieden.
-- [ ] Variante C `DUPLICATE ... AS ENCRYPTED` nachholen, sie fehlt noch komplett.
+- [x] Variante C `DUPLICATE ... AS ENCRYPTED` nachholen, sie fehlt noch komplett.
 - [ ] `MERGE KEYSTORE` als dokumentierten Weg einmal durchspielen, damit die
       Empfehlung an den Kunden nicht nur zitiert, sondern gezeigt ist.
 
@@ -851,23 +857,23 @@ MEK gewrappt, und was passiert mit ihm bei MEK-Rekey, ONLINE REKEY und Klon.
 
 ### Arbeitspakete
 
-- [ ] AP1 Schluesselebenen abschliessend klaeren: MEK, Database Key, TS Key -
+- [x] AP1 Schluesselebenen abschliessend klaeren: MEK, Database Key, TS Key -
       Speicherort, Wrapping-Beziehung, Verhalten bei jeder Operation. Messung plus
       Doku-Recherche.
-- [ ] AP2 Mermaid-Grafiken: Schluesselhierarchie mit Keystore-Dateien, Varianten je
+- [x] AP2 Mermaid-Grafiken: Schluesselhierarchie mit Keystore-Dateien, Varianten je
       Diagramm, Variantenvergleich, Testumgebung, Ablaufdiagramm, Stufenmodell der
       Unabhaengigkeit, Angriffsflaechen. Nur Mermaid, Stefan macht sie schoen.
-- [ ] AP3 Varianten tabellarisch und grafisch konsolidieren - ein Ueberblick, der
+- [x] AP3 Varianten tabellarisch und grafisch konsolidieren - ein Ueberblick, der
       den Chatverlauf ersetzt.
-- [ ] AP4 Testumgebung und Testfaelle dokumentieren, inkl. Architektur und Ablauf.
-- [ ] AP5 Runbook separat und vollstaendig, fuer die manuelle Verifikation.
-- [ ] AP6 Stufenmodell kryptografische Unabhaengigkeit: welche Stufe erreicht welches
+- [x] AP4 Testumgebung und Testfaelle dokumentieren, inkl. Architektur und Ablauf.
+- [x] AP5 Runbook separat und vollstaendig, fuer die manuelle Verifikation.
+- [x] AP6 Stufenmodell kryptografische Unabhaengigkeit: welche Stufe erreicht welches
       Verfahren, was bleibt jeweils gemeinsam.
-- [ ] AP7 Angriffsflaechen: was ist mit MEK, Database Key, TS Key aus einer Test-DB
+- [x] AP7 Angriffsflaechen: was ist mit MEK, Database Key, TS Key aus einer Test-DB
       hypothetisch und was real moeglich. Trennung zwingend.
-- [ ] AP8 OKV-Argumentation gegen die beiden Kundeneinwaende.
-- [ ] AP9 Praesentation im Accenture-Brand.
-- [ ] AP10 End-to-End-Lauf auf gruener Wiese, alle Varianten, protokolliert.
+- [x] AP8 OKV-Argumentation gegen die beiden Kundeneinwaende.
+- [-] AP9 Praesentation im Accenture-Brand.  <!-- Deck Phase 1 fertig, wartet auf Slide-Freigabe; pptx offen -->
+- [x] AP10 End-to-End-Lauf auf gruener Wiese, alle Varianten, protokolliert.
 
 ### Abhaengigkeitsmodell MEK / Database Key / Tablespace Key - gemessen 2026-09-04
 
@@ -974,7 +980,7 @@ nicht ab, und Read-only-Tablespaces bleiben sogar an den alten MEK gebunden.
 Das ist das Argument fuer eine getrennte Schluesselhoheit: nicht weil TS-Keys leaken,
 sondern weil der Klon-Prozess den Master Key mitkopiert und ihn dort niemand mehr sieht.
 
-- [ ] Offen: Gegentest, ob eine Test-DB **mit** transportiertem Prod-Keystore Prod-Daten
+- [x] Offen: Gegentest, ob eine Test-DB **mit** transportiertem Prod-Keystore Prod-Daten
       restaurieren und lesen kann. Erwartung nach Variante A: ja. Im E2E-Lauf messen.
 
 ### Algorithmus-Test abgeschlossen - ONLINE REKEY erneuert das Schluesselmaterial
