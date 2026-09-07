@@ -9,6 +9,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- End-to-end verification run: one uninterrupted pass over all 21 steps, 27 minutes,
+  21 of 21 passed. Raw log `artefacts/tde-e2e-run-20260906.log`, protocol
+  `doc/tde-e2e-protokoll.md`, measured values `tasks/e2e-facts.md`.
+- `scripts/tde-verify/make_protocol.sh`: generates the test protocol from a run log, so
+  it can be regenerated from the same evidence at any time.
+- PDB transport cases as steps 61 to 69: testbed, local clone, archive transport,
+  keyless unplug, remote clone over a DB link, key provenance, KEY_VERSION, MEK
+  rotation in both tablespace states, and ONLINE REKEY in the PDB.
+- `doc/tde-restore-runbook.md`: phases 4a, 5a, 5.10 and 6a - every automated step now
+  has a manual counterpart.
+
 - `doc/tde-clone-independence.md`: five-tier model for cryptographic independence of a
   clone, with the measured evidence and the failed paths per tier.
 - `doc/tde-okv-argumentation.md`: attack surfaces split into real and hypothetical, and
@@ -49,10 +60,32 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The verdicts now rest on the canary ciphertext instead of the stored key value.
+  `V$ENCRYPTED_TABLESPACES.ENCRYPTEDKEY` changes on a pure re-wrap as well, so it
+  cannot tell a re-wrap apart from new key material.
+- Documentation brought onto the measured values, and three claims corrected: variant C
+  was listed as not measured; `ONLINE REKEY` as the only way to new key material holds
+  for a tablespace in place, not for the way via a copy - the PDB clone produces new
+  material with a single supported command; the documented `KEY_VERSION` reset after a
+  plug-in was not observed in the lab.
+- `ODBENCPROD_DB_MEM` and `ODBENCDEV_DB_MEM` lowered from 3g to 2g after the OOM killer
+  took out a sqlplus process mid-run. Oracle Free caps the SGA at 2g anyway.
+
 - `doc/tde-key-architecture.md`: rewritten around the measured dependency model between
   master key, database key and tablespace key, with eight Mermaid diagrams.
 
 ### Fixed
+
+- Variant F: encrypted undo survives the decryption of the data and breaks the discard
+  path with `ORA-28304` on the undo datafile, while `V$ENCRYPTED_TABLESPACES` correctly
+  reports zero rows. The undo tablespace is now replaced before the discard.
+- The withdrawal test handled only a failing query, not a database that never opens.
+  Without the source master key the target stops at `MOUNTED` with `ORA-28374`.
+- The positive control counted heading lines instead of blocks and reported
+  "1 differing / 1 total" while the comparison found 1140 of 2561 - in the one step
+  that licenses every "identical" result elsewhere.
+- SQL*Plus failures were swallowed by the pipe into `grep`, so a failed statement
+  looked like success and `set -e` never fired.
 
 - `config/common/scripts/csenc_swkeystore.sql`: the conditional backup of
   `wallet_pwd.txt` spanned three lines with backslash continuation, which SQL*Plus does
