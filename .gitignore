@@ -99,3 +99,5 @@ doc/images/mermaid/.mermaid-config.json
 # the test protocol in doc/ is generated from. Checked for secrets before
 # being added.
 !artefacts/tde-e2e-run-*.log
+.claude/settings.local.json
+.claude/settings.json
