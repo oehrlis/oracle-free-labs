@@ -85,7 +85,7 @@ Sechs unabhängige Aufgabenbereiche, sequenziell umzusetzen.
 
 ## TDE RESTORE AS ENCRYPTED - Verifikationstest (Plan 2026-09-03)
 
-Anlass: Frage aus ALTIMA-Meeting 2026-09-03. Macht `RESTORE DATABASE AS ENCRYPTED
+Anlass: Frage aus einem Kundenmeeting 2026-09-03. Macht `RESTORE DATABASE AS ENCRYPTED
 USING KEY <mek>` ein echtes Re-encrypt der Bloecke (neues TEK-Material) oder nur ein
 Re-wrap des bestehenden TEK im Datafile-Header? Ziel ist ein nachvollziehbares
 Testprotokoll plus Varianten-Praesentation fuer den Kunden.
@@ -206,6 +206,7 @@ Services. Keine OEM-Express-Port-Mappings (nicht gebraucht), damit die bestehend
       Prod-MEK beim Klon noetig | Entzugstest | Bewertung
 - [-] Kunden-Praesentation: Varianten mit Empfehlung und Restrisiko
       <!-- Deck Phase 1 fertig, wartet auf Slide-Freigabe; pptx offen -->
+      <!-- 2026-09-10: identisch mit AP9 unten - dort steht der Detailstand. -->
 - [x] Testskripte reproduzierbar im Repo (`config/odbencdev/`, `scripts/`)
 - [x] CHANGELOG.md ergaenzen  <!-- Unreleased: E2E-Lauf, Protokoll-Generator, PDB-Faelle, die drei Korrekturen -->
 
@@ -240,8 +241,12 @@ zusaetzliches Werkzeug versionierbar.
 - [x] Diagramm Database Key vs Tablespace Key (SYSTEM/UNDO/TEMP gegen USERS)
 - [x] Sequenzdiagramm je Testvariante A bis D: wer haelt welchen Schluessel,
       was wandert von prod nach dev, was wird neu erzeugt
-- [ ] Entscheidungsbaum fuer den Kunden: welches Verfahren erfuellt welche
+- [-] Entscheidungsbaum fuer den Kunden: welches Verfahren erfuellt welche
       Trennungsanforderung
+      <!-- 2026-09-10 geprueft: inhaltlich fertig, aber als Tabelle, nicht als Diagramm.
+           doc/tde-clone-independence.md "Stufenmodell" (Stufe 0-4) und
+           "Empfehlung und Entscheidungshilfe" (Anforderung -> minimale Stufe) tragen
+           die Entscheidung vollstaendig. Offen ist nur die Mermaid-Fassung. -->
 - [x] Terminologiefalle als Diagramm: MEK-Rotation gegen Tablespace-Rekey
 - [x] MEK-Lebenslauf grafisch: wo liegt welcher MEK (Keystore-Datei
       ewallet.p12, Auto-Login cwallet.sso, SEPS-Store tde_seps), welcher ist
@@ -339,6 +344,10 @@ nachweis fuer das Protokoll.
 - [x] Phasen 1 bis 6 vollstaendig durchlaufen, ausschliesslich ueber die Skripte
 - [x] Messwerte gegen die hier dokumentierten vergleichen
 - [ ] Erst danach gilt das Protokoll als abgenommen
+      <!-- 2026-09-10 geprueft: der Lauf ist erbracht (21/21 PASS,
+           artefacts/tde-e2e-run-20260906.log, doc/tde-e2e-protokoll.md). Die Abnahme
+           selbst ist Stefans manuelles Review der 21 Schritte entlang des Runbooks -
+           blockiert auf Entscheid, nicht auf Arbeit. -->
 
 ### Ergebnisse Varianten B und der Entschluesselungspfad (gemessen 2026-09-03)
 
@@ -475,9 +484,16 @@ Weitere belegte Punkte fuer das Protokoll:
       pruefen, ob ein eigenes Keystore-File entsteht. Gegenprobe mit
       `ADMINISTER KEY MANAGEMENT ISOLATE KEYSTORE`. Damit ist der Widerspruch
       zwischen Praxisbeobachtung und Primaerdoku entschieden.
+      <!-- 2026-09-10 geprueft: weiterhin offen und weiterhin ungemessen. Die Doku-Seite
+           ist erledigt und als offene Frage gekennzeichnet
+           (doc/tde-restore-as-encrypted.md Z. 168-174 und 719-724, doc/tde-key-architecture.md
+           "UNITED gegen ISOLATED"). Alle Messungen liefen im UNITED Mode. -->
 - [x] Variante C `DUPLICATE ... AS ENCRYPTED` nachholen, sie fehlt noch komplett.
 - [ ] `MERGE KEYSTORE` als dokumentierten Weg einmal durchspielen, damit die
       Empfehlung an den Kunden nicht nur zitiert, sondern gezeigt ist.
+      <!-- 2026-09-10 geprueft: weiterhin offen. Zitiert ist er an vier Stellen
+           (doc/tde-restore-as-encrypted.md Z. 175-177 und 433, doc/tde-restore-runbook.md
+           Z. 747, 2717, 2826) - gezeigt an keiner. -->
 
 ### Variante C - Vorversuche und Fallstricke (2026-09-03)
 
@@ -873,6 +889,10 @@ MEK gewrappt, und was passiert mit ihm bei MEK-Rekey, ONLINE REKEY und Klon.
       hypothetisch und was real moeglich. Trennung zwingend.
 - [x] AP8 OKV-Argumentation gegen die beiden Kundeneinwaende.
 - [-] AP9 Praesentation im Accenture-Brand.  <!-- Deck Phase 1 fertig, wartet auf Slide-Freigabe; pptx offen -->
+      <!-- 2026-09-10 geprueft: Phase 1 liegt als Content-Brief mit 8 Slide-Abschnitten
+           (Role, Headline, Strapline, Argument, Evidence, je 3 Archetyp-Kandidaten) unter
+           ~/Downloads/tde-clone-independence-html/brief.md - ausserhalb des Repos, kein
+           pptx, keine Slides. Siehe auch P2 "Ablageort des Decks entscheiden". -->
 - [x] AP10 End-to-End-Lauf auf gruener Wiese, alle Varianten, protokolliert.
 
 ### Abhaengigkeitsmodell MEK / Database Key / Tablespace Key - gemessen 2026-09-04
@@ -1177,6 +1197,14 @@ Konsequenzen:
    Datenbank vor sich hat. DUPLICATE liefert eine eigene Identitaet.
 
 - [ ] Variantenvergleich um die Spalte DBID erweitern: behaelt Quelle gegen neu.
+      <!-- 2026-09-10 geprueft: offen, und mit einer Vorbedingung. Die DBID-Werte oben
+           stammen aus der Runde vom 2026-09-04, nicht aus dem gruenen E2E-Lauf; in
+           tasks/e2e-facts.md steht keine einzige DBID. Der E2E-Log fuehrt nur Prod
+           1515292873 und die frisch gebaute Dev-CDB 1515294104 - keine DBID nach einem
+           Klon je Variante. Da e2e-facts.md die einzige zulaessige Zahlenquelle fuer die
+           Dokumentation ist, braucht die Spalte erst eine Messung im Lauf, keine
+           Redaktion. In doc/tde-key-architecture.md steht "neue DBID" bisher nur als
+           Prosa in der Ergebniszelle von Variante C. -->
 - [x] Entscheid 2026-09-04: `nid` wird **nicht** als Messvariante gefahren, der
       Aufwand steht nicht im Verhaeltnis. Nur dokumentieren: `DBNEWID` ist der
       Weg zu einer eigenen DBID nach einem Restore, und eine neue DBID aendert
@@ -1586,3 +1614,34 @@ der Discard-Pfad.
 Behoben in `60_variant_f.sh` als Phase 2b: neues Undo-Tablespace anlegen,
 umschalten, altes verwerfen - und hart scheitern, wenn das alte nicht
 wegzubekommen ist.
+
+## Statusabgleich 2026-09-10
+
+Jede noch nicht abgehakte Zeile dieser Datei gegen das Repo geprueft. Ergebnis:
+**93 von 100 Checkboxen erledigt, 3 in Arbeit, 4 offen** - und keine davon
+haengt an ungetaner Analysearbeit.
+
+Der Bestand ist damit ein anderer als `tasks/state-2026-09-08.md` unter P2
+behauptet. Die dortige Zahl "62 Checkboxen offen" war zum Zeitpunkt des
+Schreibens bereits falsch: Commit `7e40e88` hatte die Datei einen Tag vorher
+abgeglichen. Der P2-Punkt "todo.md bereinigen" ist mit diesem Abgleich erledigt.
+
+### In Arbeit
+
+| Zeile | Punkt | Stand |
+|---|---|---|
+| Phase 7 / AP9 | Kunden-Praesentation im Accenture-Brand | Content-Brief mit 8 Slide-Abschnitten fertig, liegt unter `~/Downloads/tde-clone-independence-html/`. Kein pptx. Wartet auf Slide-Freigabe, nicht auf Arbeit. |
+| Phase 8 | Entscheidungsbaum fuer den Kunden | inhaltlich fertig als Stufenmodell und Entscheidungshilfe in `doc/tde-clone-independence.md`. Nur die Diagrammfassung fehlt. |
+
+### Offen
+
+| Punkt | Warum offen | Was es braucht |
+|---|---|---|
+| Protokoll-Abnahme | der Lauf ist erbracht, die Abnahme ist ein Review | Stefans manuelles Durchgehen der 21 Schritte entlang des Runbooks |
+| UNITED gegen ISOLATED | nie gemessen, alle Laeufe im UNITED Mode | ein Messschritt: `TDE_CONFIGURATION` in der PDB plus Gegenprobe `ISOLATE KEYSTORE` |
+| `MERGE KEYSTORE` | an vier Stellen zitiert, an keiner gezeigt | ein Messschritt gegen ein Backup-Wallet |
+| DBID-Spalte im Variantenvergleich | die DBID-Werte stammen aus der Runde 2026-09-04 und stehen nicht in `tasks/e2e-facts.md` | erst messen, dann redigieren - sonst wandert eine Zahl in die Doku, die die Zahlenquelle nicht deckt |
+
+`extractable=false` bei Oracle klaeren steht bewusst **nicht** in dieser Datei:
+es ist eine Frage an Oracle, keine Aufgabe am Repo. Sie steht als P1 in
+`tasks/state-2026-09-08.md` und als offener Evidenzpunkt im Deck (Slide 8).
