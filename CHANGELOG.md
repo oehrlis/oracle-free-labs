@@ -7,6 +7,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-11
+
+### Fixed
+
+- `artefacts/README.md` claimed the folder is not versioned in Git. Two named
+  log patterns are, deliberately, because documentation cites them as evidence.
+  The README now states which, why, and how to check a log for secrets before
+  adding it.
+
+
 ## [1.2.0] - 2026-09-11
 
 ### Added
@@ -343,6 +353,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.2.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.1.1...v1.2.0
 [1.1.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.1...v1.0.2
