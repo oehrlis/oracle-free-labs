@@ -102,5 +102,9 @@ doc/images/mermaid/.mermaid-config.json
 # Evidence logs of manual measurement runs, cited as proof in tasks/e2e-facts.md
 # and doc/tde-restore-runbook.md - the citations must resolve inside the repo.
 !artefacts/p4b-*.log
+# Run logs of the automated suite. doc/tde-e2e-protokoll.md names one as its
+# source and claims it can be regenerated from it - that only holds if the log
+# is in the repository.
+!artefacts/run_*.log
 .claude/settings.local.json
 .claude/settings.json

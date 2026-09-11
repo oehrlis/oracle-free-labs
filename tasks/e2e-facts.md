@@ -1,19 +1,27 @@
-# Messwerte des E2E-Laufs vom 2026-09-06
-
-Quelle: `artefacts/tde-e2e-run-20260906.log`, ein durchgehender Lauf 00 bis 90,
-21 von 21 Schritten bestanden, Dauer 27 Minuten.
+# Messwerte der TDE-Verifikationslaeufe
 
 **Diese Datei ist die einzige zulaessige Quelle fuer Zahlen in der
 Dokumentation.** Werte, die hier nicht stehen, gehoeren nicht in ein Dokument.
 
-## Ausgangswerte
+Sie enthaelt **mehrere Laeufe**, je in einem eigenen Abschnitt mit Datum und
+Lauf-Kennung im Titel. Schluessel-IDs sind pro Lauf neu, und Blockzahlen
+beziehen sich auf unterschiedliche Datafiles - **keine Zahl darf ueber
+Abschnittsgrenzen hinweg verglichen oder gemischt werden.** Wer eine Zahl
+zitiert, nennt den Lauf dazu.
+
+## Messwerte des E2E-Laufs vom 2026-09-06
+
+Quelle: `artefacts/tde-e2e-run-20260906.log`, ein durchgehender Lauf 00 bis 90,
+21 von 21 Schritten bestanden, Dauer 27 Minuten.
+
+### Ausgangswerte 2026-09-06
 
 | Objekt | MASTERKEYID | ENCRYPTEDKEY |
 |---|---|---|
 | Prod `USERS` (Baseline, Schritt 10) | `EC574AF166934D45AB5AC1F2267A297A` | `059EFEB1BB6D72140B68FD768F80105B37BB912E84E6273E82227A027FD830F3` |
 | Prod `PDBCLONE.CLONE_ENC` (Schritt 61) | `A7D954A5F5B9423D8C4EF9084DAE347D` | `FC11003A257C8515095D64B4E961E7328964A6DE12A90D729147009A85E38760` |
 
-## RMAN-Wege
+### RMAN-Wege 2026-09-06
 
 | Variante | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
 |---|---|---|---|---|
@@ -25,7 +33,7 @@ Dokumentation.** Werte, die hier nicht stehen, gehoeren nicht in ein Dokument.
 | F Discard-Pfad, Database Key erneuert | `C7A38A0C0653495F882671BF2ED974A3` | `A0BB56AF4790B1C12B2F21D8263CBBE470EA04CDCBE7DCE5A062F6C177D8E2AC` | 0 identisch / 313 | **neues Schluesselmaterial** |
 | G `ONLINE REKEY` | - | - | 0 identisch / 313 | **neues Schluesselmaterial**, `KEY_VERSION 1 -> 2` |
 
-## PDB-Wege
+### PDB-Wege 2026-09-06
 
 | Fall | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
 |---|---|---|---|---|
@@ -39,14 +47,14 @@ Dokumentation.** Werte, die hier nicht stehen, gehoeren nicht in ein Dokument.
 | P7 Herkunft des transportierten Schluessels | - | - | - | `ORIGIN = LOCAL` im Ziel, obwohl per `EXPORT`/`IMPORT KEYS` aus Prod transportiert |
 | P8 `KEY_VERSION` nach Plug-in | - | - | - | unveraendert 0; der dokumentierte Reset auf 0 wurde **nicht beobachtet** |
 
-## Kontrollen
+### Kontrollen 2026-09-06
 
 | Kontrolle | Messwert | Aussage |
 |---|---|---|
 | Positivkontrolle, zwei Tablespaces gleichen Inhalts unter verschiedenen Keys | 0 identisch / 313 | die Methode erkennt einen Schluesselwechsel |
 | Entzugstest nach Variante G | Datenbank oeffnet nicht, bleibt `MOUNTED` mit `ORA-28374` | ohne den Quell-MEK ist nicht ein Tablespace unlesbar, sondern die ganze Datenbank unbrauchbar |
 
-## Betriebsbefunde aus dem Lauf
+### Betriebsbefunde 2026-09-06
 
 - **Verschluesseltes Undo bricht den Discard-Pfad.** Nach `OFFLINE DECRYPT` sind
   die Daten lesbar, die Undo-Saetze aus der Zeit davor haengen aber weiter am
@@ -113,3 +121,94 @@ Key der Quelle?
   Tablespace und kein Database Key mehr auf den Quell-MEK.
 - `CLONE_ENC` war im Ziel `READ ONLY`, aus der Quelle geerbt. Genau deshalb hat der
   erste `SET KEY` den Tablespace-Schluessel nicht neu gewrappt.
+
+## Messwerte des E2E-Laufs vom 2026-09-11 - `run_20260911_080723`
+
+**Eigener Lauf, eigene Zahlen.** Schluessel-IDs sind pro Lauf neu. Keine ID aus
+diesem Abschnitt darf mit einer ID aus dem 2026-09-06-Lauf oder dem manuellen
+Lauf vom 2026-09-10 vermischt werden. Vergleichbar sind allein die
+**Canary-Blockzahlen** (313) und die strukturellen Aussagen.
+
+Belege: `artefacts/run_20260911_080723.log` (Evidence) und
+`artefacts/run_20260911_080723-stdout.log` (vollstaendig, mit Ergebnistabelle).
+Beide greift `.gitignore` (`*.log`) - nicht versioniert. Protokoll:
+`doc/tde-e2e-protokoll.md`.
+
+21 von 21 Schritten bestanden, Dauer 23 Minuten (08:07 bis 08:35).
+
+### Ausgangswerte 2026-09-11
+
+| Objekt | MASTERKEYID | ENCRYPTEDKEY |
+|---|---|---|
+| Prod `USERS` (Baseline, Schritt 10) | `448E89AB65BE4992959E6C866A4B4907` | `7C410458C6D61BBDAFBE556CD21EEE9BD71CA73898BFEC48EFFADDBD0E112BC6` |
+| Prod `PDBCLONE.CLONE_ENC` (Schritt 61) | `BEE197456D8547F089D5872876526609` | `7EBC0EB57A3EA2B32D7AFB691DFAD56509048E004C281543D01A46709F331FF6` |
+
+### RMAN-Wege 2026-09-11
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Variante | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
+|---|---|---|---|---|
+| A `RESTORE` | unveraendert | unveraendert | 313 identisch / 0 | Schluessel bleibt |
+| B1 mit Prod-MEK | - | - | - | bricht ab, `ORA-00600 [kcbtse_encdec_tbsblk_1]` |
+| B2 ohne Prod-MEK | - | - | - | bricht ab, `ORA-19870` / `ORA-28374` |
+| C `DUPLICATE ... AS ENCRYPTED` | unveraendert | unveraendert | 313 identisch / 0 | Schluessel bleibt, neue DBID `1515728338` (Quelle `1515727551`) |
+| D `AS DECRYPTED` + `SET KEY` + `OFFLINE ENCRYPT` | `B951544D5CFC462AACB45628B948CBAD` | `E5DA70D44292035C9E6224BA33811034382D052417D970C8097F46F0089F2775` | 313 identisch / 0 | Re-wrap, Chiffrat unveraendert |
+| F Discard-Pfad | `A13F3C285D0941AB87CA336ACEB984E9` | `B3B88E7A376465A3A8C34E0662AF215B9810840BC53C5ED2B077BBD917FAA7AB` | 0 identisch / 313 | **neues Schluesselmaterial** |
+| G `ONLINE REKEY` | - | - | 0 identisch / 313 | **neues Schluesselmaterial**, `KEY_VERSION 1 -> 2` |
+
+<!-- markdownlint-restore -->
+
+### PDB-Wege 2026-09-11
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Fall | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
+|---|---|---|---|---|
+| P1 lokaler Klon | `BEE19745...6609` **unveraendert** | `378916194479E62498DC2BFFFB690BCEE0CDD1C936188EAF91A085C895D406A3` | 0 identisch / 313 | **neues Material** |
+| P2 Archiv-Transport | `BEE19745...6609` unveraendert | `7EBC0EB5...31FF6` **unveraendert** | 313 identisch / 0 | Schluessel und Chiffrat erhalten, `ORIGIN=LOCAL`, `KEY_VERSION=0` |
+| P3 Unplug ohne Key-Export | - | - | - | `ORA-46680`, kein Archiv entsteht |
+| P4 Remote-Klon | `BEE19745...6609` **unveraendert** | `F71B01BBC38C7587A55CF6304D850C4E64E4CEF9CE08AE3974A05409B584D07E` | 0 identisch / 313 | **neues Material** |
+| P5 MEK-Rotation, `READ ONLY` | bleibt `BEE19745...6609` | unveraendert | 313 identisch / 0 | read-only bleibt am Quellschluessel |
+| P5 MEK-Rotation, `READ WRITE` | `8B828291FCC648C89C318FC5B6572D5F` | `B237E4A768BC65F696217A3697DBFDCC2068D3440A5F3BD6455148F60AAC85DF` | 313 identisch / 0 | Re-wrap, Chiffrat unveraendert |
+| P6 `ONLINE REKEY` in der PDB | `8B828291...2D5F` unveraendert | `FD108CE38CF976D95DE05193CCA676374D9E61BA96190855FC4B945D2B40C365` | 0 identisch / 313 | **neues Material**, `KEY_VERSION 0 -> 1` |
+| P7 Herkunft | - | - | - | `ORIGIN = LOCAL` im Ziel trotz `EXPORT`/`IMPORT KEYS` |
+| P8 `KEY_VERSION` nach Plug-in | - | - | - | unveraendert 0; Reset auf 0 erneut **nicht beobachtet** |
+
+<!-- markdownlint-restore -->
+
+### Kontrollen 2026-09-11
+
+| Kontrolle | Messwert | Aussage |
+|---|---|---|
+| Positivkontrolle | 0 identisch / 313 | die Methode erkennt einen Schluesselwechsel |
+| Entzugstest nach Variante G | Datenbank oeffnet nicht, bleibt `MOUNTED` mit `ORA-28374` | ganze Datenbank unbrauchbar, nicht nur ein Tablespace |
+
+Gesamtblockzahlen zur Einordnung, **nicht** zur Beurteilung: Variante A 1271
+identisch / 1290 abweichend von 2561. Der 2026-09-06-Lauf mass 1269 / 1292. Die
+Differenz liegt in nie benutzten Bloecken und ist bedeutungslos - beurteilt wird
+allein die Marker-Blockzahl 313.
+
+### Neue Befunde 2026-09-11
+
+- **`ORA-46655` beim Key-Import nach dem Remote-Klon (P4, Schritt 65).**
+  `no valid keys in the file from which keys are to be imported`, in Phase 6 des
+  Schritts. Der Import findet nichts, **weil der Remote-Klon den Master Key
+  bereits selbst ins Ziel-Keystore getragen hat** - ohne `EXPORT KEYS`, ohne
+  `IMPORT KEYS`, mit `ORIGIN = LOCAL`. Das ist die Bestaetigung des Befunds aus
+  dem manuellen Lauf vom 2026-09-10 auf einem anderen Codepfad, diesmal
+  innerhalb der automatisierten Suite. Der Schritt laeuft danach korrekt durch.
+- **Konsequenz: der PDB-Klon allein trennt nicht.** Er erneuert den
+  Tablespace-Schluessel, wickelt ihn aber unter dem **Quell-MEK** ein. Erst eine
+  MEK-Rotation im Ziel trennt - und die greift bei `READ ONLY` nicht, siehe P5.
+- **`ORA-28365` tritt im automatisierten Weg nicht auf, und das ist Absicht.**
+  `15_backup.sh:21-23` stellt die Bedingung bewusst nicht her: nur `ewallet.p12`
+  wird transportiert, `cwallet.sso` nicht, weil ein LOCAL-Auto-Login-Keystore
+  host-gebunden ist und auf einem anderen Host mit `ORA-28365` aufgeht. Der
+  **manuelle** Runbook-Weg kopiert das ganze Wallet-Verzeichnis und laeuft
+  deshalb hinein (`STATUS CLOSED`, `WALLET_TYPE UNKNOWN`, Abhilfe
+  `SET KEYSTORE OPEN FORCE KEYSTORE`). Beide Wege sind korrekt; sie
+  unterscheiden sich im Aufbau, nicht im Ergebnis.
+- Die fuenf `ORA-19912` im Log sind **keine Fehler**, sondern Kommentarzeilen in
+  den RMAN-Skripten. Ein Zaehlen von `ORA-`-Codes ueber das Log hinweg
+  ueberschaetzt die Fehlerzahl entsprechend.
