@@ -27,7 +27,7 @@
 # ------------------------------------------------------------------------------
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
-VERSION="0.2.0"
+VERSION="0.3.0"
 LOG_FILE=""
 OUT_FILE=""
 
@@ -168,10 +168,34 @@ if not steps and not result_rows:
         "       Nothing was written.\n")
     sys.exit(2)
 
+# The result table and the detail section are parsed from different markers, so
+# they can disagree - and a protocol whose summary says 21 while its detail holds
+# 20 is worse than no protocol, because nothing in it points at the gap. Measured
+# 2026-09-11: with the run log kept under data/xchange, step 00 deleted the
+# directory and with it the log's head, so the table had 21 rows and the detail
+# had 20. The log now lives in artefacts/, but a generator that can emit a
+# self-contradicting document must say so rather than rely on that.
+missing = sorted({nr for nr, *_ in result_rows} - {s["nr"] for s in steps})
+if missing:
+    sys.stderr.write(
+        f"WARNING: the result table lists {len(result_rows)} step(s) but only "
+        f"{len(steps)} have a detail section.\n"
+        f"         Missing in detail: {', '.join(missing)}\n"
+        "         The log is incomplete for those steps - most often the head of\n"
+        "         the log was lost. The protocol says so on its face.\n")
+
 w("## Ergebnis")
 w("")
 if total:
     w(f"{passed} von {total} Schritten bestanden.")
+    if missing:
+        w("")
+        # Wrapped by hand: markdownlint holds this file to 120 columns, and a
+        # generator that emits a line the project's own linter rejects is a
+        # generator that breaks the build it feeds.
+        w(f"**Unvollstaendig:** fuer Schritt {', '.join(missing)} fehlt der Detailabschnitt -")
+        w("das Log enthaelt dazu keine Ausgabe. Die Ergebniszeile stammt aus der")
+        w("Ergebnistabelle, der Ablauf ist nicht dokumentiert.")
 else:
     # Steps but no table: run_all.sh prints the table even when a step fails,
     # so a missing table means the run was cut off (kill, crash, lost stdout).
