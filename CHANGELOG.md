@@ -16,7 +16,6 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The README now states which, why, and how to check a log for secrets before
   adding it.
 
-
 ## [1.2.0] - 2026-09-11
 
 ### Added
