@@ -66,3 +66,50 @@ Dokumentation.** Werte, die hier nicht stehen, gehoeren nicht in ein Dokument.
   Nur ein Instanz-Neustart entfernt ihn.
 - **Das Transport-Secret verlangt doppelte Anfuehrungszeichen.** Einfache
   ergeben `ORA-00922` bei `ENCRYPT USING` und `ORA-46609` bei `WITH SECRET`.
+
+## Messwerte des manuellen Laufs vom 2026-09-10 - nicht Teil der Suite
+
+**Andere Messung, andere Zahlen.** Dieser Abschnitt gehoert nicht zum E2E-Lauf vom
+2026-09-06 oben. Er stammt aus einem von Hand gefahrenen Lauf **ausserhalb** der
+automatisierten Suite. Keine Zahl aus diesem Abschnitt darf mit einer Zahl aus dem
+Abschnitt darueber verglichen oder vermischt werden - Schluessel-IDs sind pro Lauf
+neu, und die Canary-Blockzahlen der Suite (313) haben mit den hier gemessenen
+Datafile-Blockzahlen (6401) nichts zu tun.
+
+Belege:
+
+- `artefacts/p4b-experiment-20260910_171555.log` - Testbed und Remote-Klon ohne
+  Key-Import
+- `artefacts/p4b-setkey-20260910_185928.log` - die beiden `SET KEY`-Laeufe und die
+  Blockvergleiche
+
+Gegenstand: Ziel-PDB `PDBCLONE_P4B` in der Dev-CDB, Tablespace `CLONE_ENC`, geklont
+aus der Quell-PDB `PDBCLONE`. Frage: haengt das Ziel nach einem Remote-Klon am Master
+Key der Quelle?
+
+### Schluesselkette ueber die vier Stufen (manueller Lauf 2026-09-10)
+
+<!-- markdownlint-disable MD013 MD060 -->
+| Stufe | MASTERKEYID | gewrappter Tablespace-Schluessel |
+|---|---|---|
+| Quell-PDB `PDBCLONE` | `EDFEDD10AA204295A661E896A6566C30` | `B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0` |
+| nach dem Remote-Klon | `EDFEDD10...` unveraendert, weiter der Quellschluessel | `127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275` neu |
+| nach `SET KEY`, Tablespace READ ONLY | `EDFEDD10...` unveraendert | `127E86CD...` unveraendert |
+| nach READ WRITE und erneutem `SET KEY` | `4E7C6CED26084FE2890515571405DFF0` eigener | `C6F33FFF6AD9632AF2D709445AC24E117E39530559592654B243DFAE8917EAEA` |
+<!-- markdownlint-restore -->
+
+### Weitere Befunde desselben Laufs (2026-09-10)
+
+- Der Klon lief **ohne** `EXPORT KEYS` und **ohne** `IMPORT KEYS`. Danach lag der
+  Master Key der Quelle trotzdem im Ziel-Keystore, unter `CON_ID 4` und mit
+  `ORIGIN = LOCAL`. Der Klon transportiert den Schluessel selbst.
+- Die Markertabelle lieferte auf jeder Stufe 5000 Zeilen.
+- Blockvergleich des Ziel-Datafiles vor und nach der abschliessenden Rotation:
+  6401 Bloecke verglichen, **6400 identisch, 1 abweichend - Block 1**, der Header.
+  Ein Re-wrap, keine Neuverschluesselung.
+- Blockvergleich vor und nach dem ersten `SET KEY` (Tablespace READ ONLY):
+  6401 verglichen, 6401 identisch, 0 abweichend.
+- Nach der abschliessenden Rotation verweist im Ziel kein verschluesselter
+  Tablespace und kein Database Key mehr auf den Quell-MEK.
+- `CLONE_ENC` war im Ziel `READ ONLY`, aus der Quelle geerbt. Genau deshalb hat der
+  erste `SET KEY` den Tablespace-Schluessel nicht neu gewrappt.

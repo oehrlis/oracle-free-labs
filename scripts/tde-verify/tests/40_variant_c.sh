@@ -188,6 +188,17 @@ main() {
 
     write_state "VARIANT_C_MKID" "${mkid_clone}"
     write_state "VARIANT_C_TEK"  "${tek_clone}"
+    # DUPLICATE creates a NEW DBID, unlike a plain RESTORE. Recorded so the
+    # variant comparison can carry the identity column as a measurement rather
+    # than as a documented expectation.
+    local dbid_clone
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        dbid_clone="DRY-RUN"
+    else
+        dbid_clone=$(get_dbid "${DEV_SERVICE}")
+    fi
+    write_state "VARIANT_C_DBID" "${dbid_clone}"
+    lib_info "clone DBID: ${dbid_clone} (source: $(read_state SOURCE_DBID))"
 
     print_key_summary "variant_c (clone)" "${mkid_clone}" "${tek_clone}"
     print_key_summary "baseline  (source)" "${mkid_source}" "${tek_source}"

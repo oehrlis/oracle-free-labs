@@ -1,0 +1,95 @@
+### Schritt 2 und 3: SET KEY im Ziel, dann pruefen
+### 2026-09-10 18:59:29
+
+=== VORHER: Schluesselkette und Datafile des Ziels ===
+Session altered.
+MKID				 WRAPPED_TEK							  KEY_VERSION
+-------------------------------- ---------------------------------------------------------------- -----------
+EDFEDD10AA204295A661E896A6566C30 127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275	    0
+FILE_NAME
+----------------------------------------------------------------------------------------
+/opt/oracle/oradata/FREE/5B23837784AA13D6E063030013AC8B06/datafile/o1_mf_clone_en_ob5lpq
+8n_.dbf
+Datafile: data/odbencdev/FREE/5B23837784AA13D6E063030013AC8B06/datafile/o1_mf_clone_en_ob5lpq8n_.dbf
+
+=== Fingerabdruck VOR dem SET KEY ===
+wrote data/xchange/evidence/p4b_before/clone_enc.fp
+
+=== SET KEY im Ziel-PDB (nicht CONTAINER=ALL - PDB$SEED hat keinen Key) ===
+
+=== NACHHER: Schluesselkette im Ziel ===
+    CON_ID KEY_ID						  ORIGIN
+---------- ------------------------------------------------------ -----------------------------------------
+	 1 AZD0DDtw7U6ImqfcHhLBGiIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL
+	 4 Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL
+	 4 AdF0CJwKJEOfhvKEA0XJAW0AAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL
+Session altered.
+MKID				 WRAPPED_TEK							  KEY_VERSION
+-------------------------------- ---------------------------------------------------------------- -----------
+EDFEDD10AA204295A661E896A6566C30 127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275	    0
+MARKER_ROWS
+-----------
+       5000
+
+=== Chiffrat: unveraendert oder neu? ===
+wrote data/xchange/evidence/p4b_after/clone_enc.fp
+== Block-level ciphertext comparison ==
+A: vor_setkey
+B: nach_setkey
+block_size A/B: 8192/8192
+blocks compared: 6401
+identical: 6401
+differing: 0
+verdict: IDENTICAL - byte-for-byte equal, no re-encryption whatsoever
+
+=== Schritt 3: Tablespace READ WRITE, dann rotieren ===
+
+Session altered.
+
+
+Tablespace altered.
+
+
+Tablespace altered.
+
+
+keystore altered.
+
+
+MKID				 WRAPPED_TEK							  KEY_VERSION
+-------------------------------- ---------------------------------------------------------------- -----------
+4E7C6CED26084FE2890515571405DFF0 C6F33FFF6AD9632AF2D709445AC24E117E39530559592654B243DFAE8917EAEA	    0
+
+
+MARKER_ROWS
+-----------
+       5000
+
+
+=== Chiffrat nach der Rotation ===
+wrote data/xchange/evidence/p4b_rotated/clone_enc.fp
+== Block-level ciphertext comparison ==
+A: vor_allem
+B: nach_rotation
+block_size A/B: 8192/8192
+blocks compared: 6401
+identical: 6400
+differing: 1
+first differing blocks: [1]
+verdict: RE-WRAP INDICATED - only 1 block(s) changed; data blocks byte-identical, so the tablespace key is unchanged
+
+=== Verweist im Ziel noch etwas auf Prods MEK EDFEDD10AA204295A661E896A6566C30? ===
+    CON_ID	  TS# MKID
+---------- ---------- --------------------------------
+	 4	    5 4E7C6CED26084FE2890515571405DFF0
+SELECT con_id, RAWTOHEX(masterkeyid) db_key_mkid, encrypt FROM v$database_key_info ORDER BY con_id
+                                                  *
+ERROR at line 1:
+ORA-00904: "ENCRYPT": invalid identifier
+Help: https://docs.oracle.com/error-help/db/ora-00904/
+ENCRYPT ENCRYPTEDKEY											 MASTERKEYID			  MAS CIPHERMODE	CON_ID
+------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ----------
+AES256	76255815D8DC53562E8D2B34BD252EE637B8DCB8A79CD1715D47002AA9C4BE8B00000000000000000000000000000000 90F40C3B70ED4E889AA7DC1E12C11A22 YES XTS		     1
+NONE	000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00000000000000000000000000000000 NO  CFB		     2
+AES256	821D82207EE1F5476B784CE08CDC7C571506A61C6F966F22C4DB8EDA0F1C699700000000000000000000000000000000 4DFF5D6A664F4F8BAD86B7467C98833C NO  XTS		     3
+AES256	174832276CDA68595E6987309BC27DE432EA262FC900D2335B832FA3C368AEEA00000000000000000000000000000000 4E7C6CED26084FE2890515571405DFF0 YES XTS		     4

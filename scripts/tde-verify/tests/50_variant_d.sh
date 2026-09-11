@@ -5,8 +5,8 @@
 # Name.......: 50_variant_d.sh
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026-09-04
-# Version....: 0.1.0
+# Date.......: 2026-09-11
+# Version....: 0.1.1
 # Purpose....: Variant D: RESTORE ... FORCE AS DECRYPTED, then SET KEY (new
 #              dev MEK), then ALTER TABLESPACE USERS ENCRYPTION OFFLINE ENCRYPT.
 #              Tests whether the decrypt-rekey-encrypt cycle creates new TEK
@@ -31,12 +31,14 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-09-11  oes  Keystore and PDB open before the decryption check, and the
+#                  check itself made non-fatal                             0.1.1
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -248,21 +250,47 @@ SELECT dbid, name, open_mode, log_mode FROM v\$database;
 EXIT
 "
 
-    # Phase 2: Verify USERS is decrypted
+    # The restore ended in OPEN RESETLOGS, which restarts the instance and
+    # closes a password-opened keystore. Without this the SET KEY below and the
+    # offline encryption fail with ORA-28365.
+    # This has to run BEFORE the verification, not after it: the verification is
+    # a dictionary query inside the PDB, and a PDB whose keystore is closed does
+    # not open. Measured 2026-09-10 - the step aborted exactly here although the
+    # measurement itself had already succeeded (ENCRYPTED = NO).
+    step_header "Reopen the keystore after RESETLOGS"
+    ensure_autologin_for "${DEV_SERVICE}"
+
+    # OPEN RESETLOGS opens the CDB, not its PDBs - they come back MOUNTED, and a
+    # query against dba_tablespaces in a mounted PDB fails. Open it explicitly;
+    # an already open PDB answers with ORA-65019, which is tolerated on purpose.
+    step_header "Open ${PROD_PDB} if it came back MOUNTED"
+    sqlplus_dev "
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE ${PROD_PDB} OPEN;
+SELECT name, open_mode FROM v\$pdbs WHERE name='${PROD_PDB}';
+EXIT
+" || lib_warn "could not open ${PROD_PDB} - the verification below shows the state it is in"
+
+    # Phase 2: Verify USERS is decrypted.
+    # A measurement, never a gate. sqlplus_dev returns the SQL*Plus exit code,
+    # so under set -e a transient state here - PDB not open yet, keystore not
+    # settled - killed the whole run before SET KEY and the offline encryption,
+    # discarding a restore that had taken half an hour. The verdict at the end
+    # rests on the canary ciphertext, not on this query, so a failure is
+    # reported and the run continues.
     step_header "Verify USERS is fully decrypted"
+    local verify_rc=0
     sqlplus_dev "
 SET LINESIZE 120 PAGESIZE 100
 ALTER SESSION SET CONTAINER=${PROD_PDB};
 SELECT tablespace_name, encrypted FROM dba_tablespaces WHERE tablespace_name='USERS';
 SELECT COUNT(*) AS enc_ts_count FROM v\$encrypted_tablespaces WHERE ts# = (SELECT ts# FROM v\$tablespace WHERE name='USERS' AND con_id=sys_context('userenv','con_id'));
 EXIT
-"
-
-    # The restore ended in OPEN RESETLOGS, which restarts the instance and
-    # closes a password-opened keystore. Without this the SET KEY below and the
-    # offline encryption fail with ORA-28365.
-    step_header "Reopen the keystore after RESETLOGS"
-    ensure_autologin_for "${DEV_SERVICE}"
+" || verify_rc=$?
+    if [[ ${verify_rc} -ne 0 ]]; then
+        lib_warn "the decryption check did not complete (sqlplus exit ${verify_rc})"
+        lib_warn "continuing - the verdict is taken from the canary ciphertext, not from this query"
+    fi
 
     # Phase 3: SET KEY to a dev-own MEK
     # Per container, not CONTAINER=ALL: PDB$SEED has no master key, so

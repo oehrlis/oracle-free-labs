@@ -61,7 +61,100 @@ gehoeren zu verschiedenen Laeufen und duerfen nicht miteinander verglichen werde
 - Die Alert-Log-Pruefung gehoert zu jedem Schritt, der eine Instanz oeffnet. ORA-28365 und
   ORA-28374 sind hier Messergebnisse, keine Stoerungen.
 
+## Einstiegspunkte - was brauche ich fuer welchen Test
+
+Nicht jeder Test braucht den ganzen Ablauf. Dieser Abschnitt sagt, welche Schritte
+Voraussetzung fuer welchen sind, damit ein einzelner Weg gezielt gefahren werden kann.
+Die Angaben sind aus den Skripten abgeleitet (`require_state` und die
+`Prerequisite`-Zeile im Kopf jedes Skripts), nicht geschaetzt.
+
+### Abhaengigkeitsgraph
+
+```text
+00  Reset                       keine Voraussetzung
+ |
+ +- 10  Baseline + Marker       -> SOURCE_DBID, BASELINE_LABEL
+ |   |
+ |   +- 15  RMAN-Backup         -> BACKUP_READY, BACKUP_CF_PIECE
+ |       |
+ |       +- 20  Variante A      normaler RESTORE
+ |       +- 30  Variante B2     AS ENCRYPTED ohne Prod-MEK
+ |       +- 35  Variante B1     AS ENCRYPTED mit Prod-MEK
+ |       +- 40  Variante C      DUPLICATE ... AS ENCRYPTED
+ |       +- 50  Variante D      AS DECRYPTED + SET KEY + OFFLINE ENCRYPT
+ |       +- 60  Variante F      Discard-Pfad
+ |       +- 70  Variante G      ONLINE REKEY
+ |
+ +- 61  PDB-Testbed             -> PDBCLONE_READY   (braucht KEIN Backup)
+ |   |
+ |   +- 62  P1  lokaler Klon
+ |   +- 63  P2  Archiv-Transport   -> PDB_TARGET_READY
+ |   +- 64  P3  Unplug ohne Keys   Negativtest
+ |   +- 65  P4  Remote-Klon        -> PDB_TARGET_READY
+ |   +- 71  P4b Remote-Klon OHNE Key-Import  (das Entscheidungsexperiment)
+ |       |
+ |       +- 66  P7  ORIGIN
+ |       +- 67  P8  KEY_VERSION
+ |       +- 68  P5  MEK-Rotation
+ |       +- 69  P6  ONLINE REKEY in der PDB
+ |
+ +- 80  Positivkontrolle        nur Prod, keine Voraussetzung
+ +- 90  Entzugstest             nach einer der Varianten
+```
+
+### Rezepte
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Ich will nur ... | Schritte in dieser Reihenfolge | Dauer, grob |
+|---|---|---|
+| **PDB-Cloning** (der empfohlene Weg) | 00, 61, 62 | ~6 min |
+| **das Entscheidungsexperiment**: braucht das Ziel den Quellschluessel? | 00, 61, 71 | ~8 min |
+| **den Klon kryptografisch eigenstaendig machen** (Vier-Schritt-Verfahren, 6b.1 bis 6b.4) | 00, 61, 71, danach 6b.2 bis 6b.4 von Hand | ~12 min |
+| PDB-Cloning inklusive Transport-Gegenbeispiel | 00, 61, 62, 63 | ~9 min |
+| PDB-Cloning vollstaendig, alle Faelle | 00, 61, 62, 63, 64, 65, 66, 67, 68, 69 | ~12 min |
+| **einen einzelnen RMAN-Weg**, z.B. Variante A | 00, 10, 15, 20 | ~10 min |
+| Variante C (DUPLICATE) | 00, 10, 15, 40 | ~10 min |
+| alle RMAN-Wege | 00, 10, 15, 20, 30, 35, 40, 50, 60, 70 | ~20 min |
+| nur die Methodenkontrolle | 00, 10, 80 | ~7 min |
+| Entzugstest nach einem Weg | der Weg, dann 90 | +1 min |
+| **alles** | `run_all.sh --delete --yes` | ~27 min |
+
+<!-- markdownlint-restore -->
+
+### Der wichtigste Punkt daran
+
+**Die PDB-Reihe (61 bis 69) braucht das RMAN-Backup nicht.** Sie haengt
+ausschliesslich an Schritt 00 und 61. Wer nur zeigen will, dass ein PDB-Klon neues
+Schluesselmaterial erzeugt, laesst Schritt 10 und 15 komplett weg und ist in etwa
+sechs Minuten fertig. Die Phasen 1 und 2 dieses Runbooks sind fuer die RMAN-Wege da.
+
+Umgekehrt: die Schritte 66 bis 69 verlangen ein **Ziel**, das entweder aus 63 (P2)
+oder aus 65 (P4) stammt - `PDB_TARGET_READY`. Nach 62 allein laufen sie nicht.
+
+### Zustandsuebergaenge, die man kennen muss
+
+- **`odbencdev` muss fuer `DUPLICATE` unberuehrt sein** (Schritt 40). Nach jedem
+  RMAN-Weg ist es das nicht mehr. Deshalb setzt Schritt 40 den Service selbst
+  zurueck - und deshalb ist die Reihenfolge der RMAN-Wege nicht beliebig.
+- **63 und 65 verlangen eine eigenstaendige Dev-CDB** und rufen dafuer
+  `ensure_independent_dev_cdb` auf. Nach einem RMAN-Restore ist Dev eine Kopie von
+  Prod mit derselben DBID, und das waere keine fremde CDB. Der Aufruf baut sie neu.
+- **Der Dev-Keystore muss vor B2 im Ursprungszustand sein.** Die Sicherung dafuer
+  entsteht in Schritt 2.1 und liegt unter
+  `/opt/oracle/xchange/wallet_dev_pristine`. Ohne sie ist B2 nicht fahrbar.
+- **`SOURCE_DBID` und `BACKUP_CF_PIECE` stehen in der State-Datei**
+  `data/xchange/evidence/lab_state.env`. Beim manuellen Fahren notiert man sie
+  stattdessen; jeder spaetere Schritt braucht sie.
+
 ## Phase 0 - Lab aufsetzen
+
+> **Ziel:** Zwei getrennte Datenbanken herstellen, die sich wie Produktion und
+> Non-Produktion verhalten, und ihren Ausgangszustand festhalten.
+> **Frage:** Sind Quelle und Ziel zu Beginn nachweislich eigenstaendig?
+> **Erwartung:** Zwei verschiedene DBIDs, je ein eigener Keystore, UNITED Mode.
+> **Wozu:** Ohne diese Ausgangswerte ist spaeter nicht belegbar, was der Klon
+> veraendert hat und was schon vorher so war.
 
 ### 0.1 Quell-Service starten
 
@@ -149,6 +242,17 @@ Automatisch: `config/common/scripts/ssenc_info.sql` gibt den Ueberblick inklusiv
 Hidden-Parameter-Liste.
 
 ## Phase 1 - Baseline, Canary und Backup
+
+> **Ziel:** Einen Messaufbau herstellen, an dem eine Aussage ueber das Chiffrat
+> ueberhaupt moeglich ist, und die Quelle sichern.
+> **Frage:** Wo genau liegen die Schluessel physisch, und funktioniert unsere
+> Messmethode ueberhaupt?
+> **Erwartung:** 5000 Markerzeilen in 313 Bloecken, Marker im verschluesselten
+> Datafile **nicht** und im unverschluesselten **313 Mal** auffindbar, gewrappter
+> TEK genau einmal an einer bestimmbaren Stelle.
+> **Wozu:** Das ist die Kontrollgruppe. Ohne den positiven Fund im
+> unverschluesselten Datafile bedeutet ein Nullbefund im verschluesselten nichts -
+> er koennte auch heissen, dass die Suche kaputt ist.
 
 ### 1.1 Canary im verschluesselten Tablespace anlegen
 
@@ -279,11 +383,13 @@ Berechnet SHA-256 je Block. Der Vergleich dieser Datei mit dem Klon ist der eige
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/baseline/users.fp
 ```
 
-Erwartet: 2561 Zeilen in der Fingerabdruck-Datei.
+Erwartet: **2561 Fingerabdruckzeilen** - Bloecke 0 bis 2560. Die Datei hat zusaetzlich
+sechs Kommentarzeilen im Kopf, `wc -l` liefert also 2567. Der Kopf nennt selbst
+`blocks: 2561` und `zero_blocks: 0`; gegen diese Werte pruefen, nicht gegen `wc -l`.
 
 Automatisch: `scripts/tde-verify/tde_evidence.sh -s odbencprod -p ODBENCPROD -l baseline
 -m 'OEHRLI-CANARY-01'` erledigt 1.3, 1.5 und 1.7 in einem Lauf.
@@ -294,11 +400,11 @@ Belegt, dass `USERS` verschluesselt ist und dass der Scan funktioniert.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py scan-plaintext \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   'OEHRLI-CANARY-01' --block-size 8192 --expect-absent
 
 python3 scripts/tde-verify/block_fingerprint.py scan-plaintext \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<canary_plain_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<canary_plain_datafile>.dbf \
   'OEHRLI-CANARY-01' --block-size 8192
 ```
 
@@ -309,6 +415,35 @@ unabhaengig bestaetigt.
 
 Automatisch: `tde_evidence.sh` mit `-m 'OEHRLI-CANARY-01'`, Ablage als `plaintext_<df>.log`.
 
+### Datafile-Pfade ermitteln - vor 1.9 bis 1.10 und 2.13 bis 2.15
+
+Die Datafiles der PDB liegen unter der **GUID** der PDB, nicht unter ihrem Namen, und
+der Host-Pfad hat kein `oradata`-Segment: der Mount bildet `data/<service>` direkt auf
+`/opt/oracle/oradata` ab. Die GUID wechselt bei jedem Neuaufbau des Labs, deshalb wird
+sie ermittelt und nicht abgeschrieben.
+
+```bash
+docker exec -i odbencprod sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 250 PAGESIZE 50
+COLUMN file_name FORMAT A90
+ALTER SESSION SET CONTAINER = ODBENCPROD;
+SELECT tablespace_name, file_name FROM dba_data_files
+ WHERE tablespace_name IN ('USERS','CANARY_PLAIN');
+EXIT
+SQL
+```
+
+Umsetzung Container-Pfad auf Host-Pfad:
+
+```text
+Container : /opt/oracle/oradata/FREE/<PDB-GUID>/datafile/o1_mf_users_*.dbf
+Host prod : data/odbencprod/FREE/<PDB-GUID>/datafile/o1_mf_users_*.dbf
+Host dev  : data/odbencdev/FREE/<PDB-GUID>/datafile/o1_mf_users_*.dbf
+```
+
+Achtung: unter `data/odbencprod/FREE/` liegt zusaetzlich ein `users01.dbf`. Das ist der
+**CDB**-Tablespace und nicht das Ziel - genommen wird die Datei aus der Abfrage oben.
+
 ### 1.9 Gewrappten TEK und MASTERKEYID physisch lokalisieren
 
 Sucht die Hex-Werte aus den V$-Views in der Rohdatei. Damit ist belegt, wo der TEK liegt und
@@ -316,11 +451,11 @@ dass er im Klon an derselben Stelle steht.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py find-hex \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   BAD537ADDD695BEE7A29F6F27B65A03D6F195CCE3388AD0119D718087A8AFA55 --block-size 8192
 
 python3 scripts/tde-verify/block_fingerprint.py find-hex \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   8A27589796A248BE95222E59407FF962 --block-size 8192
 ```
 
@@ -337,7 +472,7 @@ Zeigt die Struktur im Rohbyte: Laengenbyte, TEK, Fuellbytes, `MASTERKEYID`.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py hexdump \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block 1 --block-size 8192 --length 1024
 ```
 
@@ -362,10 +497,11 @@ der Standard-FRA und meldet, es habe kein Autobackup gefunden.
 
 ```bash
 docker exec -i odbencprod rman target / <<'RMAN'
+CONFIGURE CONTROLFILE AUTOBACKUP ON;
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
 RUN {
-  ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
-  SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
-  BACKUP DATABASE PLUS ARCHIVELOG FORMAT '/opt/oracle/xchange/backup/%U';
+  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '/opt/oracle/xchange/backup/%U';
+  BACKUP DATABASE PLUS ARCHIVELOG;
   RELEASE CHANNEL c1;
 }
 EXIT
@@ -394,6 +530,17 @@ Automatisch: kein Skript - bewusst manueller Schritt, weil hier Schluesselmateri
 Umgebungsgrenze verlaesst.
 
 ## Phase 2 - Variante A: normaler RESTORE mit transportiertem Prod-Wallet
+
+> **Ziel:** Die heutige Praxis nachstellen - Backup restaurieren, Prod-Keystore
+> mitkopieren - und messen, was sie mit dem Schluesselmaterial macht.
+> **Frage:** Erneuert ein normaler Restore irgendetwas am Tablespace-Schluessel?
+> **Erwartung:** Nein. 313 von 313 Markerbloecken identisch, MASTERKEYID und
+> gewrappter TEK unveraendert, `ORIGIN` meldet trotz Kopie `LOCAL`.
+> **Aussage fuer den Kunden:** Der uebliche Klon ist kryptografisch vollstaendig
+> von Produktion abhaengig, und die Datenbank kann nicht sagen, woher ihre
+> Schluessel stammen. Diese Phase ist zugleich die **Determinismus-Kontrolle**:
+> gleicher Schluessel unter gleichem MEK ergibt byteidentische gewrappte Bytes -
+> darauf ruht die Beweisfuehrung aller PDB-Faelle.
 
 ### 2.1 Ziel-Keystore sichern und pruefen
 
@@ -465,11 +612,10 @@ entsprechen, das die Quelle in 1.11 verwendet hat.
 
 ```bash
 docker exec -i odbencdev rman target / <<'RMAN'
-SET DBID 1515066983;
+SET DBID <quell_dbid>;
 RUN {
   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
-  SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
-  RESTORE CONTROLFILE FROM AUTOBACKUP;
+  RESTORE CONTROLFILE FROM '/opt/oracle/xchange/backup/<cf_piece_der_quelle>';
   ALTER DATABASE MOUNT;
   RELEASE CHANNEL c1;
 }
@@ -477,8 +623,17 @@ EXIT
 RMAN
 ```
 
-Erwartet: Autobackup `cf_c-1515066983-20260903-00` gefunden, Controlfile restauriert, Datenbank
-gemountet.
+Erwartet: Controlfile restauriert, Datenbank gemountet.
+
+**Warum nicht `FROM AUTOBACKUP`:** ein RMAN-Restore behaelt die DBID der Quelle. Ab dem
+zweiten Klon schreibt das Ziel seine eigenen Controlfile-Autobackups in denselben
+Namensraum `cf_c-<DBID>-*` im gemeinsamen Austausch-Mount, und `FROM AUTOBACKUP` greift
+dann das **hoechste**, also das des Ziels. Gemessen 2026-09-10: nach Variante A lag neben
+Prods `-02` ein `-03` aus Devs `OPEN RESETLOGS`; `FROM AUTOBACKUP` nahm die `-03`, und die
+restaurierte Controlfile trug Devs Inkarnation als aktuelle. Deshalb immer das Piece der
+**Quelle** explizit nennen - das ist auch der Zweck von `--cf-piece` in `tde_clone.sh`.
+Welches das ist, steht als `BACKUP_CF_PIECE` in der State-Datei oder ist das aelteste
+`cf_`-Piece im Backup-Verzeichnis.
 
 Automatisch: Teil von `tde_clone.sh`.
 
@@ -528,25 +683,27 @@ gelesen und erscheint in keinem Host-Befehl.
 
 Automatisch: Funktion `open_keystore` in `tde_clone.sh`, die die Ausgabe zusaetzlich filtert.
 
-### 2.8 Backup-Pieces katalogisieren
+### 2.8 Katalogisieren - **entfaellt bewusst**
 
-Die restaurierte Controlfile kennt die Backup-Pieces unter ihren Quellpfaden; der Katalog holt
-sie an der jetzigen Stelle nach.
+**Dieser Schritt wird nicht ausgefuehrt.** Beide Container sehen das Austausch-Verzeichnis
+unter demselben Pfad `/opt/oracle/xchange/backup`, also stimmen die Piece-Pfade in der
+restaurierten Controlfile bereits. `tde_clone.sh` katalogisiert aus demselben Grund nicht
+(siehe Kommentar im Skript, "No CATALOG: both containers see the exchange directory at the
+same path").
 
-```bash
-docker exec -i odbencdev rman target / <<'RMAN'
-RUN {
-  ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
-  CATALOG START WITH '/opt/oracle/xchange/backup/' NOPROMPT;
-  RELEASE CHANNEL c1;
-}
-EXIT
-RMAN
+Und ein `CATALOG START WITH` auf dieses Verzeichnis ist nicht nur unnoetig, sondern
+schaedlich: es zieht die Controlfile-Autobackups des **Ziels** mit ein, die wegen der
+geteilten DBID im selben Namensraum liegen. Gemessen 2026-09-10:
+
+```text
+Controlfile der Quelle restauriert, ohne CATALOG   -> Inkarnation 2 CURRENT (Quelle)
+danach CATALOG START WITH backup/                  -> Inkarnation 3 CURRENT (Ziel)
 ```
 
-Erwartet: alle Pieces katalogisiert, keine Warnung ueber fehlende Dateien.
-
-Automatisch: Teil von `tde_clone.sh`.
+Damit zielt ein anschliessendes `RESTORE DATABASE` auf die falsche Inkarnation. Wer
+katalogisieren muss, weil die Pieces tatsaechlich woanders liegen, katalogisiert die
+Datafile- und Archivelog-Pieces einzeln und **nie** das Verzeichnis mit den Autobackups -
+oder setzt danach `RESET DATABASE TO INCARNATION <nr_der_quelle>`.
 
 ### 2.9 Letzte archivierte Sequenz bestimmen
 
@@ -603,6 +760,44 @@ Erwartet: `OPEN_MODE READ WRITE`, `DBID 1515066983` - die Quell-DBID im Ziel.
 
 Automatisch: Teil von `tde_clone.sh`.
 
+### 2.11a Keystore nach dem PDB-Open erneut oeffnen
+
+**Ohne diesen Schritt scheitert 2.12 mit `ORA-28365`.** Der Keystore-Zustand ist **pro
+Container**. Schritt 2.7 lief, als die Datenbank `MOUNTED` war - `CONTAINER=ALL` erreichte
+damit nur `CON_ID 1`. Nach `OPEN RESETLOGS` und dem Oeffnen der PDB hat diese ihren eigenen,
+noch geschlossenen Keystore-Zustand, und weil der transportierte Keystore ein **LOCAL**
+Auto-Login ist, oeffnet er sich fuer sie nicht von selbst.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 200 PAGESIZE 50
+SELECT name, open_mode FROM v$pdbs;
+EXIT
+SQL
+
+docker exec odbencdev bash -c '
+KSPWD=$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL
+SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
+WHENEVER SQLERROR CONTINUE
+ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
+COLUMN status FORMAT A14
+COLUMN wallet_type FORMAT A16
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
+EXIT
+SQL
+'
+```
+
+Erwartet: die PDB steht auf `READ WRITE`, und danach **alle** Container auf `OPEN` /
+`PASSWORD`. Steht die PDB noch auf `MOUNTED`, vorher
+`ALTER PLUGGABLE DATABASE <pdb> OPEN;`.
+
+Kundenrelevanz: es genuegt nicht, den Keystore einmal zu oeffnen. Ein Klon-Prozess, der ihn
+vor dem Oeffnen der PDBs anfasst und danach nicht mehr, hinterlaesst eine laufende
+Datenbank mit unlesbaren PDB-Daten - und der Fehler sieht wie ein Schluesselproblem aus,
+ist aber ein Reihenfolgeproblem.
+
 ### 2.12 Schluesselkette im Klon pruefen
 
 ```bash
@@ -625,7 +820,7 @@ Der Kern des Beweises.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/variant_a/users.fp
 
 python3 scripts/tde-verify/block_fingerprint.py compare \
@@ -647,11 +842,11 @@ Re-encrypt.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py hexdump \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block 2000 --block-size 8192 --length 256
 
 python3 scripts/tde-verify/block_fingerprint.py hexdump \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block 2000 --block-size 8192 --length 256
 ```
 
@@ -663,7 +858,7 @@ Automatisch: kein Skript - gezielte Einzelpruefung.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py find-hex \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   BAD537ADDD695BEE7A29F6F27B65A03D6F195CCE3388AD0119D718087A8AFA55 --block-size 8192
 ```
 
@@ -672,6 +867,14 @@ Erwartet: genau 1 Treffer bei Offset 8977 - dieselbe Stelle wie in der Quelle.
 Automatisch: kein Skript.
 
 ## Phase 3 - Variante B2: AS ENCRYPTED USING KEY ohne Prod-MEK
+
+> **Ziel:** Pruefen, ob RMAN einen Klon ohne den Produktionsschluessel hinbekommt.
+> **Frage:** Kann das Ziel die Quellbloecke ohne den Quell-MEK ueberhaupt lesen?
+> **Erwartung:** Abbruch mit `ORA-19870` plus `ORA-28374`, **bevor** ein Block
+> gelesen wird.
+> **Aussage fuer den Kunden:** Das ist die belastbarste Messung der ganzen Reihe.
+> Jeder RMAN-Weg braucht den Produktionsschluessel im Ziel. Ein RMAN-Klon ohne
+> Transfer des Prod-Schluessels existiert nicht.
 
 ### 3.1 Ziel-Keystore auf den Ursprungszustand zuruecksetzen
 
@@ -749,6 +952,17 @@ waere `MERGE KEYSTORE` aus einem Backup-Wallet - genau das ist im Klon-Szenario 
 Automatisch: kein Skript.
 
 ## Phase 4 - Variante B1: AS ENCRYPTED USING KEY mit Prod-MEK
+
+> **Ziel:** Denselben Weg mit vorhandenem Prod-MEK fahren, also unter der
+> Bedingung, die Oracle dokumentiert.
+> **Frage:** Konvertiert `AS ENCRYPTED` ein bereits verschluesseltes Datafile?
+> **Erwartung:** Abbruch mit `ORA-00600 [kcbtse_encdec_tbsblk_1]`, dreimal
+> reproduziert.
+> **Vorsicht bei der Auslegung:** `ORA-00600` ist ein **interner Fehler**, also ein
+> Oracle-Defekt und keine dokumentierte Verhaltensweise. Aus dieser Phase folgt
+> **nicht** "Oracle unterstuetzt das nicht". Zwei Lesarten bleiben offen: unsere
+> Kommandofolge ist ungueltig, oder es ist ein Bug. Ohne Service Request ist das
+> nicht entscheidbar. Die tragende Aussage liefert Phase 3, nicht diese.
 
 ### 4.1 Prod-Keystore ins Ziel stellen und eigenen Schluessel anlegen
 
@@ -837,6 +1051,15 @@ Keystore jeweils offen mit `WALLET_TYPE PASSWORD`.
 Automatisch: derselbe Aufruf, wiederholt.
 
 ## Phase 4a - Variante C: DUPLICATE ... AS ENCRYPTED
+
+> **Ziel:** Den zweiten dokumentierten RMAN-Weg messen, der eine eigene
+> Datenbankidentitaet erzeugt.
+> **Frage:** Aendert eine neue DBID etwas am Schluesselmaterial?
+> **Erwartung:** Nein. Neue DBID, aber 313 von 313 Markerbloecken identisch,
+> MASTERKEYID und gewrappter TEK unveraendert.
+> **Aussage fuer den Kunden:** Eine eigene Identitaet ist keine kryptografische
+> Trennung. Der Klon sieht wie eine andere Datenbank aus und traegt dieselben
+> Schluessel.
 
 Diese Phase ist nachtraeglich eingefuegt und behaelt die Nummerierung der folgenden Phasen bei.
 Automatisch laeuft sie als `scripts/tde-verify/tests/40_variant_c.sh --yes`.
@@ -1002,7 +1225,7 @@ Automatisch: `collect_evidence` in `40_variant_c.sh`, Label `variant_c`.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/variant_c/users.fp
 
 python3 scripts/tde-verify/block_fingerprint.py compare \
@@ -1039,6 +1262,16 @@ Quell-MEK nicht.
 
 ## Phase 5 - Entschluesselungspfad: RESTORE FORCE AS DECRYPTED
 
+> **Ziel:** Den Weg messen, der intuitiv nach Trennung aussieht - entschluesseln,
+> eigenen MEK setzen, neu verschluesseln.
+> **Frage:** Erzeugt ein Entschluesselungs- und Wiederverschluesselungszyklus neues
+> Tablespace-Schluesselmaterial?
+> **Erwartung:** Nein. MASTERKEYID neu, gewrappter TEK neu, aber das Chiffrat der
+> Daten **identisch** - 313 von 313. Der Tablespace-Key uebersteht den Zyklus, nur
+> seine Verpackung wechselt.
+> **Aussage fuer den Kunden:** Das ist die Falle. Alle Views zeigen neue Werte, und
+> die Daten sind mit demselben Schluessel verschluesselt wie in Produktion.
+
 ### 5.1 Restore mit FORCE AS DECRYPTED
 
 `FORCE` ist zwingend. Ohne `FORCE` ueberspringt die Restore-Optimierung genau die Datafiles, die
@@ -1074,7 +1307,7 @@ EXIT
 SQL
 
 python3 scripts/tde-verify/block_fingerprint.py scan-plaintext \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   'OEHRLI-CANARY-01' --block-size 8192
 ```
 
@@ -1187,7 +1420,7 @@ Der zentrale Befund dieses Pfads.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/variant_d/users.fp
 
 python3 scripts/tde-verify/block_fingerprint.py compare \
@@ -1206,11 +1439,11 @@ Automatisch: `scripts/tde-verify/tde_evidence.sh --compare baseline variant_d`
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py find-hex \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   BAD537ADDD695BEE7A29F6F27B65A03D6F195CCE3388AD0119D718087A8AFA55 --block-size 8192
 
 python3 scripts/tde-verify/block_fingerprint.py find-hex \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   8FBDA2A856F5128B5C2D27F51A9B769608D1CA60185320DD67861E148C303E41 --block-size 8192
 ```
 
@@ -1508,7 +1741,7 @@ Automatisch: Phase 6 in `60_variant_f.sh`.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/variant_f/users.fp
 
 python3 scripts/tde-verify/block_fingerprint.py compare \
@@ -1566,6 +1799,14 @@ mehrere Zwischenzustaende die Datenbank unbrauchbar machen koennen. Fuer den Reg
 der PDB-Klon und `ONLINE REKEY` die tragfaehigen Wege.
 
 ## Phase 5a - Variante G: ALTER TABLESPACE ... ENCRYPTION ONLINE REKEY
+
+> **Ziel:** Den dokumentierten Weg zu echtem neuem Schluesselmaterial messen.
+> **Frage:** Was aendert sich, wenn der Tablespace selbst neu verschluesselt wird?
+> **Erwartung:** 0 von 313 Markerbloecken identisch, `KEY_VERSION` steigt, das alte
+> Datafile wird entfernt.
+> **Aussage fuer den Kunden:** So sieht echtes Re-encrypt aus - und der Kontrast zu
+> Phase 5 belegt, dass die MEK-Rotation eine andere Operation ist als der
+> Tablespace-Rekey, obwohl beide "Rekey" heissen.
 
 Diese Phase ist nachtraeglich eingefuegt und behaelt die Nummerierung der folgenden Phasen bei.
 Automatisch laeuft sie als `scripts/tde-verify/tests/70_variant_g.sh --yes`.
@@ -1673,7 +1914,7 @@ Automatisch: Phase 3 in `70_variant_g.sh`.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencdev/oradata/FREE/ODBENCPROD/<users_datafile>.dbf \
+  data/odbencdev/FREE/<PDB-GUID>/datafile/<users_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/variant_g/users.fp
 
 python3 scripts/tde-verify/block_fingerprint.py compare \
@@ -1717,6 +1958,14 @@ Aussage: `ONLINE REKEY` erzeugt neues Schluesselmaterial. Es ist damit der einzi
 gemessenen RMAN- und Tablespace-Wege, der das Chiffrat der Nutzdaten wirklich austauscht.
 
 ## Phase 6 - Positivkontrolle: erkennt die Methode einen TEK-Wechsel?
+
+> **Ziel:** Die Messmethode gegen sich selbst pruefen.
+> **Frage:** Wenn zwei Tablespaces denselben Inhalt unter verschiedenen Schluesseln
+> tragen - sieht unser Verfahren den Unterschied?
+> **Erwartung:** 0 von 313 identisch.
+> **Wozu:** Ohne diese Kontrolle ist jedes "313 identisch" wertlos, weil es auch
+> bedeuten koennte, dass der Vergleich blind ist. Diese Phase macht die
+> Nullbefunde der anderen Phasen aussagekraeftig.
 
 ### 6.1 Zwei frische verschluesselte Tablespaces in der Quelle anlegen
 
@@ -1775,11 +2024,11 @@ Automatisch: `tde_evidence.sh` mit `-t CTRL_ENC_A` bzw. `-t CTRL_ENC_B`.
 
 ```bash
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<ctrl_enc_a_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<ctrl_enc_a_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/ctrl_a/ctrl.fp
 
 python3 scripts/tde-verify/block_fingerprint.py fingerprint \
-  data/odbencprod/oradata/FREE/ODBENCPROD/<ctrl_enc_b_datafile>.dbf \
+  data/odbencprod/FREE/<PDB-GUID>/datafile/<ctrl_enc_b_datafile>.dbf \
   --block-size 8192 --out data/xchange/evidence/ctrl_b/ctrl.fp
 
 python3 scripts/tde-verify/block_fingerprint.py compare \
@@ -1795,6 +2044,19 @@ Phase 2 und Phase 5 ist keine Blindheit des Messverfahrens.
 Automatisch: `scripts/tde-verify/tde_evidence.sh --compare ctrl_a ctrl_b`
 
 ## Phase 6a - PDB-Wege: Klon, Archiv-Transport und Schluesselherkunft
+
+> **Ziel:** Die Alternative zu RMAN messen - Kopieren auf PDB-Ebene.
+> **Frage:** Erzeugt ein PDB-Klon neues Tablespace-Schluesselmaterial, und braucht
+> das Ziel dafuer den Quellschluessel?
+> **Erwartung:** Klon **ja**, 0 von 313 identisch bei unveraenderter MASTERKEYID -
+> unter gleichem MEK kann ein anderer gewrappter Wert kein Re-wrap sein.
+> Archiv-Transport **nein**, 313 von 313 identisch. Unplug ohne Key-Export
+> scheitert mit `ORA-46680`.
+> **Aussage fuer den Kunden:** Hier liegt die Empfehlung. Ein einziges
+> unterstuetztes Kommando erledigt Kopie und Schluesselwechsel zugleich - kein
+> Hidden Parameter, kein Klartextfenster. Und der Gegensatz zum Archiv-Transport
+> zeigt, dass eine fremde CDB mit eigener DBID Trennung nur vortaeuscht.
+> **Diese Phase braucht das RMAN-Backup nicht** - nur Schritt 00 und 61.
 
 Diese Phase ist nachtraeglich eingefuegt und behaelt die Nummerierung der folgenden Phasen bei.
 Sie deckt die Faelle P1 bis P8 ab: was passiert mit Schluessel und Chiffrat, wenn eine PDB
@@ -2665,7 +2927,320 @@ verschluesselt neu, obwohl der Master Key derselbe bleibt. Eine MEK-Rotation wra
 laesst die Daten unberuehrt, und sie greift bei einem read-only Tablespace gar nicht durch. Der
 einzige PDB-Weg, der das Chiffrat wirklich austauscht, ist `ONLINE REKEY`.
 
+## Phase 6b - P4b: Remote-Klon ohne Key-Import
+
+> **Ziel:** Die eine Frage klaeren, die Phase 6a offen laesst und an der die ganze
+> Empfehlung haengt.
+> **Frage:** Braucht das Ziel den Produktionsschluessel ueberhaupt jemals, oder
+> hinterlaesst der Klon dort einen eigenstaendigen Schluessel?
+> **Warum 6a das nicht beantwortet:** Schritt 65 klont **und danach** exportiert
+> und importiert er die Quellschluessel ins Ziel. Der Klon selbst laeuft also ohne
+> sie - aber weil der Import danach trotzdem stattfindet, isoliert die Messung die
+> Frage nicht. Ob der Import ueberfluessig ist oder notwendig, steht nirgends.
+> **Erwartung:** offen. Genau deshalb wird gemessen.
+> **Erwartete Ausgaenge, vor dem Lauf formuliert:**
+>
+> - **Marker lesbar** - das Ziel braucht den Quell-MEK nie. Getrennte Keystores
+>   oder getrennte OKV pro Stufe sind mit diesem Verfahren tragfaehig.
+> - **`ORA-28374` oder `ORA-28365`** - der Klon haengt laenger am Quellschluessel
+>   als angenommen. Die Empfehlung braucht dann eine Einschraenkung.
+>
+> **Diese Erwartung war unvollstaendig, und der Lauf hat sie widerlegt.** Beide
+> Punkte unterstellen, dass Lesbarkeit und Schluesselunabhaengigkeit dasselbe sind.
+> Sie sind es nicht: der Marker las sich, **und** der Quell-MEK lag im
+> Ziel-Keystore, weil der Klon ihn selbst mitbringt. Ein dritter Ausgang fehlte
+> in der Aufzaehlung - lesbar **und** abhaengig. Er ist der eingetretene. Die
+> Schritte 6b.1 bis 6b.4 unten messen ihn und zeigen den Weg heraus. Der Block
+> bleibt hier stehen, weil er dokumentiert, wie falsch man die Frage stellen
+> kann: ein Lesetest beweist Lesbarkeit, nicht Unabhaengigkeit.
+
+Automatisch: `scripts/tde-verify/tests/71_pdb_p4b_nokeyimport.sh --yes`
+
+Der Schritt prueft in Phase 2 **hart**, dass der Quell-MEK im Ziel-Keystore fehlt,
+und bricht ab, wenn er da ist - sonst wuerde der Lauf nichts beweisen. Danach:
+DB-Link, `CREATE PLUGGABLE DATABASE ... FROM ...@link KEYSTORE IDENTIFIED BY`,
+**kein** `EXPORT KEYS`, **kein** `IMPORT KEYS`, dann oeffnen und lesen.
+
+Grenze der Aussage: das Lab hat kein Oracle Key Vault. Gemessen wird der
+Mechanismus gegen Software-Keystores. Ob zwei unabhaengige Key-Vault-Cluster sich
+gleich verhalten, ist hier nicht entscheidbar - das gehoert in den Service Request.
+
+### Ergebnis des Laufs vom 2026-09-10
+
+Gemessen von Hand, **ausserhalb** der automatisierten Suite. Belege:
+`artefacts/p4b-experiment-20260910_171555.log` und `artefacts/p4b-setkey-20260910_185928.log`.
+Die Werte stehen in `tasks/e2e-facts.md` in einem eigenen Abschnitt - sie gehoeren nicht
+zum durchgehenden Lauf vom 2026-09-06 und duerfen nicht mit dessen Zahlen gemischt werden.
+
+Der Marker war im Ziel lesbar, 5000 Zeilen, ohne ein einziges `EXPORT KEYS` und ohne ein
+einziges `IMPORT KEYS`. Damit trifft der erste der beiden oben genannten Ausgaenge zu - aber
+nicht aus dem angenommenen Grund. **Der Klon bringt den Quell-MEK selbst mit.** Nach dem
+`CREATE PLUGGABLE DATABASE ... FROM ...@link` lag der Master Key der Quelle im Ziel-Keystore
+unter `CON_ID 4` und meldete dort `ORIGIN = LOCAL`. Das Ziel braucht also keinen manuellen
+Schluesseltransport - es haengt aber bis zur Rotation am Schluessel der Quelle, und der
+Keystore sieht ihm das nicht an.
+
+Daraus folgt ein Verfahren in vier Schritten: klonen, den Tablespace auf `READ WRITE` setzen,
+den Master Key rotieren, und pruefen, dass im Ziel nichts mehr auf den Quellschluessel zeigt.
+Die Reihenfolge ist nicht beliebig - 6b.2 zeigt, warum.
+
+Wie ueberall in diesem Dokument gilt: die Hex-Werte sind Beleg, nicht Sollwert. Schluessel-IDs
+sind pro Lauf neu. Vergleichbar sind die Relationen - gleich oder verschieden zur Quelle - und
+die Blockzahlen.
+
+### 6b.1 Schritt 1 - Remote-Klon ohne Key-Import (Schritt 71)
+
+Der DB-Link in der Dev-CDB wird angelegt wie in 6a.6, hier unter eigenem Namen
+`prod_cdb_link_p4b`. Der Rest ist derselbe Klon wie bei P4, nur ohne den anschliessenden
+Schluesseltransport.
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE PLUGGABLE DATABASE PDBCLONE_P4B
+  FROM PDBCLONE@prod_cdb_link_p4b
+  KEYSTORE IDENTIFIED BY "${KSPWD}";
+ALTER PLUGGABLE DATABASE PDBCLONE_P4B OPEN READ WRITE;
+EXIT
+SQL
+INNER
+```
+
+Danach die Schluesselkette lesen - einmal im Wurzelcontainer, einmal in der neuen PDB.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 300 PAGESIZE 100
+SELECT con_id, key_id, origin FROM v$encryption_keys ORDER BY con_id;
+ALTER SESSION SET CONTAINER = PDBCLONE_P4B;
+SELECT RAWTOHEX(masterkeyid) AS mkid, RAWTOHEX(encryptedkey) AS wrapped_tek, key_version
+  FROM v$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+SELECT COUNT(*) AS marker_rows FROM scott.canary_cloneenc;
+EXIT
+SQL
+```
+
+Erwartet, gemessen am 2026-09-10:
+
+- `MKID` weiterhin `EDFEDD10AA204295A661E896A6566C30` - der Master Key der Quelle.
+- `WRAPPED_TEK` neu: `127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275`, waehrend die
+  Quelle `B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0` trug.
+- Der Quellschluessel taucht in `V$ENCRYPTION_KEYS` unter `CON_ID 4` auf, mit `ORIGIN = LOCAL`.
+- 5000 Markerzeilen lesbar.
+
+Was das heisst: der Klon hat den Tablespace-Schluessel neu gewrappt, den Master Key aber nicht
+gewechselt - und er hat ihn beilaeufig in den Ziel-Keystore transportiert. `ORIGIN = LOCAL` ist
+dabei kein Herkunftsnachweis, sondern nur die Aussage, dass der Eintrag in diesem Keystore
+liegt; dasselbe Bild zeigt P7 fuer den Weg ueber `EXPORT`/`IMPORT KEYS`.
+
+Automatisch: `scripts/tde-verify/tests/71_pdb_p4b_nokeyimport.sh --yes`.
+
+### 6b.2 Schritt 2 - `SET KEY` bei READ ONLY: die Falle
+
+Vor der Rotation den Fingerabdruck des Ziel-Datafiles nehmen - ohne ihn ist spaeter nicht
+entscheidbar, ob etwas passiert ist. Der Host-Pfad enthaelt die **GUID der PDB** und hat
+**kein** `oradata`-Segment; die GUID steht in `V$PDBS.GUID` beziehungsweise in dem Pfad, den
+`DBA_DATA_FILES` in der PDB meldet.
+
+```bash
+python3 scripts/tde-verify/block_fingerprint.py fingerprint \
+  data/odbencdev/FREE/<GUID>/datafile/o1_mf_clone_en_*.dbf \
+  --out data/xchange/evidence/p4b_before/clone_enc.fp
+```
+
+Der naheliegende Reflex ist, jetzt sofort zu rotieren. Das laeuft fehlerfrei durch und aendert
+nichts.
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE_P4B;
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
+  WITH BACKUP CONTAINER=CURRENT;
+SELECT RAWTOHEX(masterkeyid) AS mkid, RAWTOHEX(encryptedkey) AS wrapped_tek, key_version
+  FROM v\$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v\$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+EXIT
+SQL
+INNER
+```
+
+Erwartet: `keystore altered`, und danach **unveraendert** `EDFEDD10...` und `127E86CD...`.
+
+```bash
+python3 scripts/tde-verify/block_fingerprint.py fingerprint \
+  data/odbencdev/FREE/<GUID>/datafile/o1_mf_clone_en_*.dbf \
+  --out data/xchange/evidence/p4b_after/clone_enc.fp
+
+python3 scripts/tde-verify/block_fingerprint.py compare \
+  data/xchange/evidence/p4b_before/clone_enc.fp \
+  data/xchange/evidence/p4b_after/clone_enc.fp \
+  --label-a vor_setkey --label-b nach_setkey
+```
+
+Gemessen: 6401 verglichene Bloecke, 6401 identisch, 0 abweichend.
+
+Was das heisst: `CLONE_ENC` war im Ziel `READ ONLY` - aus der Quelle geerbt, wo der Tablespace
+fuer die Baseline auf `READ ONLY` gesetzt wurde. Ein read-only Tablespace wird nicht neu
+gewrappt. Der PDB-Master-Key wechselt, der Tablespace-Eintrag folgt ihm nicht und bleibt an den
+Quellschluessel gebunden. Das ist dasselbe Verhalten wie in P5 Phase A, hier aber als
+Stolperstein im Verfahren: wer nach diesem Schritt aufhoert, hat nichts geloest und glaubt, er
+haette rotiert.
+
+`CONTAINER=ALL` ist hier falsch. `PDB$SEED` hat keinen eigenen Schluessel, und der Keystore
+meldet fuer diesen Container `OPEN_NO_MASTER_KEY`. Die Rotation gehoert in die Ziel-PDB,
+also `CONTAINER=CURRENT`.
+
+### 6b.3 Schritt 3 - Tablespace READ WRITE setzen und rotieren
+
+```bash
+docker exec -i odbencdev bash -s <<'INNER'
+set -u
+KSPWD="$(cat /opt/oracle/dbconfig/FREE/wallet/wallet_pwd.txt)"
+sqlplus -S / as sysdba <<SQL | grep -viE "identified by"
+SET LINESIZE 200 PAGESIZE 100
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER = PDBCLONE_P4B;
+ALTER TABLESPACE clone_enc READ WRITE;
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
+  WITH BACKUP CONTAINER=CURRENT;
+SELECT RAWTOHEX(masterkeyid) AS mkid, RAWTOHEX(encryptedkey) AS wrapped_tek, key_version
+  FROM v\$encrypted_tablespaces
+ WHERE ts# = (SELECT ts# FROM v\$tablespace
+               WHERE name = 'CLONE_ENC' AND con_id = sys_context('userenv','con_id'));
+SELECT COUNT(*) AS marker_rows FROM scott.canary_cloneenc;
+EXIT
+SQL
+INNER
+```
+
+Erwartet, gemessen: `MKID 4E7C6CED26084FE2890515571405DFF0` - ein im Ziel erzeugter Schluessel -
+und `WRAPPED_TEK C6F33FFF6AD9632AF2D709445AC24E117E39530559592654B243DFAE8917EAEA`. Die
+Markertabelle liefert weiter 5000 Zeilen.
+
+Was das heisst: jetzt greift die Rotation durch. Der Tablespace-Schluessel selbst ist derselbe
+geblieben, er ist nur unter einem anderen Master Key verpackt - der Nachweis dafuer steht in
+6b.4.
+
+### 6b.4 Schritt 4 - Nachweis, dass nichts mehr auf den Quellschluessel zeigt
+
+Zuerst der Blockvergleich gegen den Zustand des Ziels vor der Rotation.
+
+```bash
+python3 scripts/tde-verify/block_fingerprint.py fingerprint \
+  data/odbencdev/FREE/<GUID>/datafile/o1_mf_clone_en_*.dbf \
+  --out data/xchange/evidence/p4b_rotated/clone_enc.fp
+
+python3 scripts/tde-verify/block_fingerprint.py compare \
+  data/xchange/evidence/p4b_before/clone_enc.fp \
+  data/xchange/evidence/p4b_rotated/clone_enc.fp \
+  --label-a vor_allem --label-b nach_rotation
+```
+
+Erwartet, gemessen: 6401 verglichene Bloecke, **6400 identisch, 1 abweichend - Block 1**, der
+Header. Das ist ein Re-wrap, keine Neuverschluesselung. Wuerde die Rotation die Daten neu
+verschluesseln, waeren alle Datenbloecke abweichend, wie bei `ONLINE REKEY` in P6.
+
+Dann die Gegenprobe auf dem Schluessel selbst.
+
+```bash
+docker exec -i odbencdev sqlplus -S / as sysdba <<'SQL'
+SET LINESIZE 300 PAGESIZE 100
+SELECT con_id, ts#, RAWTOHEX(masterkeyid) AS mkid
+  FROM v$encrypted_tablespaces ORDER BY con_id, ts#;
+SELECT * FROM v$database_key_info ORDER BY con_id;
+EXIT
+SQL
+```
+
+Erwartet: kein verschluesselter Tablespace und kein Database Key im Ziel traegt danach noch
+`EDFEDD10...`. Fuer `CON_ID 4` steht in beiden Sichten `4E7C6CED26084FE2890515571405DFF0`.
+
+Kleiner Stolperstein: `V$DATABASE_KEY_INFO` hat keine Spalte `ENCRYPT` - der Zugriff darauf
+endet mit `ORA-00904`. `SELECT *` erspart das Raten nach dem Spaltennamen.
+
+Erst nach diesem Schritt ist die Kopie kryptografisch eigenstaendig. Vorher haette ein Entzug
+des Quellschluessels sie unlesbar gemacht, obwohl nie ein Schluessel von Hand transportiert
+wurde.
+
+### 6b.5 Messwerte des manuellen Laufs vom 2026-09-10
+
+Ziel-PDB `PDBCLONE_P4B` in der Dev-CDB, Tablespace `CLONE_ENC`. Nicht mit den Werten des
+E2E-Laufs vom 2026-09-06 vergleichen - anderer Lauf, andere Schluessel.
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Stufe | MASTERKEYID | gewrappter Tablespace-Schluessel |
+|---|---|---|
+| Quell-PDB `PDBCLONE` | `EDFEDD10AA204295A661E896A6566C30` | `B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0` |
+| nach dem Remote-Klon | `EDFEDD10...` unveraendert, weiter der Quellschluessel | `127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275` neu |
+| nach `SET KEY` bei READ ONLY | `EDFEDD10...` unveraendert | `127E86CD...` unveraendert |
+| nach READ WRITE und erneutem `SET KEY` | `4E7C6CED26084FE2890515571405DFF0` eigener | `C6F33FFF6AD9632AF2D709445AC24E117E39530559592654B243DFAE8917EAEA` |
+
+<!-- markdownlint-restore -->
+
+Dazu aus demselben Lauf:
+
+- Kein `EXPORT KEYS` und kein `IMPORT KEYS` im ganzen Ablauf. Danach lag der Quell-MEK
+  trotzdem im Ziel-Keystore unter `CON_ID 4` mit `ORIGIN = LOCAL`.
+- Die Markertabelle lieferte auf jeder Stufe 5000 Zeilen.
+- Blockvergleich des Ziel-Datafiles vor und nach der abschliessenden Rotation: 6401 Bloecke
+  verglichen, 6400 identisch, 1 abweichend - Block 1, der Header. Re-wrap, keine
+  Neuverschluesselung.
+- Nach der Rotation verweist im Ziel kein verschluesselter Tablespace und kein Database Key
+  mehr auf den Quell-MEK.
+- `CLONE_ENC` war im Ziel `READ ONLY`, aus der Quelle geerbt. Deshalb hat der erste `SET KEY`
+  nicht neu gewrappt.
+
+### 6b.6 Fremdbeleg - nicht aus diesem Lab
+
+Der folgende Punkt ist **keine eigene Messung**. Er stammt aus einem oeffentlichen Blogbeitrag
+von Peter Wahl, ehemals Oracle Product Manager fuer TDE und Key Vault, und wird hier als
+Fremdbeleg gefuehrt, weil er dieselbe Mechanik von einer anderen Seite beschreibt:
+
+- Eine geklonte PDB traegt einen Master Key, dessen Tag den der **Quell-PDB** nennt. Der Klon
+  hat keinen eigenen Schluessel.
+- Ein weiterer Klon dieses Klons scheitert deshalb mit einem Fehler ueber einen fehlenden
+  Schluessel.
+- Das Mittel dagegen ist dieselbe Rotation wie in 6b.3, mit sprechendem Tag:
+
+```sql
+ADMINISTER KEY MANAGEMENT SET KEY
+  USING TAG '<name> <UTC-Zeitstempel>'
+  FORCE KEYSTORE
+  IDENTIFIED BY <passwort>|EXTERNAL STORE
+  [WITH BACKUP];
+```
+
+Die betriebliche Folge ist der eigentliche Punkt: die Rotation nach dem Klonen ist nicht nur
+ein Sicherheitsschritt. Ohne sie laesst sich die Kopie nicht erneut klonen. Wer den Schritt
+als optionale Haerteung behandelt, merkt den Fehler erst, wenn aus der Kopie die naechste
+Umgebung gezogen werden soll.
+
 ## Phase 7 - Entzugstests
+
+> **Ziel:** Die Abhaengigkeit vom Quellschluessel direkt pruefen, indem er entzogen
+> wird.
+> **Frage:** Was passiert mit dem Klon, wenn der Produktionsschluessel verschwindet?
+> **Erwartung:** Die verschluesselten Daten sind unlesbar, `ORA-28374`.
+> **Zwei gueltige Ausgaenge, je nach Vorzustand:** nach Variante G oeffnet die
+> Zieldatenbank gar nicht und bleibt `MOUNTED`. Nach Variante A oeffnet sie, und nur
+> die verschluesselten Daten sind unlesbar, waehrend die unverschluesselte
+> Kontrolltabelle in derselben Session weiter alle 5000 Zeilen liefert. Beides
+> belegt dieselbe Abhaengigkeit - nur der Blast Radius unterscheidet sich. Ein Lauf,
+> der ausschliesslich "oeffnet nicht" als Erfolg akzeptiert, meldet einen
+> Fehlschlag, wo keiner ist.
 
 ### 7.1 Dev-eigenes Wallet zurueckspielen und neu starten
 
@@ -2719,6 +3294,12 @@ Erwartet: kein Prod-Schluessel mehr im Keystore. Der dokumentierte Ausweg zuruec
 Automatisch: `tde_evidence.sh` mit einem eigenen Label je Entzugstest.
 
 ## Phase 8 - Aufraeumen und Reset
+
+> **Ziel:** Den Ausgangszustand wiederherstellen, damit der naechste Lauf von einer
+> definierten Basis startet.
+> **Frage:** Keine - dies ist kein Test.
+> **Wozu:** Reproduzierbarkeit. Ein Lauf, der auf Resten des vorherigen aufsetzt,
+> misst den Rest mit.
 
 ### 8.1 Beide Services zuruecksetzen
 
