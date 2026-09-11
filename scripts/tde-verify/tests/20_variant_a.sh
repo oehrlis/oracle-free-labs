@@ -184,6 +184,19 @@ main() {
 
     write_state "VARIANT_A_MKID" "${mkid_clone}"
     write_state "VARIANT_A_TEK"  "${tek_clone}"
+    # Database identity of the clone. A plain RESTORE keeps the source DBID -
+    # for RMAN the clone IS the source database, which has consequences for
+    # backup catalogs, monitoring, and for FROM AUTOBACKUP picking the target's
+    # own control file autobackup out of a shared directory. Recorded here so
+    # the contrast with variant C (new DBID) is measured, not asserted.
+    local dbid_clone
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        dbid_clone="DRY-RUN"
+    else
+        dbid_clone=$(get_dbid "${DEV_SERVICE}")
+    fi
+    write_state "VARIANT_A_DBID" "${dbid_clone}"
+    lib_info "clone DBID: ${dbid_clone} (source: $(read_state SOURCE_DBID))"
 
     print_key_summary "variant_a (clone)" "${mkid_clone}" "${tek_clone}"
     print_key_summary "baseline  (source)" "${mkid_source}" "${tek_source}"

@@ -7,8 +7,37 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-11
+
 ### Added
 
+- `doc/tde-restore-runbook.md`, section "Einstiegspunkte": dependency graph of the test
+  steps plus a recipe table that names the exact step sequence per test case, so a single
+  path can be driven without the full run. The PDB series (61 to 69, 71) needs no RMAN
+  backup - only steps 00 and 61.
+- `doc/tde-restore-runbook.md`: every phase now opens with a Ziel / Frage / Erwartung block,
+  so it is visible before the commands what the phase measures and what result is expected.
+- Test step 71 `71_pdb_p4b_nokeyimport.sh`: remote PDB clone with neither `EXPORT KEYS` nor
+  `IMPORT KEYS`. It measures whether the target ever needs the source master key, and it
+  hard-checks beforehand that the source key is absent from the target keystore - otherwise
+  the run would prove nothing.
+- Finding, measured by hand on 2026-09-10 outside the suite: a remote clone transports the
+  source master key into the target keystore all by itself, where it reports `ORIGIN = LOCAL`.
+  The clone re-wraps the tablespace key but does not rotate the master key. Documented as a
+  four-step procedure in runbook phase 6b - clone, set the tablespace `READ WRITE`, rotate,
+  verify that nothing references the source key any more - with the trap that a read-only
+  tablespace is not re-wrapped, so a first `SET KEY` succeeds and changes nothing. Evidence:
+  `artefacts/p4b-experiment-20260910_171555.log`,
+  `artefacts/p4b-setkey-20260910_185928.log`; values in `tasks/e2e-facts.md` in a section of
+  their own, kept apart from the 2026-09-06 end-to-end run.
+- Third-party reference in phase 6b, marked as not our measurement: Peter Wahl, former Oracle
+  product manager for TDE and Key Vault, describes publicly that a cloned PDB carries a master
+  key tagged with the source PDB's tag and has no key of its own, so cloning that clone again
+  fails with a missing-key error. The remedy is the same rotation, with a speaking tag. The
+  operational consequence: the rotation is not only a security step - without it the copy
+  cannot be cloned again.
+- Steps 20 and 40 now capture the DBID of the clone, so a later step can tell a genuine
+  foreign CDB from a restore of the source.
 - End-to-end verification run: one uninterrupted pass over all 21 steps, 27 minutes,
   21 of 21 passed. Raw log `artefacts/tde-e2e-run-20260906.log`, protocol
   `doc/tde-e2e-protokoll.md`, measured values `tasks/e2e-facts.md`.
@@ -76,6 +105,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Six corrections to `doc/tde-restore-runbook.md`, all found by running it by hand:
+  the fingerprint line count counts data lines, not `wc -l` output; host datafile paths carry
+  the PDB GUID and have no `oradata` segment; the RMAN `FORMAT` clause belongs on the channel,
+  not on `BACKUP DATABASE PLUS ARCHIVELOG`, otherwise the datafile pieces land outside the
+  exchange mount; a new step reopens the keystore after the PDB opens, without which the next
+  statement fails with `ORA-28365`; the control file is restored from the explicitly named
+  source piece, because `FROM AUTOBACKUP` picks the target's own once the DBID is shared; and
+  the `CATALOG START WITH` step is dropped because it makes the target's incarnation current.
 - Variant F: encrypted undo survives the decryption of the data and breaks the discard
   path with `ORA-28304` on the undo datafile, while `V$ENCRYPTED_TABLESPACES` correctly
   reports zero rows. The undo tablespace is now replaced before the discard.
@@ -306,6 +343,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.2.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.1.1...v1.2.0
 [1.1.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.0...v1.0.1
@@ -315,4 +353,4 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 [0.3.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/oehrlis/oracle-free-labs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/oehrlis/oracle-free-labs/releases/tag/v0.1.0
-<!-- markdownlint-enable MD013 -->
+<!-- markdownlint-restore -->

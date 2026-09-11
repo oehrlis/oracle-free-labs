@@ -1,0 +1,861 @@
+########################################################################
+## P4b - Remote-Klon ohne Key-Import: braucht das Ziel den Quell-MEK?
+## 2026-09-10 17:15:55
+########################################################################
+
+######## 00_reset_lab.sh ########
+2026-09-10 17:15:56 INFO  Starting 00_reset_lab.sh 0.1.0
+
+========================================================================
+== Step 00: Reset lab services
+========================================================================
+
+========================================================================
+== Reset odbencprod
+========================================================================
+2026-09-10 17:15:56 INFO  removed data/xchange/evidence
+2026-09-10 17:15:56 INFO  removed data/xchange/sso_foreign
+2026-09-10 17:15:56 INFO  removed data/xchange/stale_redo_odbencdev
+2026-09-10 17:15:56 INFO  removed data/xchange/wallet_dev_pristine
+2026-09-10 17:15:56 INFO  removed data/xchange/wallet_prod
+2026-09-10 17:15:56 INFO  removed data/xchange/backup
+2026-09-10 17:15:56 INFO  exchange mount cleared
+2026-09-10 17:15:56 INFO  resetting service 'odbencprod' ...
+ Container odbencprod Stopping 
+ Container odbencprod Stopped 
+ Container odbencprod Removing 
+ Container odbencprod Removed 
+ Network oracle-free-labs_default Removing 
+ Network oracle-free-labs_default Resource is still in use 
+2026-09-10 17:15:59 INFO  removing /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/odbencprod
+2026-09-10 17:15:59 INFO  restored tracked files under data/odbencprod
+2026-09-10 17:15:59 INFO  service 'odbencprod' reset complete
+2026-09-10 17:15:59 INFO  starting service 'odbencprod' ...
+ Container odbencprod Creating 
+ Container odbencprod Created 
+ Container odbencprod Starting 
+ Container odbencprod Started 
+2026-09-10 17:16:00 INFO  waiting for odbencprod to be ready (timeout 900s) ...
+2026-09-10 17:18:34 INFO  odbencprod is ready
+
+========================================================================
+== Reset odbencdev
+========================================================================
+2026-09-10 17:18:34 INFO  resetting service 'odbencdev' ...
+ Container odbencdev Stopping 
+ Container odbencdev Stopped 
+ Container odbencdev Removing 
+ Container odbencdev Removed 
+ Network oracle-free-labs_default Removing 
+ Network oracle-free-labs_default Resource is still in use 
+2026-09-10 17:18:37 INFO  removing /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/odbencdev
+2026-09-10 17:18:37 INFO  restored tracked files under data/odbencdev
+2026-09-10 17:18:37 INFO  service 'odbencdev' reset complete
+2026-09-10 17:18:37 INFO  starting service 'odbencdev' ...
+ Container odbencdev Creating 
+ Container odbencdev Created 
+ Container odbencdev Starting 
+ Container odbencdev Started 
+2026-09-10 17:18:38 INFO  waiting for odbencdev to be ready (timeout 600s) ...
+2026-09-10 17:20:41 INFO  odbencdev is ready
+
+========================================================================
+== Log scan
+========================================================================
+2026-09-10 17:20:41 INFO  odbencprod logs: no ORA-/SP2-/DBT- errors
+2026-09-10 17:20:42 INFO  odbencdev logs: no ORA-/SP2-/DBT- errors
+
+Service              Ready      Log errors
+-------              -----      ----------
+odbencprod           yes        none      
+odbencdev            yes        none      
+
+------------------------------------------------------------------------
+VERDICT: PASS - both services are up, healthy, and clean
+------------------------------------------------------------------------
+2026-09-10 17:20:42 INFO  Done.
+
+######## 61_pdb_testbed.sh ########
+2026-09-10 17:20:42 INFO  Starting 61_pdb_testbed.sh 0.1.0
+
+========================================================================
+== Step 61: PDB testbed - create PDBCLONE with canary tables
+========================================================================
+2026-09-10 17:20:43 INFO  db_create_file_dest set to /opt/oracle/oradata in odbencprod
+
+========================================================================
+== Drop PDBCLONE if exists (idempotency)
+========================================================================
+ALTER PLUGGABLE DATABASE PDBCLONE CLOSE IMMEDIATE
+*
+ERROR at line 1:
+ORA-65011: Pluggable database PDBCLONE does not exist.
+Help: https://docs.oracle.com/error-help/db/ora-65011/
+
+
+DROP PLUGGABLE DATABASE PDBCLONE INCLUDING DATAFILES
+*
+ERROR at line 1:
+ORA-65011: Pluggable database PDBCLONE does not exist.
+Help: https://docs.oracle.com/error-help/db/ora-65011/
+
+
+
+STATUS
+--------------------------
+PDBCLONE drop attempt done
+
+========================================================================
+== Create PDB PDBCLONE
+========================================================================
+
+Pluggable database created.
+
+
+Pluggable database altered.
+
+
+Pluggable database altered.
+
+
+NAME
+--------------------------------------------------------------------------------
+OPEN_MODE
+----------
+PDBCLONE
+READ WRITE
+
+
+
+========================================================================
+== Set master key for PDBCLONE
+========================================================================
+
+Session altered.
+
+
+keystore altered.
+
+
+    CON_ID
+----------
+KEY_ID
+------------------------------------------------------------------------------
+ORIGIN
+-----------------------------------------
+	 3
+Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+LOCAL
+
+
+
+========================================================================
+== Create tablespaces CLONE_ENC and CLONE_PLAIN in PDBCLONE
+========================================================================
+
+Session altered.
+
+DROP TABLESPACE CLONE_ENC INCLUDING CONTENTS AND DATAFILES
+*
+ERROR at line 1:
+ORA-00959: tablespace 'CLONE_ENC' does not exist
+Help: https://docs.oracle.com/error-help/db/ora-00959/
+
+
+DROP TABLESPACE CLONE_PLAIN INCLUDING CONTENTS AND DATAFILES
+*
+ERROR at line 1:
+ORA-00959: tablespace 'CLONE_PLAIN' does not exist
+Help: https://docs.oracle.com/error-help/db/ora-00959/
+
+
+
+Tablespace created.
+
+
+Tablespace created.
+
+
+TABLESPACE_NAME 	       ENC
+------------------------------ ---
+CLONE_ENC		       YES
+CLONE_PLAIN		       NO
+
+========================================================================
+== Create canary schema SCOTT in PDBCLONE
+========================================================================
+
+Session altered.
+
+
+User created.
+
+
+Grant succeeded.
+
+
+User altered.
+
+
+User altered.
+
+
+USERNAME
+--------------------------------------------------------------------------------
+ACCOUNT_STATUS
+--------------------------------
+SCOTT
+OPEN
+
+========================================================================
+== Create canary in CLONE_ENC (encrypted)
+========================================================================
+
+Session altered.
+
+========================================================================
+== Create canary table SCOTT.CANARY_CLONEENC in CLONE_ENC
+========================================================================
+no existing SCOTT.CANARY_CLONEENC to drop
+
+PL/SQL procedure successfully completed.
+
+
+Table created.
+
+
+5000 rows created.
+
+
+Commit complete.
+
+== Row count and segment size ==========================================
+
+CANARY_ROWS
+-----------
+       5000
+
+1 row selected.
+
+
+OWNER		     TABLE_NAME 	  TS_NAME		   BLOCKS      BYTES
+-------------------- -------------------- -------------------- ---------- ----------
+SCOTT		     CANARY_CLONEENC	  CLONE_ENC		      384    3145728
+
+1 row selected.
+
+== Physical block range of the canary rows =============================
+
+RELATIVE_FNO  MIN_BLOCK  MAX_BLOCK DISTINCT_BLOCKS ROWS_TOTAL
+------------ ---------- ---------- --------------- ----------
+	   0	    779       1279	       313	 5000
+
+1 row selected.
+
+== Datafile holding the canary ==========================================
+
+RELATIVE_FNO FILE_NAME								    BLOCK_SIZE	   BLOCKS      BYTES
+------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+	1024 /opt/oracle/oradata/FREE/5B2382E8AC3A1480E063020013AC014F/datafile/o1_	  8192	     6400   52428800
+	     mf_clone_en_ob5lphfl_.dbf
+
+
+1 row selected.
+
+== Marker for the host side plain-text scan ============================
+
+MARKER
+----------------------------------------
+OEHRLI-CANARY-2026-09-03
+
+1 row selected.
+
+========================================================================
+== Create canary in CLONE_PLAIN (plain control)
+========================================================================
+
+Session altered.
+
+========================================================================
+== Create canary table SCOTT.CANARY_CLONEPLAIN in CLONE_PLAIN
+========================================================================
+no existing SCOTT.CANARY_CLONEPLAIN to drop
+
+PL/SQL procedure successfully completed.
+
+
+Table created.
+
+
+5000 rows created.
+
+
+Commit complete.
+
+== Row count and segment size ==========================================
+
+CANARY_ROWS
+-----------
+       5000
+
+1 row selected.
+
+
+OWNER		     TABLE_NAME 	  TS_NAME		   BLOCKS      BYTES
+-------------------- -------------------- -------------------- ---------- ----------
+SCOTT		     CANARY_CLONEPLAIN	  CLONE_PLAIN		      384    3145728
+
+1 row selected.
+
+== Physical block range of the canary rows =============================
+
+RELATIVE_FNO  MIN_BLOCK  MAX_BLOCK DISTINCT_BLOCKS ROWS_TOTAL
+------------ ---------- ---------- --------------- ----------
+	   0	    779       1279	       313	 5000
+
+1 row selected.
+
+== Datafile holding the canary ==========================================
+
+RELATIVE_FNO FILE_NAME								    BLOCK_SIZE	   BLOCKS      BYTES
+------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+	1024 /opt/oracle/oradata/FREE/5B2382E8AC3A1480E063020013AC014F/datafile/o1_	  8192	     6400   52428800
+	     mf_clone_pl_ob5lphj3_.dbf
+
+
+1 row selected.
+
+== Marker for the host side plain-text scan ============================
+
+MARKER
+----------------------------------------
+OEHRLI-CANARY-2026-09-03
+
+1 row selected.
+
+========================================================================
+== Set CLONE_ENC and CLONE_PLAIN READ ONLY
+========================================================================
+
+Session altered.
+
+
+Tablespace altered.
+
+
+Tablespace altered.
+
+
+TABLESPACE_NAME 	       STATUS
+------------------------------ ---------
+CLONE_ENC		       READ ONLY
+CLONE_PLAIN		       READ ONLY
+
+========================================================================
+== Create common user c##clone
+========================================================================
+DROP USER c##clone CASCADE
+          *
+ERROR at line 1:
+ORA-01918: user 'C##CLONE' does not exist
+Help: https://docs.oracle.com/error-help/db/ora-01918/
+
+
+
+User created.
+
+
+Grant succeeded.
+
+
+Grant succeeded.
+
+
+USERNAME
+--------------------------------------------------------------------------------
+COM ACCOUNT_STATUS
+--- --------------------------------
+C##CLONE
+YES OPEN
+
+
+
+========================================================================
+== Collect evidence set 'pdb_baseline'
+========================================================================
+2026-09-10 17:20:48 INFO  collecting evidence set 'pdb_baseline' from odbencprod
+2026-09-10 17:20:48 INFO  Starting tde_evidence.sh 0.1.0
+2026-09-10 17:20:48 INFO  evidence set 'pdb_baseline' -> /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/pdb_baseline
+2026-09-10 17:20:48 INFO  collecting key chain evidence from odbencprod (CDB$ROOT)
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+CDB$ROOT	     FREE	  FREE		   1515674064 10-SEP-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE	 /opt/oracle/dbconfig/FREE/wallet/tde/					OPEN		   LOCAL_AUTOLOGIN NONE 	 1
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 2
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 3
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+4 rows selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+ARZ6nUg2jETloospSVBMaEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	10.09.2026 15:18:13    10.09.2026 15:18:13
+								    ORE
+CDB$ROOT
+CDB$ROOT															      1
+
+AYAhkJmAS0kYkXF17qIP/4sAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	10.09.2026 15:18:16    10.09.2026 15:18:16
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	10.09.2026 15:20:47    10.09.2026 15:20:47
+								    ORE
+PDBCLONE
+PDBCLONE															      3
+
+
+3 rows selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+CLONE_ENC		      5 AES256	 YES EDFEDD10AA204295A661E896A6566C30		  0 NORMAL	       B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0 	      1141		  0	 3
+USERS			      6 AES256	 YES 80219099804B4918917175EEA20FFF8B		  1 NORMAL	       553E99AAF015E8F19AE42FA3E0669AC593178F500AA438D40D59B057DC3CE1C4 		 0		  0	 4
+
+2 rows selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 553E99AAF015E8F19AE42FA3E0669AC593178F500AA438D40D59B057DC3CE1C4 80219099804B4918917175EEA20FFF8B		 0		  0	      1 NORMAL		   XTS		      4
+	 5 AES256   YES B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0 EDFEDD10AA204295A661E896A6566C30	      1141		  0	      0 NORMAL		   XTS		      3
+
+2 rows selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 6C6918A8C37E186D17412317A63574304004B8B4EEE081E50939075174C28C3F00000000000000000000000000000000 167A9D48368C44E5A28B2949504C6845 YES XTS		  1
+NONE	 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00000000000000000000000000000000 NO  CFB		  2
+AES256	 70486B003463B28A7551BF7C3C4986FD59113D2445EADAD074BA30C6436DDDAA00000000000000000000000000000000 EDFEDD10AA204295A661E896A6566C30 YES XTS		  3
+AES256	 49784A8264B5A6CE5B55FF9F90FBBA73C47E04C59337F05872FD1EC04B23F53E00000000000000000000000000000000 80219099804B4918917175EEA20FFF8B YES XTS		  4
+
+4 rows selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+no rows selected
+
+2026-09-10 17:20:49 INFO  collecting key chain evidence from odbencprod (PDB PDBCLONE)
+
+Session altered.
+
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+PDBCLONE	     FREE	  FREE		   1515674064 10-SEP-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 3
+
+1 row selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	10.09.2026 15:20:47    10.09.2026 15:20:47
+								    ORE
+PDBCLONE
+PDBCLONE															      3
+
+
+1 row selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+CLONE_ENC		      5 AES256	 YES EDFEDD10AA204295A661E896A6566C30		  0 NORMAL	       B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0 	      1141		  0	 3
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 5 AES256   YES B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0 EDFEDD10AA204295A661E896A6566C30	      1141		  0	      0 NORMAL		   XTS		      3
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 70486B003463B28A7551BF7C3C4986FD59113D2445EADAD074BA30C6436DDDAA00000000000000000000000000000000 EDFEDD10AA204295A661E896A6566C30 YES XTS		  3
+
+1 row selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+TS_NAME 	     RELATIVE_FNO FILE_NAME								     BLOCKS BLOCK_SIZE	    BYTES
+-------------------- ------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+CLONE_ENC		     1024 /opt/oracle/oradata/FREE/5B2382E8AC3A1480E063020013AC014F/datafile/o1_       6400	  8192	 52428800
+				  mf_clone_en_ob5lphfl_.dbf
+
+
+1 row selected.
+
+2026-09-10 17:20:49 INFO  listing datafiles of tablespace CLONE_ENC in PDB PDBCLONE
+2026-09-10 17:20:49 INFO  found 1 datafile(s)
+2026-09-10 17:20:49 INFO  fingerprinting o1_mf_clone_en_ob5lphfl_.dbf (block size 8192)
+wrote /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/pdb_baseline/o1_mf_clone_en_ob5lphfl_.dbf.fp
+2026-09-10 17:20:49 INFO  scanning o1_mf_clone_en_ob5lphfl_.dbf for the clear-text marker
+no hits - needle not present as plaintext in this datafile
+2026-09-10 17:20:50 INFO  manifest written to /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/pdb_baseline/manifest.txt
+2026-09-10 17:20:50 INFO  Done.
+
+========================================================================
+== Read key values from PDBCLONE/CLONE_ENC
+========================================================================
+
+Key summary for pdb_baseline (PDBCLONE/CLONE_ENC):
+  MASTERKEYID : EDFEDD10AA204295A661E896A6566C30
+  Wrapped TEK : B94E4B6C8DD99C5BE7D6AD613DFA4AB82148F8CA16FC09013817372A999562A0
+  Notes       : marker=OEHRLI-CANARY-2026-09-03
+
+------------------------------------------------------------------------
+VERDICT: PASS - PDB testbed ready: PDBCLONE with canary tables and c##clone
+------------------------------------------------------------------------
+2026-09-10 17:20:50 INFO  Done.
+
+######## 71_pdb_p4b_nokeyimport.sh ########
+2026-09-10 17:20:50 INFO  Starting 71_pdb_p4b_nokeyimport.sh 0.1.0
+
+========================================================================
+== Step 71: P4b - remote clone without key import
+========================================================================
+2026-09-10 17:20:51 INFO  dev CDB is independent (DBID 1515674218 vs prod 1515674064)
+2026-09-10 17:20:51 INFO  db_create_file_dest already /opt/oracle/oradata in odbencprod
+2026-09-10 17:20:52 INFO  db_create_file_dest set to /opt/oracle/oradata in odbencdev
+
+========================================================================
+== Phase 2: prove the source MEK is ABSENT from the target keystore
+========================================================================
+2026-09-10 17:20:52 INFO  source tablespace depends on MEK EDFEDD10AA204295A661E896A6566C30
+2026-09-10 17:20:52 INFO  confirmed: source MEK not in odbencdev keystore
+
+========================================================================
+== Phase 3: read the c##clone credential into memory
+========================================================================
+2026-09-10 17:20:52 INFO  credential in memory, not written to disk
+
+========================================================================
+== Phase 4: DB link prod_cdb_link_p4b and drop a leftover PDBCLONE_P4B
+========================================================================
+ALTER PLUGGABLE DATABASE PDBCLONE_P4B CLOSE IMMEDIATE
+*
+ERROR at line 1:
+ORA-65011: Pluggable database PDBCLONE_P4B does not exist.
+Help: https://docs.oracle.com/error-help/db/ora-65011/
+
+
+DROP PLUGGABLE DATABASE PDBCLONE_P4B INCLUDING DATAFILES
+*
+ERROR at line 1:
+ORA-65011: Pluggable database PDBCLONE_P4B does not exist.
+Help: https://docs.oracle.com/error-help/db/ora-65011/
+
+
+DROP DATABASE LINK prod_cdb_link_p4b
+                   *
+ERROR at line 1:
+ORA-02024: database link not found
+Help: https://docs.oracle.com/error-help/db/ora-02024/
+
+
+
+Database link created.
+
+
+LINK_STATU
+----------
+db link ok
+
+
+========================================================================
+== Phase 5: CREATE PDBCLONE_P4B FROM PDBCLONE@prod_cdb_link_p4b
+========================================================================
+
+Pluggable database created.
+
+
+NAME
+--------------------------------------------------------------------------------
+OPEN_MODE
+----------
+PDBCLONE_P4B
+MOUNTED
+
+
+
+========================================================================
+== Phase 6: NO key export and NO key import - this is the experiment
+========================================================================
+2026-09-10 17:20:57 INFO  skipping the export/import that step 65 performs
+
+========================================================================
+== Phase 7: open PDBCLONE_P4B and read the marker table
+========================================================================
+
+Pluggable database altered.
+
+
+Session altered.
+
+
+MARKER_ROWS
+-----------
+       5000
+
+
+PLAIN_ROWS
+----------
+      5000
+2026-09-10 17:20:59 INFO  sqlplus exit code of the read: 0 (non-zero is expected in the DEPENDENT case)
+
+========================================================================
+== Phase 8: verdict
+========================================================================
+2026-09-10 17:21:00 INFO  INDEPENDENT - the marker table reads without the source MEK ever entering the target keystore
+2026-09-10 17:21:00 INFO  consequence: the clone leaves the target with a self-contained key
+
+========================================================================
+== Key chain in PDBCLONE_P4B and keystore contents
+========================================================================
+
+    CON_ID KEY_ID						    ORIGIN
+---------- -------------------------------------------------------- -----------------------------------------
+	 1 AZD0DDtw7U6ImqfcHhLBGiIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA     LOCAL
+	 4 Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA     LOCAL
+
+
+Session altered.
+
+
+MASTERKEYID			 WRAPPED_TEK							  KEY_VERSION
+-------------------------------- ---------------------------------------------------------------- -----------
+EDFEDD10AA204295A661E896A6566C30 127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275	    0
+2026-09-10 17:21:00 INFO  collecting evidence set 'pdb_p4b_nokeyimport' from odbencdev
+2026-09-10 17:21:00 INFO  Starting tde_evidence.sh 0.1.0
+2026-09-10 17:21:00 INFO  evidence set 'pdb_p4b_nokeyimport' -> /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/pdb_p4b_nokeyimport
+2026-09-10 17:21:00 INFO  collecting key chain evidence from odbencdev (CDB$ROOT)
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+CDB$ROOT	     FREE	  FREE		   1515674218 10-SEP-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE	 /opt/oracle/dbconfig/FREE/wallet/tde/					OPEN		   LOCAL_AUTOLOGIN NONE 	 1
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 2
+FILE										OPEN_NO_MASTER_KEY LOCAL_AUTOLOGIN UNITED	 3
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+4 rows selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AZD0DDtw7U6ImqfcHhLBGiIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	10.09.2026 15:20:28    10.09.2026 15:20:28
+								    ORE
+CDB$ROOT
+CDB$ROOT															      1
+
+Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	10.09.2026 15:20:47    10.09.2026 15:20:47
+								    ORE
+PDBCLONE_P4B
+PDBCLONE_P4B															      4
+
+
+2 rows selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+CLONE_ENC		      5 AES256	 YES EDFEDD10AA204295A661E896A6566C30		  0 NORMAL	       127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275 		 0		264	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 5 AES256   YES 127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275 EDFEDD10AA204295A661E896A6566C30		 0		264	      0 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 76255815D8DC53562E8D2B34BD252EE637B8DCB8A79CD1715D47002AA9C4BE8B00000000000000000000000000000000 90F40C3B70ED4E889AA7DC1E12C11A22 YES XTS		  1
+NONE	 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00000000000000000000000000000000 NO  CFB		  2
+AES256	 821D82207EE1F5476B784CE08CDC7C571506A61C6F966F22C4DB8EDA0F1C699700000000000000000000000000000000 4DFF5D6A664F4F8BAD86B7467C98833C NO  XTS		  3
+AES256	 70486B003463B28A7551BF7C3C4986FD59113D2445EADAD074BA30C6436DDDAA00000000000000000000000000000000 EDFEDD10AA204295A661E896A6566C30 YES XTS		  4
+
+4 rows selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+no rows selected
+
+2026-09-10 17:21:00 INFO  collecting key chain evidence from odbencdev (PDB PDBCLONE_P4B)
+
+Session altered.
+
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+PDBCLONE_P4B	     FREE	  FREE		   1515674218 10-SEP-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+1 row selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+Ae3+3RCqIEKVpmHolqZWbDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	10.09.2026 15:20:47    10.09.2026 15:20:47
+								    ORE
+PDBCLONE_P4B
+PDBCLONE_P4B															      4
+
+
+1 row selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+CLONE_ENC		      5 AES256	 YES EDFEDD10AA204295A661E896A6566C30		  0 NORMAL	       127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275 		 0		264	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 5 AES256   YES 127E86CD273CA5AC1952B19F97E34FD3E42F5E84917CDAAB358C7905BD769275 EDFEDD10AA204295A661E896A6566C30		 0		264	      0 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 70486B003463B28A7551BF7C3C4986FD59113D2445EADAD074BA30C6436DDDAA00000000000000000000000000000000 EDFEDD10AA204295A661E896A6566C30 YES XTS		  4
+
+1 row selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+TS_NAME 	     RELATIVE_FNO FILE_NAME								     BLOCKS BLOCK_SIZE	    BYTES
+-------------------- ------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+CLONE_ENC		     1024 /opt/oracle/oradata/FREE/5B23837784AA13D6E063030013AC8B06/datafile/o1_       6400	  8192	 52428800
+				  mf_clone_en_ob5lpq8n_.dbf
+
+
+1 row selected.
+
+2026-09-10 17:21:00 INFO  listing datafiles of tablespace CLONE_ENC in PDB PDBCLONE_P4B
+2026-09-10 17:21:01 INFO  found 1 datafile(s)
+2026-09-10 17:21:01 INFO  fingerprinting o1_mf_clone_en_ob5lpq8n_.dbf (block size 8192)
+wrote /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/pdb_p4b_nokeyimport/o1_mf_clone_en_ob5lpq8n_.dbf.fp
+2026-09-10 17:21:01 INFO  scanning o1_mf_clone_en_ob5lpq8n_.dbf for the clear-text marker
+no hits - needle not present as plaintext in this datafile
+2026-09-10 17:21:01 INFO  manifest written to /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/pdb_p4b_nokeyimport/manifest.txt
+2026-09-10 17:21:01 INFO  Done.
+
+========================================================================
+VERDICT: INDEPENDENT - the marker table reads without the source MEK ever entering the target keystore
+========================================================================
+2026-09-10 17:21:01 INFO  71_pdb_p4b_nokeyimport.sh completed
+
+######## ALLE SCHRITTE DURCH ########
