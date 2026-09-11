@@ -40,10 +40,8 @@ festhalten (docker ps, v$database, v$encryption_wallet, v$pdbs) und berichten. E
 Neuversuch zerstoert die Fehlerursache.
 
 NACH DEM LAUF, in dieser Reihenfolge:
-1. Lauf-Log aus data/xchange/evidence/run_<ts>.log nach artefacts/ kopieren - es liegt sonst
-   in data/xchange und wird vom naechsten --delete geloescht. Lauf-Logs sind seit
-   v1.2.2 versioniert (.gitignore-Ausnahme !artefacts/run_*.log), also vorher den
-   Secret-Check aus artefacts/README.md fahren
+1. Der Lauf-Log liegt seit run_all.sh 0.3.0 direkt in artefacts/ - kein Kopieren mehr.
+   Vor dem Versionieren den Secret-Check aus artefacts/README.md fahren
 2. Protokoll neu erzeugen:
      ./scripts/tde-verify/make_protocol.sh --log artefacts/<log> --out doc/tde-e2e-protokoll.md
 3. Die Messwerte gegen tasks/e2e-facts.md vergleichen und JEDE Abweichung nennen.
@@ -66,8 +64,8 @@ Lauf prueft diese Reparaturen mit, also gehoert der Sollzustand hierher.
 
 | Skript | Version | Was sich geaendert hat |
 |---|---|---|
-| `run_all.sh` | 0.2.1 | Schritt-Banner, Ergebnistabelle und Schlusszeile gehen jetzt durch einen `emit`-Filter in **beide** Senken. Der Evidence-Log enthaelt damit selbst die 21 `STEP nn:`-Header und die Ergebnistabelle. Ein **Dry-Run schreibt keinen Log mehr** und kuendigt auch keinen an |
-| `make_protocol.sh` | 0.2.0 | Ein Log ohne Schritt-Header **und** ohne Ergebnistabelle ist die falsche Eingabedatei, nicht ein abgebrochener Lauf: Exit 2, Ursache und Fix benannt, **nichts geschrieben**. Ausgabe laeuft ueber eine Temp-Datei und wird erst bei Erfolg an ihren Platz bewegt |
+| `run_all.sh` | 0.3.0 | Schritt-Banner, Ergebnistabelle und Schlusszeile gehen jetzt durch einen `emit`-Filter in **beide** Senken. Der Evidence-Log enthaelt damit selbst die 21 `STEP nn:`-Header und die Ergebnistabelle. Ein **Dry-Run schreibt keinen Log mehr** und kuendigt auch keinen an |
+| `make_protocol.sh` | 0.3.0 | Ein Log ohne Schritt-Header **und** ohne Ergebnistabelle ist die falsche Eingabedatei, nicht ein abgebrochener Lauf: Exit 2, Ursache und Fix benannt, **nichts geschrieben**. Ausgabe laeuft ueber eine Temp-Datei und wird erst bei Erfolg an ihren Platz bewegt |
 
 Daraus folgen zwei pruefbare Sollwerte:
 
@@ -76,7 +74,12 @@ Daraus folgen zwei pruefbare Sollwerte:
   abbricht oder ein Teilprotokoll schreibt, ist der `emit`-Filter nicht wirksam
   geworden - das ist ein Fund, kein Bedienfehler.
 - **Nach einem Dry-Run darf kein `run_<ts>.log` existieren.** Falls doch, ist der
-  `DRY_RUN`-Guard nicht wirksam.
+  `DRY_RUN`-Guard nicht wirksam. Empirisch bestaetigt am 2026-09-11.
+- **Das erzeugte Protokoll darf keinen Unvollstaendigkeits-Hinweis tragen.**
+  `make_protocol.sh` 0.3.0 vergleicht Ergebnistabelle und Detailabschnitte und
+  schreibt eine Warnung auf die Protokollseite, wenn sie sich widersprechen. Steht
+  dort "**Unvollstaendig:** fuer Schritt nn fehlt der Detailabschnitt", dann ist im
+  Log etwas verloren gegangen - melden, nicht uebergehen.
 
 ## Sollwerte zur Selbstbeurteilung
 

@@ -131,7 +131,9 @@ Lauf vom 2026-09-10 vermischt werden. Vergleichbar sind allein die
 
 Belege: `artefacts/run_20260911_080723.log` (Evidence) und
 `artefacts/run_20260911_080723-stdout.log` (vollstaendig, mit Ergebnistabelle).
-Beide greift `.gitignore` (`*.log`) - nicht versioniert. Protokoll:
+Beide sind **versioniert** - die `.gitignore`-Ausnahme `!artefacts/run_*.log` wurde
+mit v1.2.2 ergaenzt, weil das Protokoll einen der Logs als seine Quelle nennt und
+die Angabe sonst im Repo nicht aufloest. Protokoll:
 `doc/tde-e2e-protokoll.md`.
 
 21 von 21 Schritten bestanden, Dauer 23 Minuten (08:07 bis 08:35).

@@ -14,6 +14,7 @@ reach the repository. Two named patterns are excluded from that rule in
 |---|---|
 | `artefacts/tde-e2e-run-*.log` | The end-to-end run log. `doc/tde-e2e-protokoll.md` is generated from it, so the protocol can be reproduced from its own source. |
 | `artefacts/p4b-*.log` | Evidence of the manual measurement runs cited in `tasks/e2e-facts.md` and `doc/tde-restore-runbook.md`. A citation that does not resolve inside the repository is not evidence. |
+| `artefacts/run_*.log` | Run logs of the automated suite. Since `run_all.sh` 0.3.0 the log is written here directly rather than under `data/xchange`, which step 00 clears with `--delete` - a log kept there lost its own first step. |
 
 Everything else in this folder stays local. Diagnostic snapshots and superseded
 evidence sets are deliberately **not** committed: only material that

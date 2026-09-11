@@ -30,7 +30,7 @@
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.1"
+VERSION="0.3.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -41,7 +41,16 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 EVIDENCE_ROOT="${REPO_DIR}/data/xchange/evidence"
 STATE_FILE="${EVIDENCE_ROOT}/lab_state.env"
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-LOG_FILE="${EVIDENCE_ROOT}/run_${TIMESTAMP}.log"
+# The run log lives in artefacts/, NOT under data/xchange. Step 00 with --delete
+# clears data/xchange - so a log kept there sits inside the blast radius of the
+# very first step it is supposed to record. Measured 2026-09-11: the log lost its
+# header and all of step 00, the appends afterwards recreated the file, and
+# make_protocol.sh then produced a protocol whose summary said 21 of 21 while its
+# detail section held 20. artefacts/ is outside the reset and is also where the
+# .gitignore exception !artefacts/run_*.log makes the log versionable without a
+# copy step.
+ARTEFACTS_DIR="${REPO_DIR}/artefacts"
+LOG_FILE="${ARTEFACTS_DIR}/run_${TIMESTAMP}.log"
 
 # Step filter options
 OPT_ONLY=""
@@ -205,10 +214,10 @@ read_state() {
 # Output..: nothing on stdout
 # Depends.: none
 # Example.: log_line "START [10] 10_baseline.sh"
-# Notes...: Step 00 clears data/xchange, which is where the run log lives. Every
-#           later append would then fail with "No such file or directory" and the
-#           run would finish without a protocol. Recreating on demand keeps the
-#           protocol intact across the reset instead of losing it silently.
+# Notes...: The mkdir is belt and braces since the log moved to artefacts/, which
+#           no step deletes. It used to be load-bearing: with the log under
+#           data/xchange, step 00 removed the directory and every later append
+#           failed. Kept so a fresh clone without artefacts/ still works.
 # ------------------------------------------------------------------------------
 log_line() {
     # A dry run must leave no trace. It writes no evidence, so a log of one is

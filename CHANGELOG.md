@@ -7,10 +7,35 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-11
+
+### Fixed
+
+- The run log lived in the directory that step 00 deletes. `run_all.sh` wrote it
+  to `data/xchange/evidence/`, which `--delete` clears - so the log sat inside the
+  blast radius of the very first step it was meant to record. Measured
+  2026-09-11: the log lost its header and all of step 00, later appends recreated
+  the file, and the generated protocol then claimed 21 of 21 in its summary while
+  its detail section held 20, with nothing pointing at the gap. The log now lives
+  in `artefacts/`, outside the reset, where the existing `.gitignore` exception
+  also makes it versionable without a copy step.
+- `make_protocol.sh` could emit a self-contradicting document. It now compares the
+  result table against the detail sections, warns on stderr naming the missing
+  steps, and states the gap **on the protocol's own face** rather than leaving a
+  reader to trust a summary the body does not support.
+- `artefacts/README.md` listed two versioned log patterns; the third,
+  `artefacts/run_*.log`, was missing from the table since v1.2.2.
+- `tasks/e2e-facts.md` said the 2026-09-11 run logs were not versioned. They have
+  been since v1.2.2, in the same commit that added the exception.
+
 ### Changed
 
-- `tasks/prompt-autonomous-e2e.md`: brought up to the state of `run_all.sh` 0.2.1
-  and `make_protocol.sh` 0.2.0, with the two checkable consequences - the protocol
+- `doc/tde-e2e-protokoll.md` regenerated from `artefacts/run_20260911_093022.log`
+  and now carries the incompleteness note for step 00 instead of hiding it.
+- `tasks/prompt-autonomous-e2e.md`: brought up to the state of `run_all.sh` 0.3.0
+  and `make_protocol.sh` 0.3.0. The run log is written to `artefacts/` directly, so
+  the post-run copy step is gone, and the protocol consistency check is a new
+  expected value. Earlier in the day it had been synced to 0.2.1 and 0.2.0, with the two checkable consequences - the protocol
   must now be generatable straight from the evidence log, and a dry run must leave
   no log behind. Corrected the step 20 expectation: `ORA-28365` should **not**
   appear, because the suite deliberately stages only `ewallet.p12`. Added
@@ -404,6 +429,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.3.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.0...v1.2.1
