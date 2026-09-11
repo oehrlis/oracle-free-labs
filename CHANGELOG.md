@@ -7,6 +7,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `tasks/prompt-autonomous-e2e.md`: brought up to the state of `run_all.sh` 0.2.1
+  and `make_protocol.sh` 0.2.0, with the two checkable consequences - the protocol
+  must now be generatable straight from the evidence log, and a dry run must leave
+  no log behind. Corrected the step 20 expectation: `ORA-28365` should **not**
+  appear, because the suite deliberately stages only `ewallet.p12`. Added
+  `ORA-46655` in step 65 as an expected value with its explanation, so the central
+  finding of this engagement is not reported as a malfunction. The entry prompt now
+  instructs the session to read the whole file first - the expected values live in
+  the file, not in the block that gets pasted.
+
 ## [1.2.3] - 2026-09-11
 
 ### Fixed
