@@ -3206,7 +3206,7 @@ Dazu aus demselben Lauf:
 ### 6b.6 Fremdbeleg - nicht aus diesem Lab
 
 Der folgende Punkt ist **keine eigene Messung**. Er stammt aus einem oeffentlichen Blogbeitrag
-von Peter Wahl, ehemals Oracle Product Manager fuer TDE und Key Vault, und wird hier als
+von einem ehemaligen Oracle Product Manager fuer TDE und Key Vault, und wird hier als
 Fremdbeleg gefuehrt, weil er dieselbe Mechanik von einer anderen Seite beschreibt:
 
 - Eine geklonte PDB traegt einen Master Key, dessen Tag den der **Quell-PDB** nennt. Der Klon

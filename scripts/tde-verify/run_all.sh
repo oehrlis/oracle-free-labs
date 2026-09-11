@@ -24,12 +24,13 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-09-11  oes  Step banner and result table also go to the run log  0.2.0
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.2.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -215,6 +216,26 @@ log_line() {
 }
 
 # ------------------------------------------------------------------------------
+# Function: emit
+# Purpose.: Filter that copies stdin to stdout and to the run log
+# Args....: none, reads stdin
+# Returns.: 0
+# Depends.: LOG_FILE
+# Example.: { echo "  STEP 20: ..."; } | emit
+# Notes...: The step banners and the result table used to go to stdout only, so
+#           the evidence log held neither "STEP nn:" headers nor the closing
+#           table. make_protocol.sh parses exactly those two and therefore
+#           produced an empty protocol claiming the run had been aborted - for a
+#           run that passed 21 of 21. Everything a reader needs must reach the
+#           log, not just the terminal. Writes in dry-run too, matching
+#           log_line and the per-step tee, which already do.
+# ------------------------------------------------------------------------------
+emit() {
+    mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
+    tee -a "${LOG_FILE}"
+}
+
+# ------------------------------------------------------------------------------
 # Function: check_gate
 # Purpose.: Verify the prerequisite state key is present; abort if not
 # Args....: $1 gate_key (may be empty)
@@ -306,12 +327,14 @@ run_step() {
         [[ -n "${last_variant}" ]] && args+=("--after-variant" "${last_variant}")
     fi
 
-    echo ""
-    echo "========================================================================"
-    echo "  STEP ${nr}: ${desc}"
-    echo "  Script: ${script_path}"
-    echo "  Time:   $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "========================================================================"
+    {
+        echo ""
+        echo "========================================================================"
+        echo "  STEP ${nr}: ${desc}"
+        echo "  Script: ${script_path}"
+        echo "  Time:   $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "========================================================================"
+    } | emit
     log_line "START [${nr}] ${script}"
 
     local t_start t_end elapsed step_exit=0
@@ -340,6 +363,7 @@ run_step() {
 # Function: print_result_table
 # ------------------------------------------------------------------------------
 print_result_table() {
+    {
     echo ""
     echo "========================================================================"
     echo "  TDE Verification Run Results"
@@ -361,6 +385,7 @@ print_result_table() {
         fi
     done
     printf '\n'
+    } | emit
 }
 
 # ------------------------------------------------------------------------------
@@ -426,9 +451,9 @@ main() {
     fi
 
     if [[ "${any_failure}" -eq 0 ]]; then
-        echo "All steps PASSED."
+        echo "All steps PASSED." | emit
     else
-        echo "Run did not complete - see log for details." >&2
+        echo "Run did not complete - see log for details." | emit >&2
         return 1
     fi
 }

@@ -7,6 +7,34 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-11
+
+### Fixed
+
+- `scripts/tde-verify/run_all.sh`: the `STEP nn:` banners and the closing result
+  table went to stdout only, so the evidence log under `data/xchange/evidence/`
+  carried neither. A new `emit` helper copies both into the log, which makes the
+  evidence log self-sufficient as a protocol source again.
+- `scripts/tde-verify/make_protocol.sh`: a log with neither step headers nor a
+  result table produced a 17-line protocol stating "Der Lauf hat keine
+  Ergebnistabelle geschrieben - er wurde abgebrochen" - for a run that passed 21
+  of 21, and well-formed enough to pass markdownlint. It now exits 2 with an
+  error naming the likely cause and the fix, and writes nothing. A run that is
+  genuinely cut off (steps present, table missing) still produces a partial
+  protocol, now with a warning on stderr.
+- `scripts/tde-verify/make_protocol.sh`: `main > "${OUT_FILE}"` truncated the
+  target before the parser ran, so a parser failure destroyed the previous
+  protocol and left nothing. Output now goes through a temp file and is moved
+  into place only on success.
+
+### Added
+
+- `tasks/e2e-facts.md`: measured values of the end-to-end run
+  `run_20260911_080723` from 2026-09-11, 21 of 21 steps passed, in a section of
+  its own. Confirms every structural result of the 2026-09-06 run. New in-suite
+  finding: `ORA-46655` on key import after the remote PDB clone, because the
+  clone carries the master key into the target by itself.
+
 ## [1.2.1] - 2026-09-11
 
 ### Fixed
@@ -39,7 +67,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `artefacts/p4b-experiment-20260910_171555.log`,
   `artefacts/p4b-setkey-20260910_185928.log`; values in `tasks/e2e-facts.md` in a section of
   their own, kept apart from the 2026-09-06 end-to-end run.
-- Third-party reference in phase 6b, marked as not our measurement: Peter Wahl, former Oracle
+- Third-party reference in phase 6b, marked as not our measurement: a former Oracle
   product manager for TDE and Key Vault, describes publicly that a cloned PDB carries a master
   key tagged with the source PDB's tag and has no key of its own, so cloning that clone again
   fails with a missing-key error. The remedy is the same rotation, with a speaking tag. The
@@ -352,6 +380,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.2.2]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.1.1...v1.2.0
 [1.1.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.0.2...v1.1.0

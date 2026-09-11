@@ -19,6 +19,7 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-06  oes  Initial release                                        0.1.0
+# 2026-09-11  oes  Fail loudly on an unusable log, atomic output       0.2.0
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -26,7 +27,7 @@
 # ------------------------------------------------------------------------------
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
-VERSION="0.1.0"
+VERSION="0.2.0"
 LOG_FILE=""
 OUT_FILE=""
 
@@ -152,12 +153,33 @@ w("")
 
 total = len(result_rows)
 passed = sum(1 for r in result_rows if r[1] == "PASS")
+
+# A log with neither step headers nor a result table is not an aborted run, it
+# is the wrong input file. Saying "aborted" here once turned a 21-of-21 run into
+# a protocol that claimed the opposite, and the claim looked well-formed enough
+# to pass markdownlint. Refuse instead of guessing, and name the fix.
+if not steps and not result_rows:
+    sys.stderr.write(
+        "ERROR: no 'STEP nn:' headers and no result table found in "
+        f"{sys.argv[1]}\n"
+        "       This log cannot produce a protocol. Most likely it is the\n"
+        "       evidence log (data/xchange/evidence/run_<ts>.log), which does\n"
+        "       not carry them; use the stdout capture of the run instead.\n"
+        "       Nothing was written.\n")
+    sys.exit(2)
+
 w("## Ergebnis")
 w("")
 if total:
     w(f"{passed} von {total} Schritten bestanden.")
 else:
-    w("Der Lauf hat keine Ergebnistabelle geschrieben - er wurde abgebrochen.")
+    # Steps but no table: run_all.sh prints the table even when a step fails,
+    # so a missing table means the run was cut off (kill, crash, lost stdout).
+    sys.stderr.write(
+        f"WARNING: {len(steps)} step(s) found but no result table - the run was "
+        "cut off. Protocol is partial.\n")
+    w(f"Der Lauf hat keine Ergebnistabelle geschrieben - er wurde abgebrochen. "
+      f"{len(steps)} Schritt(e) sind im Log dokumentiert.")
 w("")
 w("| Nr | Ergebnis | Dauer | Schritt |")
 w("|----|----------|-------|---------|")
@@ -214,8 +236,20 @@ PYEOF
 }
 
 if [[ -n "${OUT_FILE}" ]]; then
-    main > "${OUT_FILE}"
-    echo "protocol written to ${OUT_FILE}"
+    # Write via a temp file. "main > ${OUT_FILE}" truncates the target before
+    # the parser runs, so a parser failure left the previous protocol destroyed
+    # and replaced by nothing. Only move into place once main succeeded.
+    TMP_OUT="$(mktemp "${TMPDIR:-/tmp}/${SCRIPT_NAME}.XXXXXX")"
+    trap 'rm -f "${TMP_OUT}"' EXIT
+    if main > "${TMP_OUT}"; then
+        mv "${TMP_OUT}" "${OUT_FILE}"
+        trap - EXIT
+        echo "protocol written to ${OUT_FILE}"
+    else
+        rc=$?
+        echo "ERROR: protocol not generated, ${OUT_FILE} left unchanged" >&2
+        exit "${rc}"
+    fi
 else
     main
 fi
