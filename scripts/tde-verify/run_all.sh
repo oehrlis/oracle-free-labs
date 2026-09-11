@@ -30,7 +30,7 @@
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.0"
+VERSION="0.2.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -211,6 +211,11 @@ read_state() {
 #           protocol intact across the reset instead of losing it silently.
 # ------------------------------------------------------------------------------
 log_line() {
+    # A dry run must leave no trace. It writes no evidence, so a log of one is
+    # not evidence either - and a leftover run_<ts>.log from a dry run is
+    # indistinguishable from a real one, which make_protocol.sh would happily
+    # parse into a protocol of a run that never happened.
+    [[ "${DRY_RUN}" == "TRUE" ]] && return 0
     mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "${LOG_FILE}"
 }
@@ -227,10 +232,14 @@ log_line() {
 #           table. make_protocol.sh parses exactly those two and therefore
 #           produced an empty protocol claiming the run had been aborted - for a
 #           run that passed 21 of 21. Everything a reader needs must reach the
-#           log, not just the terminal. Writes in dry-run too, matching
-#           log_line and the per-step tee, which already do.
+#           log, not just the terminal. In a dry run it passes stdin through
+#           without writing, so a dry run produces no log file at all.
 # ------------------------------------------------------------------------------
 emit() {
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        cat
+        return 0
+    fi
     mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
     tee -a "${LOG_FILE}"
 }
@@ -340,9 +349,15 @@ run_step() {
     local t_start t_end elapsed step_exit=0
     t_start=$(date '+%s')
 
-    # Run script, tee to log
-    mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
-    "${script_path}" "${args[@]}" 2>&1 | tee -a "${LOG_FILE}" || step_exit=$?
+    # Run script, tee to log. In a dry run the output only goes to the terminal;
+    # pipefail is set, so either branch still reports the script's exit code
+    # rather than the filter's.
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        "${script_path}" "${args[@]}" 2>&1 | cat || step_exit=$?
+    else
+        mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || true
+        "${script_path}" "${args[@]}" 2>&1 | tee -a "${LOG_FILE}" || step_exit=$?
+    fi
 
     t_end=$(date '+%s')
     elapsed=$(( t_end - t_start ))
@@ -367,7 +382,11 @@ print_result_table() {
     echo ""
     echo "========================================================================"
     echo "  TDE Verification Run Results"
-    echo "  Log: ${LOG_FILE}"
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        echo "  Log: none (dry run)"
+    else
+        echo "  Log: ${LOG_FILE}"
+    fi
     echo "========================================================================"
     printf '\n%-4s  %-10s  %-8s  %s\n' "NR" "Result" "Duration" "Description"
     printf '%-4s  %-10s  %-8s  %s\n' "----" "----------" "--------" "-------------------------------------------"
@@ -406,8 +425,11 @@ main() {
 
     echo ""
     echo "TDE Restore Verification Runner ${VERSION}"
-    echo "Log: ${LOG_FILE}"
-    if [[ "${DRY_RUN}" == "TRUE" ]]; then echo "(DRY-RUN mode)"; fi
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        echo "(DRY-RUN mode - no log is written)"
+    else
+        echo "Log: ${LOG_FILE}"
+    fi
 
     local any_failure=0
 

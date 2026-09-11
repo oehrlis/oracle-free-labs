@@ -7,6 +7,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-11
+
+### Fixed
+
+- `run_all.sh` wrote an evidence log in dry-run mode: `log_line`, the `emit`
+  filter and the per-step `tee` had no `DRY_RUN` guard. A leftover
+  `run_<timestamp>.log` from a dry run is indistinguishable from a real one, and
+  `make_protocol.sh` would parse it into the protocol of a run that never
+  happened. A dry run now writes nothing, passes output through to the terminal
+  only, and says so instead of naming a log path that does not exist - the
+  startup banner and the result table both claimed one.
+
 ## [1.2.2] - 2026-09-11
 
 ### Fixed
@@ -380,6 +392,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apache License 2.0
 
 <!-- markdownlint-disable MD013 -->
+[1.2.3]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oehrlis/oracle-free-labs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oehrlis/oracle-free-labs/compare/v1.1.1...v1.2.0
