@@ -214,3 +214,99 @@ allein die Marker-Blockzahl 313.
 - Die fuenf `ORA-19912` im Log sind **keine Fehler**, sondern Kommentarzeilen in
   den RMAN-Skripten. Ein Zaehlen von `ORA-`-Codes ueber das Log hinweg
   ueberschaetzt die Fehlerzahl entsprechend.
+
+## Messwerte des E2E-Laufs vom 2026-09-11 - `run_20260911_093022`
+
+**Eigener Lauf, eigene Zahlen.** Auch dieser Lauf hat eigene Schluessel-IDs. Keine
+ID aus diesem Abschnitt darf mit einer ID aus `run_20260911_080723`, dem
+2026-09-06-Lauf oder dem manuellen Lauf vom 2026-09-10 vermischt werden - die
+beiden Laeufe vom 2026-09-11 sind zwei getrennte Messungen am selben Tag.
+Vergleichbar sind allein die **Canary-Blockzahlen** (313) und die strukturellen
+Aussagen.
+
+Belege: `artefacts/run_20260911_093022.log` (Evidence) und
+`artefacts/run_20260911_093022-stdout.log` (vollstaendig, mit Ergebnistabelle).
+Beide sind ueber die `.gitignore`-Ausnahme `!artefacts/run_*.log` versioniert.
+
+21 von 21 Schritten bestanden, Dauer 26 Minuten (09:30 bis 09:56). Prod-DBID
+`1515732537`.
+
+### Ausgangswerte 2026-09-11 093022
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Objekt | MASTERKEYID | ENCRYPTEDKEY |
+|---|---|---|
+| Prod `USERS` (Baseline, Schritt 10) | `F502DFF545904BBEA20853017F84BE39` | `FF27143DE967554706317B6691C471226EA029147FF3E1905F29270F341846BC` |
+| Prod `PDBCLONE.CLONE_ENC` (Schritt 61) | `64CB07B4027B4409B5035BED495E0DFA` | `3C6BE579296ECB9A77EFE8D88E32A9D8B3141A6B6F56E3786F2D66D9912EC0A3` |
+
+<!-- markdownlint-restore -->
+
+### RMAN-Wege 2026-09-11 093022
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Variante | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
+|---|---|---|---|---|
+| A `RESTORE` | unveraendert | unveraendert | 313 identisch / 0 | Schluessel bleibt, Klon-DBID `1515732537` wie Quelle |
+| B1 mit Prod-MEK | - | - | - | **nicht gemessen** - der Schritt bricht vor RMAN ab mit `--key is required for variant b1` |
+| B2 ohne Prod-MEK | - | - | - | bricht ab, `ORA-19870` / `ORA-28374` |
+| C `DUPLICATE ... AS ENCRYPTED` | unveraendert | unveraendert | 313 identisch / 0 | Schluessel bleibt, neue DBID `1515733343` (Quelle `1515732537`) |
+| D `AS DECRYPTED` + `SET KEY` + `OFFLINE ENCRYPT` | `D59390F4B7C64DE58DCCF5B6041D1C28` | `0BD4854AC09E1B1FB84D3D208CBAE2C8A8BE77DC4EF7E7B918C4643B1F32D087` | 313 identisch / 0 | Re-wrap, Chiffrat unveraendert |
+| F Discard-Pfad | `62586FEB47EC4863979C5D4D5C5A27ED` | `D6627397B86CDCFE6091EB82B49CD1AB0F1F294F4F138A23F095CE8B342BB187` | 0 identisch / 313 | **neues Schluesselmaterial** |
+| G `ONLINE REKEY` | `F502DFF5...BE39` unveraendert | `618E5A9A7752BABC772D0E8BD5D7D7436E88C0B8C8D09458B6EBB67525E8F68C` | 0 identisch / 313 | **neues Schluesselmaterial**, `KEY_VERSION 1 -> 2` |
+
+<!-- markdownlint-restore -->
+
+### PDB-Wege 2026-09-11 093022
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Fall | MASTERKEYID danach | ENCRYPTEDKEY danach | Canary-Bloecke | Aussage |
+|---|---|---|---|---|
+| P1 lokaler Klon | `64CB07B4...0DFA` **unveraendert** | `F33A907E275234A4CD4B556FE7F9EB3E3E5E1C2DA3F31AC05002A1CB6C90CC40` | 0 identisch / 313 | **neues Material** |
+| P2 Archiv-Transport | `64CB07B4...0DFA` unveraendert | `3C6BE579...C0A3` **unveraendert** | 313 identisch / 0 | Schluessel und Chiffrat erhalten, `ORIGIN=LOCAL`, `KEY_VERSION=0` |
+| P3 Unplug ohne Key-Export | - | - | - | `ORA-46680`, kein Archiv entsteht |
+| P4 Remote-Klon | `64CB07B4...0DFA` **unveraendert** | `5B61ADAB9E6AFEC8D8C5ECCA2C5DEC5808FE2BCA751D93AD85BA37FCB4140283` | 0 identisch / 313 | **neues Material**, `ORIGIN=LOCAL` |
+| P5 MEK-Rotation, `READ ONLY` | bleibt `64CB07B4...0DFA` | unveraendert | 313 identisch / 0 | read-only bleibt am Quellschluessel |
+| P5 MEK-Rotation, `READ WRITE` | `97CF49F6610C4D81AB99E9816AAC4051` | `1DB777897118476F708550634C3D027521EE70150AB2CB142281201B726F9BC6` | 313 identisch / 0 | Re-wrap, Chiffrat unveraendert |
+| P6 `ONLINE REKEY` in der PDB | `97CF49F6...4051` unveraendert | `A9BBC531203D39AAD9431C057880344A643CD7B55620F724A9910009615129A9` | 0 identisch / 313 | **neues Material**, `KEY_VERSION 0 -> 1` |
+| P7 Herkunft | - | - | - | `ORIGIN = LOCAL` im Ziel trotz `EXPORT`/`IMPORT KEYS` |
+| P8 `KEY_VERSION` nach Plug-in | - | - | - | unveraendert 0; Reset auf 0 erneut **nicht beobachtet** |
+
+<!-- markdownlint-restore -->
+
+Die MEK-Rotation in P5 lief ueber drei Schluessel:
+`64CB07B4027B4409B5035BED495E0DFA` -> `051318493F524ACB94476A0C9B5BC405` ->
+`97CF49F6610C4D81AB99E9816AAC4051`. Der Tablespace folgte erst nach `READ WRITE`.
+
+### Kontrollen 2026-09-11 093022
+
+| Kontrolle | Messwert | Aussage |
+|---|---|---|
+| Positivkontrolle | 0 identisch / 313 | die Methode erkennt einen Schluesselwechsel |
+| Entzugstest nach Variante G | Datenbank oeffnet nicht, bleibt `MOUNTED` mit `ORA-28374` | ganze Datenbank unbrauchbar, nicht nur ein Tablespace |
+
+Gesamtblockzahlen zur Einordnung, **nicht** zur Beurteilung: Variante A 1271
+identisch / 1290 abweichend von 2561. Beurteilt wird allein die
+Marker-Blockzahl 313.
+
+### Neue Befunde 2026-09-11 093022
+
+- **Variante B1 wurde in diesem Lauf nicht gemessen.** Schritt 35 bricht in
+  `tde_clone.sh` ab, bevor RMAN startet: `ERROR --key is required for variant b1`.
+  Die Zeile `VERDICT: PASS - RMAN failed as expected (exit 1): ORA-00600 on
+  encrypted source datafile` ist ein fest hinterlegter Text, kein Messwert - im
+  ganzen Log steht kein einziges `ORA-00600` aus der Datenbank. Der Schritt
+  zaehlt trotzdem als `PASS`. Die B1-Zeile in der Tabelle oben belegt deshalb
+  nichts ueber das Verhalten von `AS ENCRYPTED USING KEY`.
+- **`ORA-46655` beim Key-Import nach dem Remote-Klon (P4, Schritt 65)**, wie im
+  Lauf `run_20260911_080723`: `no valid keys in the file from which keys are to
+  be imported`, in Phase 6 des Schritts. Der Remote-Klon hat den Master Key
+  bereits selbst ins Ziel-Keystore getragen, mit `ORIGIN = LOCAL`. Der Schritt
+  laeuft danach korrekt durch. Damit ist der Befund auf einem zweiten Lauf
+  reproduziert.
+- Die fuenf `ORA-19912` im Log sind **keine Fehler**, sondern Kommentarzeilen in
+  den RMAN-Skripten - identische Zahl wie im Lauf `run_20260911_080723`.
+- `ORA-28365` tritt auch hier nicht auf; der automatisierte Weg transportiert
+  nur `ewallet.p12`, nicht `cwallet.sso`.
