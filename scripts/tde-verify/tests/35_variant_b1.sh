@@ -20,24 +20,27 @@
 #              cannot re-encrypt through the existing layer.
 #              A controlled failure is a valid and informative test result.
 # Notes......: Prerequisites: step 15 (backup) must have completed.
-#              tde_clone.sh --variant b1 performs:
+#              This step creates the dev MEK itself and hands the key ID to
+#              tde_clone.sh, which then performs:
 #              - Transport the prod wallet (ewallet.p12) to the dev keystore
-#              - Create a new dev MEK
 #              - RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_key_id>'
-#              The ORA-00600 is captured in the log; the script reports it
-#              as the expected outcome and marks PASS.
+#              PASS requires an actual ORA-00600 in the output. A non-zero exit
+#              without it is a failed run, not a measurement, and is reported
+#              as FAIL.
 # Reference..: https://github.com/oehrlis/oracle-free-labs
 # License....: Apache License Version 2.0, January 2004 as shown
 #              at http://www.apache.org/licenses/
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-09-22  oes  Pass --key so the variant runs at all; derive the verdict
+#                  from the output instead of a fixed string               0.2.0
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.2.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -90,6 +93,29 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ------------------------------------------------------------------------------
+# Helper: create a fresh dev MEK and return its key ID
+# ------------------------------------------------------------------------------
+create_dev_key() {
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        echo "DRY-RUN-DEV-KEY-ID"
+        return 0
+    fi
+    local keyid
+    # Create the keystore, set a new MEK, return its KEY_ID
+    keyid=$(docker exec "${DEV_SERVICE}" bash -c '
+KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
+sqlplus -S / as sysdba <<SQL 2>/dev/null
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 200 TRIMSPOOL ON
+ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY "${KSPWD}" WITH BACKUP CONTAINER=ALL;
+SELECT key_id FROM v\$encryption_keys WHERE keystore_type != '"'"'UNKNOWN'"'"' AND rownum=1;
+EXIT
+SQL
+' 2>/dev/null | grep -viE "identified by" \
+    | awk 'NF && length($1) > 10 { print $1; exit }')
+    printf '%s\n' "${keyid}"
+}
+
+# ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
 main() {
@@ -113,25 +139,36 @@ main() {
     start_service "${DEV_SERVICE}"
     wait_for_ready "${DEV_SERVICE}" 600
 
-    # tde_clone.sh --variant b1 handles:
-    #   1. Transport prod ewallet.p12 to dev keystore
-    #   2. Create a new dev MEK (ADMINISTER KEY MANAGEMENT CREATE KEY)
-    #   3. Note the new dev MEK key ID
-    #   4. RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_key_id>'
-    # The --key flag must carry the dev key ID; tde_clone.sh creates it.
-    # For b1 tde_clone.sh generates the key internally and uses it.
-    step_header "Attempt RESTORE AS ENCRYPTED USING KEY (prod MEK present)"
-    lib_info "DBID: ${dbid}"
+    # The target keystore must already hold its own MEK - tde_clone.sh imports
+    # the prod MEK on top of it and restores AS ENCRYPTED USING KEY '<dev_key_id>'.
+    # tde_clone.sh does NOT create that key; --key is required for variant b1.
+    step_header "Create dev-own MEK (prod MEK is imported on top)"
+    local dev_key_id
+    dev_key_id=$(create_dev_key)
+    if [[ -z "${dev_key_id}" ]]; then
+        print_verdict "FAIL" "no dev MEK created - cannot run variant b1"
+        return 1
+    fi
+    lib_info "dev key ID: ${dev_key_id:0:16}..."
+    write_state "VARIANT_B1_DEV_KEY" "${dev_key_id}"
 
-    local clone_exit=0
+    step_header "Attempt RESTORE AS ENCRYPTED USING KEY (prod MEK present)"
+    lib_info "DBID: ${dbid}, dev key: ${dev_key_id:0:16}..."
+
+    local clone_exit=0 clone_out
+    clone_out=$(mktemp)
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant b1 --dbid ${dbid} --cf-piece ${cf_piece}"
+        lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant b1 --dbid ${dbid} --cf-piece ${cf_piece} --key <dev_key_id>"
     else
+        set +e
         "${CLONE_SCRIPT}" \
             --variant b1 \
             --dbid     "${dbid}" \
             --cf-piece "${cf_piece}" \
-            "${CLONE_EXTRA_ARGS[@]}" || clone_exit=$?
+            --key      "${dev_key_id}" \
+            "${CLONE_EXTRA_ARGS[@]}" 2>&1 | tee "${clone_out}"
+        clone_exit=${PIPESTATUS[0]}
+        set -e
     fi
 
     # Record the result
@@ -140,14 +177,22 @@ main() {
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN - no actual RMAN run"
-    elif [[ "${clone_exit}" -ne 0 ]]; then
+    elif [[ "${clone_exit}" -ne 0 ]] && grep -q "ORA-00600" "${clone_out}"; then
         verdict="PASS"
-        msg="RMAN failed as expected (exit ${clone_exit}): ORA-00600 on encrypted source datafile"
+        msg="RMAN failed as expected (exit ${clone_exit}): $(grep -m1 -o "ORA-00600.*" "${clone_out}")"
+    elif [[ "${clone_exit}" -ne 0 ]]; then
+        # A non-zero exit alone proves nothing: a usage error looks identical to
+        # a controlled RMAN failure. Only an ORA-00600 in the output is the
+        # measurement this step exists for - anything else is a failed run and
+        # must say so instead of reporting a result that was never obtained.
+        verdict="FAIL"
+        msg="clone aborted (exit ${clone_exit}) without ORA-00600 - RMAN never reached the encrypted datafile: $(grep -m1 -iE "ERROR|ORA-[0-9]+" "${clone_out}" | tail -c 120)"
     else
         verdict="FAIL"
         msg="RMAN unexpectedly succeeded - investigate the key chain result"
     fi
 
+    rm -f "${clone_out}"
     write_state "VARIANT_B1_EXIT" "${clone_exit}"
 
     print_verdict "${verdict}" "${msg}"
