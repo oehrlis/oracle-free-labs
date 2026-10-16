@@ -136,3 +136,28 @@ Datei geloescht wurde.
 
 verify: fuer jedes `INTO '<pfad>'`, `TO '<pfad>'` und jedes erzeugte
 Verzeichnis existiert ein Aufraeum-Schritt davor
+
+## 2026-10-16 - seclab: was die Oracle-Free-Container und SQL*Plus wirklich tun
+
+- `runUserScripts.sh` des Images **sourct** `*.sh` (`. "$f"`). `set -euo pipefail` und
+  `exit` im Wrapper gelten danach fuer den Runner. Wrapper-Rumpf in eine Subshell:
+  `( set -euo pipefail; ... ) || echo "ERROR: ..." >&2`.
+- SQL*Plus erkennt das Kommando **vor** der Substitution: `&_CMD` mit `SHUTDOWN` ergibt
+  SP2-0042. Bedingte Kommandos ueber `@&_SKRIPT` (Wahl zwischen zwei Dateien).
+- Colima mountet nur `$HOME`. Ein Bind-Mount von ausserhalb wird in der VM still ein
+  leeres Verzeichnis, der TNS_ADMIN-Symlink dangelt, DBCA bricht mit DBT-60127 ab.
+  Pruefen mit `colima ssh -- test -f <datei>`, nicht `-d`: Docker legt fehlende
+  Bind-Quellen als Verzeichnisse an, `-d` ist danach falsch gruen.
+- `CREATE TABLESPACE ... DATAFILE SIZE` ohne OMF liefert ORA-02236 auch dann, wenn der
+  Tablespace existiert - Oracle prueft den Dateinamen vor dem Namenskonflikt. Existenz
+  zuerst pruefen.
+- Logon-Abdeckung in Unified Audit: `audit_option IN ('LOGON','LOGOFF')` reicht nicht,
+  `ACTIONS ALL` (`audit_option = 'ALL'`, `audit_option_type = 'STANDARD ACTION'`)
+  auditiert Logons mit. `audit_option = 'ALL'` allein trifft auch Objekt-Policies.
+- 23.26.3: ALLOWED_LOGON_VERSION_SERVER 8/10/11/12 erzeugen alle `11G 12C`, nur `12a`
+  nur `12C`. Ein 10G-Verifier ist nicht herstellbar.
+- `bump_version.sh` stellt einen leeren `[x.y.z]`-Stub vor `[Unreleased]`. Nach
+  `make version-bump-*` den CHANGELOG korrigieren und den Bump-Commit amenden.
+- `make tag` verweigert bei jeder Fremdaenderung im Tree. Fremdes nicht anfassen: die
+  Guards (VERSION committet, Tag neu, nur Fremddatei dirty) von Hand pruefen, dann
+  `git tag -a vX -m "Release vX"` wie im Target.
