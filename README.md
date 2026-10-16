@@ -54,8 +54,21 @@ This environment includes several containerized database services, each with a d
 | **odbseed** | ODBSEED     | Minimal OraDBA LAB initialized from `pdb26ai_odbseed.pdb`.                                   |
 | **odbrepo** | ODBREPO     | Full multitenant OraDBA LAB initialized from `pdb26ai_odbrepo.pdb`.                          |
 | **odbenc**  | ODBENC      | OraDBA LAB with TDE created using OraDBA scripts e.g. TVD_HR, SCOTT and Audit OraDBA config. |
+| **seclab**  | SECPDB1     | **INTENTIONALLY INSECURE** security baseline (S01-S11) for assessment and remediation testing, ports on 127.0.0.1 only. |
 
 ![Architecture Overview](doc/images/oracle-free-labs.png)
+
+## Start Here
+
+| You want | Read |
+| --- | --- |
+| Prepare the host (Docker Desktop, Colima, Podman), check it, work offline | [doc/container-runtime-runbook.md](doc/container-runtime-runbook.md) |
+| A database with known security findings for assessment/remediation tests | [doc/seclab-runbook.md](doc/seclab-runbook.md) |
+| Apply a use case to a plain Oracle Free container you already run | `scripts/apply_usecase.sh seclab <container>` - [doc/seclab-runbook.md](doc/seclab-runbook.md#path-b---apply-seclab-to-any-container) |
+| Run DBSAT against a container | [doc/dbsat-runbook.md](doc/dbsat-runbook.md) |
+| One of the classic lab services | the quickstart below |
+
+Before the first start: `make check SERVICE=<service>`.
 
 ## Quickstart
 
@@ -115,6 +128,7 @@ This environment includes several containerized database services, each with a d
    docker compose --profile odbseed up -d   # OraDBA demo from PDB archive
    docker compose --profile odbdemo up -d   # complex OraDBA demo
    docker compose --profile odbenc up -d    # OraDBA demo with TDE
+   docker compose --profile seclab up -d    # INTENTIONALLY INSECURE baseline (make up-seclab adds the pre-flight check)
    ```
 
    > Podman users can simply alias `docker` to `podman`.
@@ -191,6 +205,15 @@ These configuration mechanisms make it easy to customize and extend the lab envi
 
 Comprehensive documentation for installation, configuration, and use cases is provided in the [`doc/`](doc/) folder.  
 It includes step by step guides and practical examples to help you get the most out of the lab setup.
+
+- [Container Runtime Runbook](doc/container-runtime-runbook.md)  
+  Docker Desktop, Colima, Podman; pre-flight check; preparing images for offline use
+
+- [seclab Runbook](doc/seclab-runbook.md) and [Scenario Catalog](doc/seclab.md)  
+  INTENTIONALLY INSECURE security baseline for assessment and remediation testing
+
+- [DBSAT Runbook](doc/dbsat-runbook.md)  
+  Run the Database Security Assessment Tool against any lab container
 
 - [Setup Lab Environment](doc/setup_lab_environment.md)  
   Prepare host, install prerequisites, configure `.env`, and start services with Docker or Podman
