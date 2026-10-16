@@ -69,6 +69,55 @@ config/common/scripts/
 * **EASchema\_1558\_Oracle.sql** - Schema definition for OraDBA demo.
 * **setup\_ea\_baseline.sql** - Sets up OraDBA demo baseline.
 
+### 🧰 Generic Helpers (shell and SQL)
+
+* **run\_sql\_script.sh** - Runs a SQL script as SYSDBA, optionally in a PDB, with the
+  standard logging and container guards. Passwords are passed by environment variable
+  name (`-e VAR`), never on the command line. Pipe-safe error detection (exit code and
+  `ORA-`/`SP2-` lines).
+* **set\_sqlnet\_param.sh** - Sets parameters in the server `sqlnet.ora` idempotently and
+  reports old and new value; `--get NAME` reads a value.
+* **set\_static\_param.sql** - Sets a static parameter in the SPFILE and restarts the
+  instance only if the value differs (uses `restart_instance.sql`).
+* **restart\_instance.sql** - `SHUTDOWN IMMEDIATE`, `STARTUP`, open modes of all PDBs.
+* **create\_ts\_users.sql** - since v1.1.0 also without OMF: the datafile is placed next
+  to the SYSTEM datafile of the PDB (FREEPDB1 of the Oracle image).
+
+### 🔎 Pre-Checks before Remediation (read-only)
+
+* **precheck\_revoke\_public.sql** `<object> [owner]` - custom definer rights code that
+  would break if EXECUTE is revoked from PUBLIC.
+* **precheck\_logon\_version.sql** `[12a|12]` - accounts that would be locked out or
+  keep a legacy verifier when `ALLOWED_LOGON_VERSION_SERVER` is raised.
+* **precheck\_profile\_hardening.sql** `<profile> [regex]` - personal vs. probable
+  service accounts on a profile before it is hardened.
+
+### 🛡️ DBSAT
+
+* **create\_dbsat\_user.sql** `<user> <password>` - minimally privileged DBSAT collector
+  account (not SYS).
+* **run\_dbsat.sh** - DBSAT collect and report inside a container. DBSAT itself is not
+  shipped; without `config/common/data/dbsat/dbsat*.zip` it stops with exit 4 and
+  explains where to get it.
+
+### ⚠️ seclab - INTENTIONALLY INSECURE Scenarios
+
+Used by the `seclab` service and by `scripts/apply_usecase.sh seclab <container>`.
+Every script carries the header note "INTENTIONALLY INSECURE - lab use only".
+Catalog: [doc/seclab.md](../../../doc/seclab.md).
+
+* **seclab\_apply.sh** - single entry point: applies S01-S11 to an existing PDB and
+  verifies (`-p PDB`, `--no-restart`, `--dry-run`).
+* **seclab\_accounts.sql** - weak profile, custom accounts, application schema.
+* **seclab\_s01\_public\_grants.sql** `INSECURE|FIX`, **seclab\_s06\_unused\_accounts.sql**
+  `INSECURE|FIX`, **seclab\_s11\_default\_password.sql** `INSECURE|FIX` - class 1
+  scenarios with remediation and rollback in one script.
+* **seclab\_s02\_utl\_file\_dependency.sql**, **seclab\_s05\_overprivileged.sql**,
+  **seclab\_s07\_audit\_gaps.sql** - class 2/3 scenarios (no fix mode).
+* **seclab\_simulate\_logins.sh** - one login per account in use (separates S06).
+* **seclab\_verify.sh** / **seclab\_verify.sql** - read-only proof, `PRESENT` /
+  `ABSENT` / `NOT REPRODUCIBLE` per ID, exit 0/1/2.
+
 ### 📑 Templates
 
 * **template\_cdbroot\_wrapper\_script.sql** - Wrapper template for CDB\$ROOT scripts.

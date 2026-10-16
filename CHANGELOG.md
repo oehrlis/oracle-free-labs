@@ -7,6 +7,43 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Service `seclab` (profile `seclab`, ports 1534/5512 bound to `127.0.0.1` only): an
+  INTENTIONALLY INSECURE security baseline for assessment and remediation testing.
+  Eleven catalogued scenarios S01-S11 (PUBLIC grants, UTL_FILE dependency, legacy
+  verifiers, weak profile, over-privileged accounts, unused accounts, audit gaps, no TDE,
+  no network encryption, `SQL92_SECURITY=FALSE`, SCOTT default password), each with
+  proof query, remediation class and expected DBSAT rule in `doc/seclab.md`.
+- `seclab_apply.sh` as single entry point for the scenarios, used by the service setup
+  and by `scripts/apply_usecase.sh`, which applies a use case to **any** running Oracle
+  Database Free container, also the plain Oracle image (`make apply USECASE=seclab
+  CONTAINER=<name>`). Refuses seclab on containers that publish ports beyond localhost.
+- Read-only verification `seclab_verify.sh` (`make verify-seclab`): PRESENT / ABSENT /
+  NOT REPRODUCIBLE per scenario, exit 0/1/2. Remediation and rollback for the class 1
+  scenarios (`FIX` / `INSECURE` mode), read-only pre-checks for class 2
+  (`precheck_revoke_public.sql`, `precheck_logon_version.sql`,
+  `precheck_profile_hardening.sql`).
+- DBSAT integration without shipping DBSAT: `run_dbsat.sh`, `create_dbsat_user.sql`,
+  `make dbsat-seclab`, `make dbsat CONTAINER=<name>`. Without the archive in
+  `config/common/data/dbsat/` the run stops with exit 4 and explains where to get it.
+- Generic helpers in `config/common/scripts/`: `run_sql_script.sh` (SQL as SYSDBA with
+  logging, passwords by environment variable name), `set_sqlnet_param.sh`,
+  `set_static_param.sql`, `restart_instance.sql`.
+- Pre-flight check `scripts/check_requirements.sh` (`make check [SERVICE=...]`, run by
+  `make up-seclab`): runtime, Colima mounts, memory, CPUs, compose, disk, image, `.env`
+  variables, ports.
+- Runbooks: `doc/container-runtime-runbook.md` (Docker Desktop and Colima verified, Podman
+  documented), `doc/seclab-runbook.md`, `doc/dbsat-runbook.md`.
+- `tasks/repo-audit-2026-10-16.md`: audit of redundancies and a phased plan for a
+  use-case based simplification (analysis only, nothing implemented).
+
+### Changed
+
+- `create_ts_users.sql` v1.1.0 works without OMF: it checks for the tablespace first and
+  places the datafile next to the SYSTEM datafile when `db_create_file_dest` is empty
+  (FREEPDB1 of the Oracle image). With OMF the behaviour is unchanged.
+
 ## [1.3.0] - 2026-09-11
 
 ### Fixed

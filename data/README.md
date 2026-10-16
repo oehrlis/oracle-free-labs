@@ -21,6 +21,14 @@ conflicts.
 - **odbdemo/**  
   Data for the OraDBA repository created from `PDB$SEED`.
 
+- **seclab/**  
+  Data for the INTENTIONALLY INSECURE security baseline lab, including the
+  DBSAT reports in `seclab/dbsat/`.
+
+- **dbsat/**  
+  Created on demand by `make dbsat CONTAINER=<name>`: DBSAT reports copied back
+  from any container, one subfolder per container.
+
 ## Notes
 
 - The contents of this folder are **not versioned** in Git.  

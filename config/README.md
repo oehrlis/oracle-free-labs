@@ -37,6 +37,11 @@ Each subfolder corresponds to a service profile defined in `docker-compose.yml`.
   Configuration for the **odbencdev** service - TDE restore verification, Dev/target DB.  
   [Read more »](odbencdev/README.md)
 
+- **seclab/**  
+  Configuration for the **seclab** service - INTENTIONALLY INSECURE security baseline for
+  assessment and remediation testing (ports on 127.0.0.1 only).  
+  [Read more »](seclab/README.md)
+
 ## Conventions
 
 - **setup/** - Scripts executed once on container initialization (schema creation, PDB restore).
