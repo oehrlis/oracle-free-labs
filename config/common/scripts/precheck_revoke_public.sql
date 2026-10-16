@@ -46,10 +46,14 @@ BEGIN
   dbms_output.put_line('Pre-check: REVOKE EXECUTE ON ' || l_owner || '.' || l_object || ' FROM PUBLIC');
   dbms_output.put_line('PUBLIC currently holds EXECUTE: ' || CASE WHEN l_public > 0 THEN 'YES' ELSE 'NO' END);
 
-  FOR r IN (SELECT d.owner, d.name, d.type, o.status,
+  -- A direct EXECUTE grant or a directly granted EXECUTE ANY PROCEDURE keeps
+  -- definer rights code working; privileges through roles do not.
+  FOR r IN (SELECT DISTINCT d.owner, d.name, d.type, o.status,
                    (SELECT COUNT(*) FROM dba_tab_privs p
                      WHERE p.grantee = d.owner AND p.owner = l_owner
-                       AND p.table_name = l_object AND p.privilege = 'EXECUTE') AS direct_grant
+                       AND p.table_name = l_object AND p.privilege = 'EXECUTE')
+                 + (SELECT COUNT(*) FROM dba_sys_privs s
+                     WHERE s.grantee = d.owner AND s.privilege = 'EXECUTE ANY PROCEDURE') AS direct_grant
               FROM dba_dependencies d
               JOIN dba_users u   ON u.username = d.owner
               JOIN dba_objects o ON o.owner = d.owner AND o.object_name = d.name AND o.object_type = d.type

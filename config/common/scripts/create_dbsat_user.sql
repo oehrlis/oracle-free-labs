@@ -35,7 +35,7 @@ SET FEEDBACK ON
 
 PROMPT - Create DBSAT collector account &_USER
 DECLARE
-  l_user  VARCHAR2(128) := UPPER('&&_USER');
+  l_user  VARCHAR2(128) := DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER('&&_USER'));
   l_count PLS_INTEGER;
   TYPE t_list IS TABLE OF VARCHAR2(200);
   l_grants t_list := t_list(

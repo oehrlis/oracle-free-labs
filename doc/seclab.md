@@ -75,7 +75,7 @@ S01 PRESENT - 2 custom grant(s) to PUBLIC: SELECT ON SCOTT.EMP, EXECUTE ON APP_O
 S02 PRESENT - PUBLIC EXECUTE on UTL_FILE=1, APP_EXPORT depends on UTL_FILE=1, direct grant to APP_OWNER=0
 S03 PRESENT - ALLOWED_LOGON_VERSION_SERVER=11, LEGACY_APP password_versions=11G 12C
 S04 PRESENT - SECLAB_UNLIMITED weak limits=3/3, assigned to ANALYST1,DEV_USER1,SVC_BATCH
-S05 PRESENT - APP_OWNER has DBA=1, DEV_USER1 SELECT ANY TABLE=1, custom grants WITH ADMIN OPTION=1
+S05 PRESENT - APP_OWNER has DBA=1, DEV_USER1 SELECT ANY TABLE=1, ANALYST1 SELECT ANY TABLE WITH ADMIN OPTION=1
 S06 PRESENT - 2 open account(s) never logged in: OLD_APP,TEST_USER
 S07 PRESENT - enabled logon policies=0, enabled policies on sensitive schemas=0, unified purge jobs=0
 S08 PRESENT - encrypted tablespaces=0, keystore status=NOT_AVAILABLE
@@ -234,8 +234,12 @@ so `DBA_USERS.LAST_LOGIN` separates them from the S06 accounts. The
 ### S07 - Incomplete Unified Audit Configuration
 
 - **Weakness:** Unified Auditing is on, but the coverage is incomplete:
-  - every policy that audits `LOGON`/`LOGOFF` is disabled in the PDB (on
-    23.26.3 this was `ORA_LOGIN_LOGOUT`, enabled by default);
+  - every policy that audits `LOGON`/`LOGOFF` is disabled in the PDB - also
+    `ACTIONS ALL` policies (standard action `ALL`), which audit logons too,
+    while object policies with `ALL ON <object>` are left alone. On a fresh
+    23.26.3 PDB this was `ORA_LOGIN_LOGOUT`, enabled by default. If an
+    enablement cannot be removed (for example one made in `CDB$ROOT`), the
+    script fails instead of reporting an incomplete S07;
   - of the OraDBA policies only `ORADBA_LOC_ACC_MGMT`, `ORADBA_LOC_INST_CONFIG`
     and `ORADBA_LOC_SECURE_CONFIG` are enabled;
   - no policy covers `SCOTT`, `TVD_HR` or `APP_OWNER` objects;

@@ -10,7 +10,10 @@
 --              instance, but only if the running value differs.
 --  Notes.....: - Execute in CDB$ROOT as SYSDBA (pair with require_cdb_root.sql).
 --              - Logging and SQL*Plus formatting are the caller's responsibility.
---              - &1 parameter name, &2 value exactly as ALTER SYSTEM expects it.
+--              - &1 parameter name, &2 value. Supported: boolean and integer
+--                parameters (e.g. sql92_security FALSE). String values with
+--                quotes and size suffixes (10M) are not supported: the value
+--                is compared literally with V$PARAMETER.VALUE.
 --              - The restart is done by restart_instance.sql in the same
 --                directory (/opt/oracle/common/scripts). It closes all PDBs;
 --                PDBs with a saved state reopen.
@@ -35,6 +38,19 @@ SELECT '' "2" FROM dual WHERE ROWNUM = 0;
 DEFINE _PARAM_NAME  = '&1'
 DEFINE _PARAM_VALUE = '&2'
 DEFINE _COMMON_DIR  = '/opt/oracle/common/scripts'
+
+-- Unknown parameter: stop before the restart decision -------------------------
+-- Without a V$PARAMETER row the NEW_VALUE below would stay undefined and
+-- SQL*Plus would prompt for it, eating the caller's stdin.
+DECLARE
+  l_count PLS_INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO l_count FROM v$parameter WHERE name = LOWER('&_PARAM_NAME');
+  IF l_count = 0 THEN
+    RAISE_APPLICATION_ERROR(-20014, 'set_static_param.sql: unknown parameter &_PARAM_NAME');
+  END IF;
+END;
+/
 
 -- Decide whether a change and a restart are needed ----------------------------
 -- SQL*Plus resolves a command name before substitution, so a variable cannot
