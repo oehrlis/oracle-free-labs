@@ -2,7 +2,8 @@
 
 ## seclab - intentionally insecure security baseline (2026-10-15)
 
-Auftrag: `tasks/prompt-seclab.md`. Branch `feat/seclab`, Release v1.4.0.
+Auftrag: `tasks/prompt-seclab.md` (entfernt, in der History:
+`git show c67134d:tasks/prompt-seclab.md`). Branch `feat/seclab`, Release v1.4.0.
 
 ### Fakten vorab
 
