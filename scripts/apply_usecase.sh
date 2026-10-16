@@ -154,7 +154,9 @@ SELECT name FROM v$pdbs WHERE name <> 'PDB$SEED' AND open_mode = 'READ WRITE' OR
 EXIT
 SQL
 )"
-    pdbs="$(echo ${pdbs})"
+    local list
+    read -r -d '' -a list <<< "${pdbs}" || true
+    pdbs="${list[*]+"${list[*]}"}"
     default="$(docker exec "${container}" bash -c 'echo "${ORACLE_PDB:-FREEPDB1}"')"
     default="$(echo "${default}" | tr '[:lower:]' '[:upper:]')"
     case "${pdbs}" in

@@ -15,6 +15,7 @@
 --  License...: Apache License Version 2.0, January 2004 as shown
 --              at http://www.apache.org/licenses/
 --------------------------------------------------------------------------------
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 PROMPT - Restart instance to apply SPFILE changes
 SHUTDOWN IMMEDIATE;
 STARTUP;

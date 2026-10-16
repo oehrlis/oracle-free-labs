@@ -62,7 +62,7 @@ BEGIN
   SELECT COUNT(*) INTO l_n2 FROM dba_dependencies
    WHERE owner = 'APP_OWNER' AND name = 'APP_EXPORT' AND referenced_name = 'UTL_FILE';
   SELECT COUNT(*) INTO l_n3 FROM dba_tab_privs
-   WHERE grantee = 'APP_OWNER' AND table_name = 'UTL_FILE';
+   WHERE grantee = 'APP_OWNER' AND owner = 'SYS' AND table_name = 'UTL_FILE';
   result('S02', l_n > 0 AND l_n2 > 0 AND l_n3 = 0,
          'PUBLIC EXECUTE on UTL_FILE=' || l_n || ', APP_EXPORT depends on UTL_FILE=' || l_n2
          || ', direct grant to APP_OWNER=' || l_n3);
@@ -89,11 +89,11 @@ BEGIN
   -- S05 over-privileged accounts -------------------------------------------------
   SELECT COUNT(*) INTO l_n FROM dba_role_privs WHERE grantee = 'APP_OWNER' AND granted_role = 'DBA';
   SELECT COUNT(*) INTO l_n2 FROM dba_sys_privs WHERE grantee = 'DEV_USER1' AND privilege = 'SELECT ANY TABLE';
-  SELECT COUNT(*) INTO l_n3 FROM dba_sys_privs p JOIN dba_users u ON u.username = p.grantee
-   WHERE p.admin_option = 'YES' AND u.oracle_maintained = 'N';
+  SELECT COUNT(*) INTO l_n3 FROM dba_sys_privs
+   WHERE grantee = 'ANALYST1' AND privilege = 'SELECT ANY TABLE' AND admin_option = 'YES';
   result('S05', l_n > 0 AND l_n2 > 0 AND l_n3 > 0,
          'APP_OWNER has DBA=' || l_n || ', DEV_USER1 SELECT ANY TABLE=' || l_n2
-         || ', custom grants WITH ADMIN OPTION=' || l_n3);
+         || ', ANALYST1 SELECT ANY TABLE WITH ADMIN OPTION=' || l_n3);
 
   -- S06 open, never used custom accounts -----------------------------------------
   SELECT COUNT(*), LISTAGG(username, ',') WITHIN GROUP (ORDER BY username) INTO l_n, l_txt
@@ -104,7 +104,8 @@ BEGIN
   -- S07 incomplete Unified Audit configuration -----------------------------------
   SELECT COUNT(*) INTO l_n FROM audit_unified_enabled_policies e
    WHERE e.policy_name IN (SELECT policy_name FROM audit_unified_policies
-                            WHERE audit_option IN ('LOGON', 'LOGOFF'));
+                            WHERE audit_option IN ('LOGON', 'LOGOFF')
+                               OR (audit_option = 'ALL' AND audit_option_type = 'STANDARD ACTION'));
   SELECT COUNT(*) INTO l_n2 FROM audit_unified_enabled_policies e
    WHERE e.policy_name IN (SELECT policy_name FROM audit_unified_policies
                             WHERE object_schema IN ('SCOTT', 'TVD_HR', 'APP_OWNER'));

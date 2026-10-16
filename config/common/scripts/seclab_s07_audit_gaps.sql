@@ -24,27 +24,39 @@
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 
 PROMPT - S07 disable every enabled policy that audits LOGON or LOGOFF
+-- ACTIONS ALL (standard action) audits logons as well, so it counts too.
+-- audit_option = 'ALL' alone is not enough: object policies (ALL ON <object>)
+-- carry the same value but do not audit logons.
 DECLARE
-  l_sql VARCHAR2(512);
+  l_sql    VARCHAR2(512);
+  l_failed PLS_INTEGER := 0;
 BEGIN
   FOR r IN (SELECT DISTINCT e.policy_name, e.enabled_option, e.entity_name
               FROM audit_unified_enabled_policies e
              WHERE e.policy_name IN (SELECT p.policy_name FROM audit_unified_policies p
-                                      WHERE p.audit_option IN ('LOGON', 'LOGOFF'))) LOOP
+                                      WHERE p.audit_option IN ('LOGON', 'LOGOFF')
+                                         OR (p.audit_option = 'ALL'
+                                             AND p.audit_option_type = 'STANDARD ACTION'))) LOOP
     l_sql := 'NOAUDIT POLICY ' || r.policy_name;
     IF r.enabled_option = 'BY USER' AND r.entity_name <> 'ALL USERS' THEN
       l_sql := l_sql || ' BY "' || r.entity_name || '"';
     ELSIF r.enabled_option = 'BY GRANTED ROLE' THEN
       l_sql := l_sql || ' BY USERS WITH GRANTED ROLES "' || r.entity_name || '"';
     END IF;
+    -- EXCEPT USER and BY USER 'ALL USERS': the plain NOAUDIT removes the enablement
     BEGIN
       EXECUTE IMMEDIATE l_sql;
       dbms_output.put_line('- ' || l_sql);
     EXCEPTION
       WHEN OTHERS THEN
-        dbms_output.put_line('- WARN: ' || l_sql || ' failed: ' || SQLERRM);
+        l_failed := l_failed + 1;
+        dbms_output.put_line('- FAILED: ' || l_sql || ': ' || SQLERRM);
     END;
   END LOOP;
+  IF l_failed > 0 THEN
+    RAISE_APPLICATION_ERROR(-20015, 'S07: ' || l_failed
+      || ' logon policy enablement(s) could not be removed - S07 would be incomplete');
+  END IF;
 END;
 /
 

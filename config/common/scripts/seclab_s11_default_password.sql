@@ -11,8 +11,9 @@
 --  Notes.....: *** INTENTIONALLY INSECURE - lab use only ***
 --              - Execute in the seclab PDB as SYSDBA (pair with require_pdb.sql).
 --              - Requires create_scott.sql (creates SCOTT without password).
---              - &1 mode: INSECURE sets the password &2 (SECLAB_SCOTT_PWD,
---                the documented default) and unlocks the account;
+--              - &1 mode: INSECURE sets the password &2 (SECLAB_SCOTT_PWD) and
+--                unlocks the account. &2 must be the Oracle default of SCOTT:
+--                only then DBA_USERS_WITH_DEFPWD lists it and S11 is PRESENT;
 --                FIX sets a random password and locks the account.
 --  License...: Apache License Version 2.0, January 2004 as shown
 --              at http://www.apache.org/licenses/
@@ -43,7 +44,7 @@ BEGIN
     dbms_output.put_line('- SCOTT password set to the configured default, account unlocked');
   ELSIF l_mode = 'FIX' THEN
     EXECUTE IMMEDIATE 'ALTER USER scott IDENTIFIED BY "'
-                      || REPLACE(dbms_random.string('a', 24), '"', 'x') || '1#" ACCOUNT LOCK';
+                      || dbms_random.string('a', 24) || '1#" ACCOUNT LOCK';
     dbms_output.put_line('- SCOTT password set to a random value, account locked');
   ELSE
     RAISE_APPLICATION_ERROR(-20011, 'mode must be INSECURE or FIX, got ' || l_mode);

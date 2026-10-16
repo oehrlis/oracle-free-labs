@@ -149,8 +149,8 @@ main() {
             echo "ERROR: environment variable ${var} is not set or empty (see .env.example)" >&2
             return 1
         fi
-        if [[ "${!var}" == *'"'* ]]; then
-            echo "ERROR: value of ${var} must not contain a double quote" >&2
+        if [[ "${!var:-}" == *[\"\']* ]]; then
+            echo "ERROR: value of ${var} must not contain a quote character (' or \")" >&2
             return 1
         fi
     done
