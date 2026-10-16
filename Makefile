@@ -42,11 +42,13 @@ BUILD_DIR  := build
 DOC_DIR    := doc
 
 # -- Services ------------------------------------------------------------------
-SERVICES := cdbfree labdb odbrepo odbseed odbdemo odbenc odbencprod odbencdev
+SERVICES := cdbfree labdb odbrepo odbseed odbdemo odbenc odbencprod odbencdev seclab
 
 # -- Scripts -------------------------------------------------------------------
-PDF_SCRIPT  := $(SCRIPT_DIR)/generate_pdf.sh
-BUMP_SCRIPT := $(SCRIPT_DIR)/bump_version.sh
+PDF_SCRIPT   := $(SCRIPT_DIR)/generate_pdf.sh
+BUMP_SCRIPT  := $(SCRIPT_DIR)/bump_version.sh
+CHECK_SCRIPT := $(SCRIPT_DIR)/check_requirements.sh
+APPLY_SCRIPT := $(SCRIPT_DIR)/apply_usecase.sh
 
 # -- Docker variables ----------------------------------------------------------
 -include .env
@@ -87,7 +89,7 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Lab Services (use SERVICE=<name> or per-service shortcut):$(COLOR_RESET)"
-	@grep -hE '^(up|down|ps|logs|bash|sql|reset):.*?## ' $(MAKEFILE_LIST) | \
+	@grep -hE '^(check|up|down|ps|logs|bash|sql|reset|apply|dbsat):.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "  $(COLOR_BOLD)Available services$(COLOR_RESET) (each supports: up | down | logs | bash | sql | reset)"
@@ -101,8 +103,10 @@ help: ## Show this help message
 	@echo   "  odbenc      1531    OraDBA demo with TDE via SQL scripts"
 	@echo   "  odbencprod  1532    TDE restore verification - Prod DB (ARCHIVELOG, TDE)"
 	@echo   "  odbencdev   1533    TDE restore verification - Dev/target DB (own keystore)"
+	@echo   "  seclab      1534    INTENTIONALLY INSECURE security baseline (127.0.0.1 only)"
 	@echo ""
 	@echo   "  Shortcut: make up-labdb  |  make logs-odbdemo  |  make reset-odbenc"
+	@echo   "  seclab  : make up-seclab | make verify-seclab | make dbsat-seclab"
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Build:$(COLOR_RESET)"
 	@grep -hE '^(build)[a-zA-Z_-]*:.*?## ' $(MAKEFILE_LIST) | \
@@ -190,6 +194,26 @@ lint-markdown: ## Lint markdown files with markdownlint
 # ==============================================================================
 # Lab Services - Generic
 # ==============================================================================
+
+.PHONY: check
+check: ## Pre-flight check (runtime, resources, image, ports): make check [SERVICE=seclab]
+	@"$(CHECK_SCRIPT)" $(if $(SERVICE),-s "$(SERVICE)")
+
+.PHONY: apply
+apply: ## Apply a use case to any running container: make apply USECASE=seclab CONTAINER=<name> [PDB=FREEPDB1]
+	@if [[ -z "$(USECASE)" || -z "$(CONTAINER)" ]]; then \
+		echo "Error: USECASE and CONTAINER are required. Example: make apply USECASE=seclab CONTAINER=free26ai"; \
+		exit 1; \
+	fi
+	@"$(APPLY_SCRIPT)" $(if $(PDB),-p "$(PDB)") "$(USECASE)" "$(CONTAINER)"
+
+.PHONY: dbsat
+dbsat: ## Run DBSAT against any running container: make dbsat CONTAINER=<name> [PDB=FREEPDB1]
+	@if [[ -z "$(CONTAINER)" ]]; then \
+		echo "Error: CONTAINER is required. Example: make dbsat CONTAINER=free26ai"; \
+		exit 1; \
+	fi
+	@"$(APPLY_SCRIPT)" $(if $(PDB),-p "$(PDB)") dbsat "$(CONTAINER)"
 
 .PHONY: up
 up: ## Start a service by profile: make up SERVICE=labdb
@@ -477,6 +501,40 @@ sql-odbencdev: ## Open sqlplus in odbencdev
 .PHONY: reset-odbencdev
 reset-odbencdev: ## Full reset of odbencdev (destructive!)
 	$(MAKE) --no-print-directory reset SERVICE=odbencdev
+
+# -- seclab (INTENTIONALLY INSECURE, see doc/seclab.md) -----------------------
+.PHONY: up-seclab
+up-seclab: ## Start seclab after a pre-flight check (insecure baseline, 127.0.0.1 only)
+	@"$(CHECK_SCRIPT)" -s seclab
+	$(MAKE) --no-print-directory up SERVICE=seclab
+
+.PHONY: down-seclab
+down-seclab: ## Stop seclab
+	$(MAKE) --no-print-directory down SERVICE=seclab
+
+.PHONY: logs-seclab
+logs-seclab: ## Follow logs for seclab
+	$(MAKE) --no-print-directory logs SERVICE=seclab
+
+.PHONY: bash-seclab
+bash-seclab: ## Open bash shell in seclab
+	$(MAKE) --no-print-directory bash SERVICE=seclab
+
+.PHONY: sql-seclab
+sql-seclab: ## Open sqlplus in seclab
+	$(MAKE) --no-print-directory sql SERVICE=seclab
+
+.PHONY: reset-seclab
+reset-seclab: ## Full reset of seclab (destructive!)
+	$(MAKE) --no-print-directory reset SERVICE=seclab
+
+.PHONY: verify-seclab
+verify-seclab: ## Verify the seclab scenarios (read-only, exit 1 if one is ABSENT)
+	docker compose exec seclab /opt/oracle/common/scripts/seclab_verify.sh -p SECPDB1
+
+.PHONY: dbsat-seclab
+dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*.zip)
+	docker compose exec seclab /opt/oracle/common/scripts/run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD
 
 # ==============================================================================
 # Build

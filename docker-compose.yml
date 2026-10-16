@@ -16,6 +16,8 @@
 #              - odbenc     : complex OraDBA demo with TDE via SQL scripts
 #              - odbencprod : TDE restore test - Prod DB (TDE, encrypted TS)
 #              - odbencdev  : TDE restore test - Dev DB (own keystore)
+#              - seclab     : INTENTIONALLY INSECURE security baseline for
+#                             assessment and remediation testing
 #
 # Reference..: https://github.com/oehrlis/oracle-free-labs
 # License....: Apache License Version 2.0, January 2004 as shown
@@ -211,4 +213,38 @@ services:
       resources:
         limits:
           memory: ${ODBENCDEV_DB_MEM:-2g}
+  # - INTENTIONALLY INSECURE security baseline (assessment/remediation lab) ----
+  # Known, catalogued weaknesses - see doc/seclab.md. Ports are bound to
+  # 127.0.0.1 only: this database must never be reachable from the network.
+  # environment repeats the env-named list: a service-level list replaces the
+  # anchor, it does not extend it.
+  seclab:
+    <<: *db-base
+    container_name: seclab
+    hostname: seclab
+    profiles: ["seclab"]
+    environment:
+      - TZ=${TZ}
+      - ORACLE_PWD=${ORACLE_PWD}
+      - ORACLE_SID=${DB_ORACLE_SID}
+      - ORACLE_PDB=${ORACLE_PDB}
+      - TNS_ADMIN=/opt/oracle/network/admin
+      - SECLAB_USER_PWD=${SECLAB_USER_PWD:-}
+      - SECLAB_SCOTT_PWD=${SECLAB_SCOTT_PWD:-}
+      - SECLAB_DBSAT_PWD=${SECLAB_DBSAT_PWD:-}
+    volumes:
+      - ./data/seclab:/opt/oracle/oradata
+      - ./data/seclab/dbconfig:/opt/oracle/dbconfig
+      - ./data/seclab/logs:/opt/oracle/scripts/logs   # <-- writable logs
+      - ${COMMON_DATA_HOST}:/opt/oracle/data
+      - ./config/common/scripts:/opt/oracle/common/scripts:ro
+      - ./config/seclab/setup:/opt/oracle/scripts/setup:ro
+      - ./config/seclab/startup:/opt/oracle/scripts/startup:ro
+    ports:
+      - "127.0.0.1:${SECLAB_LISTENER_PORT:-1534}:1521"
+      - "127.0.0.1:${SECLAB_OEM_EXPRESS_PORT:-5512}:5500"
+    deploy:
+      resources:
+        limits:
+          memory: ${SECLAB_DB_MEM:-3g}
 # - EOF ------------------------------------------------------------------------
