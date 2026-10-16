@@ -37,6 +37,7 @@ docker compose --profile labdb down -v && rm -rf data/labdb/
 | `odbseed` | `odbseed` | 1529 | 5509 | OraDBA demo from PDB archive |
 | `odbdemo` | `odbdemo` | 1530 | 5511 | Complex OraDBA demo from PDB archive |
 | `odbenc` | `odbenc` | 1531 | 5511 | OraDBA demo with TDE via SQL scripts |
+| `seclab` | `seclab` | 1534 | 5512 | INTENTIONALLY INSECURE security baseline (127.0.0.1 only) |
 
 ## Architecture
 
@@ -74,6 +75,17 @@ Named services (`labdb`, `odbrepo`, `odbseed`, `odbdemo`, `odbenc`) set
 `TNS_ADMIN=/opt/oracle/network/admin`, which resolves via a Dockerfile symlink to
 `/opt/oracle/dbconfig/FREE/`. This directory is bind-mounted and persistent.
 `cdbfree` uses Oracle's default network paths (no explicit dbconfig mount).
+
+### Use Cases on Any Container
+
+`scripts/apply_usecase.sh <usecase> <container>` (`make apply`, `make dbsat`) copies
+`config/common/scripts` into any running Oracle Free container - also the plain Oracle
+image - and runs the use case entry script there (`seclab_apply.sh`, `run_dbsat.sh`).
+The seclab service setup calls the same `seclab_apply.sh`, so there is one code path.
+Wrappers in `config/<service>/setup|startup/*.sh` are **sourced** by the image's
+`runUserScripts.sh`: keep their body in a subshell (see `config/seclab/`).
+Pre-flight check: `make check [SERVICE=...]`. Runbooks: `doc/container-runtime-runbook.md`,
+`doc/seclab-runbook.md`, `doc/dbsat-runbook.md`.
 
 ### Demo and Engineering Overlays
 

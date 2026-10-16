@@ -1,5 +1,52 @@
 # Oracle Free Labs - Repo Overhaul Plan
 
+## seclab - intentionally insecure security baseline (2026-10-15)
+
+Auftrag: `tasks/prompt-seclab.md`. Branch `feat/seclab`, Release v1.4.0.
+
+### Fakten vorab
+
+- Image: `container-registry.oracle.com/database/free:latest` = 23.26.0 (26ai), arm64 verfuegbar.
+  `oracle-free-labs:latest` lokal gebaut (Symlink `/opt/oracle/network/admin` vorhanden).
+- `make build` ist fuer seclab Pflicht: TNS_ADMIN zeigt auf den Symlink, den nur das
+  gebaute Image hat. Base-Image hat kein `/opt/oracle/network`.
+- `runUserScripts.sh` **sourct** `*.sh` (`. "$f"`): `set -euo pipefail` und `exit` wuerden in
+  den Runner lecken -> seclab-Wrapper fuehren ihren Rumpf in einer Subshell aus.
+- `create_tvd_hr.sql` endet mit `exit`, `create_scott.sql` setzt `CURRENT_SCHEMA` -> je eigener Wrapper.
+- Kein DBSAT-ZIP lokal -> nur Meldungspfad pruefbar; Python3 im Image, Java nur unter `$ORACLE_HOME/jdk`, kein `zip`.
+- `.gitignore` im Working Tree fremd modifiziert (ignoriert `.env`/`data/` nicht mehr) -> nur explizite Pfade stagen.
+  `make tag` prueft `git diff --quiet HEAD` und scheitert an dieser fremden Aenderung -> Tag mit identischen Guards manuell.
+
+### Szenarien
+
+- [ ] S01 PUBLIC-Grants (SCOTT.EMP SELECT, APP_OWNER.APP_UTIL EXECUTE) - Klasse 1, Fix APPLY/ROLLBACK
+- [ ] S02 APP_OWNER.APP_EXPORT nutzt UTL_FILE nur via PUBLIC - Klasse 2, Pre-Check
+- [ ] S03 ALLOWED_LOGON_VERSION_SERVER niedrig + LEGACY_APP mit altem Verifier - Klasse 2
+- [ ] S04 Profil SECLAB_UNLIMITED fuer Personen + Service-Account - Klasse 2
+- [ ] S05 APP_OWNER DBA, DEV_USER1 SELECT ANY TABLE, ANALYST1 WITH ADMIN OPTION - Klasse 3
+- [ ] S06 OLD_APP / TEST_USER offen, nie benutzt - Klasse 1, Fix APPLY/ROLLBACK
+- [ ] S07 Logon-Policies aus, keine Objekt-Policy, kein Purge-Job - Klasse 3
+- [ ] S08 kein Keystore, kein TDE - Klasse 3 (Default-Zustand, nur nachweisen)
+- [ ] S09 SQLNET.ENCRYPTION_SERVER / CRYPTO_CHECKSUM_SERVER = ACCEPTED - Klasse 3
+- [ ] S10 SQL92_SECURITY=FALSE (statisch, Restart) - Klasse 1 mit Restart
+- [ ] S11 (neu) SCOTT mit Default-Passwort - Klasse 1
+
+### Common-Skripte (neu, generisch)
+
+- [ ] `run_sql_script.sh` - SQL-Skript als SYSDBA, optional in PDB, Env-Variablen als Parameter, Logging, pipe-sicher
+- [ ] `set_sqlnet_param.sh` - Parameter in sqlnet.ora idempotent setzen, meldet alt -> neu
+- [ ] `set_static_param.sql` - SPFILE-Parameter setzen + Restart, nur wenn Wert abweicht
+- [ ] `precheck_revoke_public.sql`, `precheck_logon_version.sql`, `precheck_profile_hardening.sql`
+- [ ] `create_dbsat_user.sql`, `run_dbsat.sh`
+- [ ] `seclab_*.sql` Szenarien, `seclab_verify.sql/.sh`, `seclab_fix_s01/s06`
+
+### Integration
+
+- [ ] compose `seclab` (127.0.0.1, 1534/5512), `.env.example`, Makefile-Targets, data/seclab-Gerueste
+- [ ] READMEs (root, config, config/seclab, common/scripts), CLAUDE.md, doc/seclab.md, doc/seclab-runbook.md
+- [ ] Lauf: erster Start, Verifikation, Remediation-Schleife S01, zweiter Start, Reset + Neustart
+- [ ] Review-Agents, Lint, Secret-Scan, PR, Merge, v1.4.0, Tag-Push
+
 ## Overview
 
 Vollständige Überarbeitung des `oracle-free-labs` Repos auf OraDBA-Standards.

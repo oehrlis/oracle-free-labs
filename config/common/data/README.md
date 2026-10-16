@@ -10,6 +10,10 @@ Shared data artifacts used across multiple services.
 - **pdbarch/**  
   PDB archive files used for restoring databases
 
+- **dbsat/**  
+  Place the Oracle DBSAT zip here (not shipped, Oracle license). Used by
+  `make dbsat-seclab`, see [dbsat/README.md](dbsat/README.md)
+
 ## Notes
 
 - This folder is mounted once into the container at `/opt/oracle/data`
