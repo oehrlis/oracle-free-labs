@@ -7,6 +7,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-16
+
 ### Added
 
 - Service `seclab` (profile `seclab`, ports 1534/5512 bound to `127.0.0.1` only): an
