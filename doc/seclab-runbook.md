@@ -190,7 +190,9 @@ make dbsat CONTAINER=free26ai   # any container
 ```
 
 DBSAT is not shipped. Without the zip both commands stop with exit 4 and
-explain where to get it. Details: [dbsat-runbook.md](dbsat-runbook.md).
+explain where to get it. Both copy a JRE 21 from `eclipse-temurin:21-jre`
+into the container first, because DBSAT 4.x needs Java 17+ for the report.
+Details: [dbsat-runbook.md](dbsat-runbook.md).
 
 ## Troubleshooting
 

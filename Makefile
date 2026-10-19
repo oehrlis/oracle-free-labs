@@ -49,6 +49,12 @@ PDF_SCRIPT   := $(SCRIPT_DIR)/generate_pdf.sh
 BUMP_SCRIPT  := $(SCRIPT_DIR)/bump_version.sh
 CHECK_SCRIPT := $(SCRIPT_DIR)/check_requirements.sh
 APPLY_SCRIPT := $(SCRIPT_DIR)/apply_usecase.sh
+JRE_SCRIPT   := $(SCRIPT_DIR)/provide_jre.sh
+
+# Shell scripts covered by lint-shell: host scripts and the scripts that run
+# inside the containers (fmt-shell / fmt-shell-write stay on scripts/ only)
+SHELL_SOURCES = $(shell find $(SCRIPT_DIR) config/common/scripts -type f -name '*.sh') \
+                $(wildcard config/*/setup/*.sh config/*/startup/*.sh)
 
 # -- Docker variables ----------------------------------------------------------
 -include .env
@@ -59,6 +65,10 @@ DB_IMAGE           ?= $(BUILD_IMAGE)
 export DB_IMAGE
 REGISTRY           ?= ghcr.io/oehrlis
 DOCKER_BUILD_ARGS  ?=
+# Java runtime copied into DB containers for DBSAT report/discover (Java 17+)
+# keep in sync with scripts/provide_jre.sh and scripts/check_requirements.sh
+ASSESS_JRE_IMAGE   ?= eclipse-temurin:21-jre
+export ASSESS_JRE_IMAGE
 
 # -- Tool detection ------------------------------------------------------------
 SHELLCHECK   := $(shell PATH="$(PATH)" command -v shellcheck 2>/dev/null)
@@ -145,8 +155,7 @@ lint-shell: ## Lint shell scripts with shellcheck
 		echo "Error: shellcheck not found (install: brew install shellcheck)"; \
 		exit 1; \
 	fi
-	@find "$(SCRIPT_DIR)" -type f -name "*.sh" -print0 | \
-		xargs -0 "$(SHELLCHECK)" -x -S warning
+	@"$(SHELLCHECK)" -x -S warning $(SHELL_SOURCES)
 
 .PHONY: fmt-shell
 fmt-shell: ## Check shell script formatting with shfmt (diff only)
@@ -533,8 +542,21 @@ verify-seclab: ## Verify the seclab scenarios (read-only, exit 1 if one is ABSEN
 	docker compose exec seclab /opt/oracle/common/scripts/seclab_verify.sh -p SECPDB1
 
 .PHONY: dbsat-seclab
-dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*.zip)
-	docker compose exec seclab /opt/oracle/common/scripts/run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD
+dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*.zip, copies a JRE 21 first)
+	@cid="$$(docker ps -q --filter name='^seclab$$')"; \
+	if [[ -z "$$cid" ]]; then \
+		echo "Error: seclab is not running - start it with: make up-seclab"; \
+		exit 1; \
+	fi; \
+	rc=0; "$(JRE_SCRIPT)" "$$cid" || rc=$$?; \
+	if [[ $$rc -eq 1 ]]; then \
+		echo "Error: provide_jre.sh exit 1 - container problem, DBSAT not started"; \
+		exit 1; \
+	elif [[ $$rc -ne 0 ]]; then \
+		echo "WARN: no JRE 21 in seclab (provide_jre.sh exit $$rc) - collect runs, report will stop with exit 5"; \
+	fi; \
+	echo "docker exec seclab run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD"; \
+	docker exec "$$cid" /opt/oracle/common/scripts/run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD
 
 # ==============================================================================
 # Build

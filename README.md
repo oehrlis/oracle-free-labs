@@ -93,7 +93,7 @@ Before the first start: `make check SERVICE=<service>`.
    target a specific Oracle version:
 
    ```bash
-   make build                                                    # oracle-free-labs:23.9.0.0 (default)
+   make build                                                    # with .env from .env.example: oracle-free-labs:latest (without .env: :23.9.0.0)
    make build DB_BASE_IMAGE=...free:23.7.0.0                     # oracle-free-labs:23.7.0.0
    ```
 
@@ -186,7 +186,7 @@ Configuration is managed through a combination of environment variables and moun
   - `ORACLE_PWD` - Password for `SYS`, `SYSTEM`, and `PDBADMIN`
   - `ENABLE_ARCHIVELOG` - Enable or disable ARCHIVELOG mode
   - `DB_BASE_IMAGE` - Oracle Free source image for `make build`
-    (e.g. `container-registry.oracle.com/database/free:23.9.0.0`);
+    (`.env.example`: `container-registry.oracle.com/database/free:latest`);
     `BUILD_IMAGE` and `DB_IMAGE` are automatically derived from this value
 
 - **Configuration Folders**:

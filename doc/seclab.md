@@ -35,28 +35,41 @@ scenario instead of assuming.
 ## Overview
 
 <!-- markdownlint-disable MD013 MD060 -->
-| ID | Weakness | Class | Produced by | Expected DBSAT rule |
+| ID | Weakness | Class | Produced by | DBSAT 4.3 finding (measured) |
 | --- | --- | --- | --- | --- |
-| S01 | Custom object privileges granted to PUBLIC | 1 | `seclab_s01_public_grants.sql INSECURE` | PRIV.OBJPUBLIC |
-| S02 | Application code uses `UTL_FILE` only through the PUBLIC grant | 2 | `seclab_s02_utl_file_dependency.sql` | PRIV.FILESYSTEMPACKAGEPUBLIC |
-| S03 | Low `SQLNET.ALLOWED_LOGON_VERSION_SERVER`, accounts with 11G verifier | 2 | `set_sqlnet_param.sh`, `seclab_accounts.sql` | USER.AUTHLEGACY, USER.AUTHVERSION |
-| S04 | Profile without limits for personal and service accounts | 2 | `seclab_accounts.sql` | USER.NOLOCK, USER.NOEXPIRE, USER.PASSWORDFUNCTION |
-| S05 | Application owner with DBA, `SELECT ANY TABLE`, `WITH ADMIN OPTION` | 3 | `seclab_s05_overprivileged.sql` | PRIV.DBA, PRIV.ANYSYSTEM |
-| S06 | Open custom accounts that were never used | 1 | `seclab_s06_unused_accounts.sql INSECURE` | USER.INACTIVE |
-| S07 | Unified Audit incomplete: no logon audit, no object policy, no cleanup | 3 | `seclab_s07_audit_gaps.sql` | AUDIT.CONNECTIONS, AUDIT.SENSITIVEOBJS, AUDIT.CLEANUPJOBS |
-| S08 | Sensitive demo data unencrypted, no keystore | 3 | default state | ENCRYPT.TDE, ENCRYPT.WALLET |
-| S09 | Network encryption and integrity not enforced | 3 | `set_sqlnet_param.sh` | NET.ENCRYPTION |
-| S10 | Static parameter `SQL92_SECURITY = FALSE` | 1 + restart | `set_static_param.sql` | CONF.SQL92SECURITY |
-| S11 | Sample schema SCOTT open with its default password | 1 | `seclab_s11_default_password.sql INSECURE` | USER.DEFPASSWORD, USER.SAMPLE |
+| S01 | Custom object privileges granted to PUBLIC | 1 | `seclab_s01_public_grants.sql INSECURE` | PRIV.OBJPUBLIC (Evaluate) |
+| S02 | Application code uses `UTL_FILE` only through the PUBLIC grant | 2 | `seclab_s02_utl_file_dependency.sql` | PRIV.FILESYSTEMPACKAGEPUBLIC (Evaluate) |
+| S03 | Low `SQLNET.ALLOWED_LOGON_VERSION_SERVER`, accounts with 11G verifier | 2 | `set_sqlnet_param.sh`, `seclab_accounts.sql` | USER.AUTHVERSION (High Risk), USER.AUTHLEGACY (Evaluate) |
+| S04 | Profile without limits for personal and service accounts | 2 | `seclab_accounts.sql` | USER.NOLOCK (Medium Risk), USER.PASSWORDFUNCTION (Medium Risk), USER.NOEXPIRE (Low Risk) |
+| S05 | Application owner with DBA, `SELECT ANY TABLE`, `WITH ADMIN OPTION` | 3 | `seclab_s05_overprivileged.sql` | PRIV.DBA (Evaluate), PRIV.ANYSYSTEM (Evaluate) |
+| S06 | Open custom accounts that were never used | 1 | `seclab_s06_unused_accounts.sql INSECURE` | USER.NEW (Evaluate); USER.INACTIVE (Evaluate) does not name the accounts, see S06 |
+| S07 | Unified Audit incomplete: no logon audit, no object policy, no cleanup | 3 | `seclab_s07_audit_gaps.sql` | AUDIT.SENSITIVEOBJS (Advisory); AUDIT.CONNECTIONS **Pass**, no cleanup rule - see note |
+| S08 | Sensitive demo data unencrypted, no keystore | 3 | default state | ENCRYPT.TDE (Evaluate), ENCRYPT.WALLET (Evaluate) |
+| S09 | Network encryption and integrity not enforced | 3 | `set_sqlnet_param.sh` | NET.ENCRYPTION (Advisory) |
+| S10 | Static parameter `SQL92_SECURITY = FALSE` | 1 + restart | `set_static_param.sql` | CONF.SQL92SECURITY (Medium Risk) |
+| S11 | Sample schema SCOTT open with its default password | 1 | `seclab_s11_default_password.sql INSECURE` | USER.DEFPASSWORD (High Risk), USER.SAMPLE (Low Risk) |
 <!-- markdownlint-restore -->
 
-**About the DBSAT column.** The rule IDs are taken from the rule catalog of a
-real DBSAT 4.3 report (July 2026), produced against another lab database.
-They are the rules that **should** fire for the scenario. They are **to be
-confirmed** against seclab, because no DBSAT run against seclab was possible
-when this catalog was written (DBSAT is not shipped, see
-[dbsat-runbook.md](dbsat-runbook.md)). CIS benchmark numbers are deliberately
-not listed - add them only with a source.
+**About the DBSAT column.** Rule ID and status as reported by DBSAT 4.3
+(July 2026) against SECPDB1 of the seclab service, runs on 2026-10-16 and
+2026-10-19 with identical results (all eleven scenarios `PRESENT` in
+`seclab_verify.sh`; S07: see note - `seclab_verify.sh` and DBSAT disagree on
+logon audit). Other releases may name or rate rules
+differently. Deviations from the scenario intent:
+
+- **S06:** `USER.INACTIVE` judges by days since the last login (threshold 35
+  days) and names only the S04 accounts with unlimited `INACTIVE_ACCOUNT_TIME`.
+  The never-used accounts `OLD_APP` and `TEST_USER` appear under `USER.NEW`
+  ("not logged in since account creation").
+- **S07:** `AUDIT.CONNECTIONS` reports **Pass**: DBSAT sees `LOGON` and `LOGOFF`
+  audited for all users through the policy `ORADBA_LOC_SECURE_CONFIG`, while
+  `seclab_verify.sh` counts 0 enabled logon policies. Which view is right is
+  not clarified yet. The 4.3 report has no rule ID for audit trail cleanup
+  (`AUDIT.CLEANUPJOBS`, listed here before, does not appear); the purge
+  settings only appear in the unrated table "Audit Management Configuration Parameters".
+
+CIS benchmark numbers are deliberately not listed - add them only with a
+source.
 
 ## Verification
 
@@ -228,8 +241,9 @@ so `DBA_USERS.LAST_LOGIN` separates them from the S06 accounts. The
   docker compose exec seclab $R -p SECPDB1 seclab_s06_unused_accounts.sql INSECURE  # unlock
   ```
 
-- **DBSAT note:** `USER.INACTIVE` judges by the time since the last login; for
-  accounts created minutes ago this is to be confirmed.
+- **DBSAT note (4.3, measured):** `USER.INACTIVE` judges by the time since the
+  last login and does not name accounts created minutes ago. `OLD_APP` and
+  `TEST_USER` are listed under `USER.NEW` (Evaluate) instead.
 
 ### S07 - Incomplete Unified Audit Configuration
 

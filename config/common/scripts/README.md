@@ -98,7 +98,10 @@ config/common/scripts/
   account (not SYS).
 * **run\_dbsat.sh** - DBSAT collect and report inside a container. DBSAT itself is not
   shipped; without `config/common/data/dbsat/dbsat*.zip` it stops with exit 4 and
-  explains where to get it.
+  explains where to get it. The report needs Java 17+ (`-j DIR`, else `$JAVA_HOME`,
+  `/opt/oracle/oradata/tools/jre21`, `/tmp/jre21`); without it the collection runs
+  and the script stops with exit 5. The JRE comes from `scripts/provide_jre.sh` on
+  the host.
 
 ### ⚠️ seclab - INTENTIONALLY INSECURE Scenarios
 

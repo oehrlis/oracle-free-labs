@@ -5,8 +5,8 @@
 # Name.......: apply_usecase.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.15
-# Revision...: v1.0.0
+# Date.......: 2026.10.19
+# Revision...: v1.1.0
 # Purpose....: Apply a lab use case to ANY running Oracle Database Free
 #              container - also one started directly from the Oracle image,
 #              without this repository's compose file or build.
@@ -18,6 +18,8 @@
 #                handed over as environment variables, never as arguments.
 #              - Runs on macOS (bash 3.2) and Linux.
 #              - Use cases: seclab, dbsat (more follow, see tasks/repo-audit-*.md).
+#              - dbsat provides a JRE 21 first (scripts/provide_jre.sh, image
+#                ASSESS_JRE_IMAGE): DBSAT 4.x report needs Java 17+.
 # Usage......: scripts/apply_usecase.sh [options] USECASE CONTAINER
 # Reference..: doc/seclab-runbook.md
 # License....: Apache License Version 2.0, January 2004 as shown
@@ -57,7 +59,9 @@ Use cases:
            needs SECLAB_USER_PWD, SECLAB_SCOTT_PWD; restarts the instance once
   dbsat    DBSAT collect + report against the PDB, reports copied to
            data/dbsat/<container>/ on the host. Needs the DBSAT zip in
-           config/common/data/dbsat/ and DBSAT_PWD (falls back to SECLAB_DBSAT_PWD)
+           config/common/data/dbsat/ and DBSAT_PWD (falls back to SECLAB_DBSAT_PWD).
+           Copies a JRE 21 from the image ASSESS_JRE_IMAGE (default
+           eclipse-temurin:21-jre) into the container for the report
 
 Options:
   -p, --pdb PDB          Target PDB (default: ORACLE_PDB of the container, else FREEPDB1)
@@ -235,12 +239,21 @@ run_dbsat_usecase() {
             if [[ "${DRY_RUN}" == true ]]; then
                 echo "DRY-RUN: docker cp ${zip} -> ${container}:${zip_dir}/"
             else
-                docker exec "${container}" bash -c "rm -rf ${zip_dir} && mkdir -p ${zip_dir}"
-                docker cp "${zip}" "${container}:${zip_dir}/"
+                docker exec "${container}" bash -c 'rm -rf "$1" && mkdir -p "$1"' _ "${zip_dir}"
+                docker cp -L "${zip}" "${container}:${zip_dir}/"
                 echo "INFO: copied ${zip##*/} to ${container}:${zip_dir}/ (previous copy removed)"
             fi
             ;;
     esac
+
+    # provide_jre.sh picks the target (persistent tools path on a bind-mounted
+    # oradata, else /tmp), run_dbsat.sh finds it there without -j
+    local jre_args=() rc=0
+    if [[ "${DRY_RUN}" == true ]]; then
+        jre_args=(--dry-run)
+    fi
+    "${SCRIPT_DIR}/provide_jre.sh" "${jre_args[@]+"${jre_args[@]}"}" "${container}" \
+        || echo "WARN: no JRE 21 in ${container} (provide_jre.sh exit $?) - collect runs, report will stop with exit 5"
 
     local out_dir="/opt/oracle/oradata/dbsat" host_out="${REPO_ROOT}/data/dbsat/${container}"
     if [[ "${DRY_RUN}" == true ]]; then
@@ -248,15 +261,19 @@ run_dbsat_usecase() {
         echo "DRY-RUN: docker cp ${container}:${out_dir}/. ${host_out}/"
         return 0
     fi
-    local rc=0
     docker exec -e DBSAT_PWD "${container}" "${TARGET_DIR}/run_dbsat.sh" \
         -s "${PDB}" -z "${zip_dir}" -o "${out_dir}" -e DBSAT_PWD || rc=$?
-    if [[ ${rc} -ne 0 ]]; then
+    if [[ ${rc} -ne 0 && ${rc} -ne 5 ]]; then
         echo "ERROR: DBSAT run in ${container} failed (exit ${rc})" >&2
         return "${rc}"
     fi
     mkdir -p "${host_out}"
     docker cp "${container}:${out_dir}/." "${host_out}/"
+    if [[ ${rc} -eq 5 ]]; then
+        echo "ERROR: only the DBSAT collection was copied to ${host_out}/ - no Java 17+ for the report (exit 5)" >&2
+        ls -l "${host_out}"
+        return 5
+    fi
     echo "INFO: DBSAT reports copied to ${host_out}/"
     ls -l "${host_out}"
 }

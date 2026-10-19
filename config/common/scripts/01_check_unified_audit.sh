@@ -47,8 +47,7 @@ elif [ "${UNIFIED_AUDIT_STATUS^^}" == "FALSE" ]; then
 EOFSQL
 
     echo "Relink Database ${ORACLE_SID} to enable unified audit:"
-    cd $ORACLE_HOME/rdbms/lib
-    make -f ins_rdbms.mk uniaud_on ioracle
+    make -C "${ORACLE_HOME}/rdbms/lib" -f ins_rdbms.mk uniaud_on ioracle
 
     echo "Start Database ${ORACLE_SID}:"
     ${ORACLE_HOME}/bin/sqlplus -S -L /nolog <<EOFSQL

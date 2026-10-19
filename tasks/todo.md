@@ -1,5 +1,71 @@
 # Oracle Free Labs - Repo Overhaul Plan
 
+## Assessments: DBSAT report/discover + CIS-CAT Lite/Pro (2026-10-19)
+
+Status: PR 1 umgesetzt (Branch feat/assess-jre21), PR 2/3 freigegeben, in Arbeit.
+Analyse durch drei Agents, Evidenz in `tasks/state-2026-10-19.md` und im
+Session-Scratchpad (nicht im Repo).
+
+### Fakten (gemessen 2026-10-19 an seclab, OL 8.10 aarch64, JDK 11.0.32 im Image)
+
+- DBSAT 4.3 `report` und `discover`: Java 17+ (Klassen Major 61). Launcher nimmt `JAVA_HOME`,
+  sonst `$ORACLE_HOME/jdk` und lehnt < 17 ab. JDBC (`ojdbc11`) ist im Zip.
+- `discover` fragt Username + Passwort ueber `System.console()`; ohne TTY nur
+  "Unexpected error", Log leer. Funktioniert mit `script -qec` + stdin (`/usr/bin/script` im Image).
+  Alternative ohne Prompt-Passwort: SEPS-Wallet (`mkstore`/`orapki` im Image) - nicht getestet.
+- `discover`-Config: `SENSITIVE_PATTERN_FILES` muss relativ sein und im Config-Verzeichnis liegen
+  -> Wrapper kopiert `sensitive*.ini` neben die generierte Config.
+- `discover -n` -> `<prefix>_discover.{html,csv,json}`; ohne `-n` nur `.dbsat` (`dbsat extract`).
+- Rechte: DBSAT_USER reicht (nur Katalog). Tabellen ohne Statistik (`num_rows` NULL, z.B.
+  SCOTT.BONUS) fallen ueber `MINROWS` still raus.
+- seclab-Treffer: 3 Schemas, 9 Tabellen, 35 Spalten, Risiko High; False Positives ueber Kommentare.
+- CIS-CAT 4.67.0: Lite und Pro sind dasselbe Binary, Edition per Lizenzpruefung. Lite: 5 Benchmarks
+  (Win10/11, Chrome, Ubuntu 24.04), **kein Oracle DB, kein Oracle Linux**, nur HTML-Report.
+  Java 21 (Major 65), gebuendeltes JRE ist Windows. Muss im Ziel als root laufen (sonst Exit 116),
+  Integritaetspruefung: Assessor komplett lassen, JRE ausserhalb. Ubuntu-Benchmark gegen OL8:
+  Platform mismatch, Score 0; erzwungen 67% (fachlich ohne Aussage).
+
+### Architektur-Vorschlag
+
+Ein gemeinsamer Java-21-Mechanismus fuer alle drei Werkzeuge: `provide_jre` kopiert
+`/opt/java/openjdk` aus `eclipse-temurin:21-jre` (Host-Architektur) in den Container
+(Service: `/opt/oracle/oradata/tools/jre21`, persistent; beliebiger Container: `/tmp/jre21`).
+Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Container
+(ein Codepfad statt zwei; CIS-CAT muss ohnehin im Container laufen).
+
+### PR 1 - Grundlage + DBSAT report (offener P1 aus state-2026-10-19)
+
+- [x] Uncommittete Launcher-Fix `run_dbsat.sh` + `.env.example` (`free:latest`) mitnehmen
+- [x] `provide_jre` (apply_usecase.sh + Makefile-Pfad fuer Services), ueberschreibbar als `ASSESS_JRE_IMAGE`
+  (`scripts/provide_jre.sh`, entpackt als oracle - chown haelt auf Docker-Desktop-Bind-Mounts nicht)
+- [x] `run_dbsat.sh`: `JAVA_HOME` nutzen, Java-Version pruefen; ohne Java 17 nach collect stoppen
+  und sagen warum (Exit 5)
+- [x] `check_requirements.sh`: Report-Image/JRE pruefen; `lint-shell` auf `config/common/scripts/*.sh` ausdehnen
+- [x] Runbook "not verified" ersetzen, gemessene Regel-IDs in `doc/seclab.md`
+
+### PR 2 - DBSAT discover
+
+- [ ] `run_dbsat.sh` Modi `collect|report|discover|all` (eigene Option, DBSAT-`-n` nicht mit Dry-Run verwechseln)
+- [ ] Config pro Lauf generieren (`DB_HOSTNAME=localhost`, Port 1521, Service), `sensitive*.ini` daneben;
+  Parameter: Pattern-Datei, `SCHEMA_SCOPE`, `MINROWS`, `-o`
+- [ ] Credentials per `script`-PTY, Passwort maskiert; Ausgabe `dbsat_<pdb>_discover.{html,csv,json}`
+- [ ] Tabellen ohne Statistik benennen (nicht still auslassen); seclab-Setup sammelt Schema-Statistik
+- [ ] Make: `dbsat-discover`, `dbsat-discover-seclab` (+ Help-Regex Zeile 92, Hinweis Zeile 109)
+- [ ] Runbook-Abschnitt Discover, `doc/seclab.md` S08 verknuepfen
+
+### PR 3 - CIS-CAT (Lite verifiziert, Pro nur Annahmen)
+
+- [ ] `config/common/data/ciscat/` + README + `.gitignore`-Whitelist
+- [ ] `run_ciscat.sh` (root): entpacken ohne `*/jre/*`, Edition/Version erkennen, Benchmarks dynamisch
+  (`-l`), `CISCAT_BENCHMARK=auto|<name>`, `CISCAT_PROFILE`; DB-Modus mit chmod-600 `-cfg`-XML (Pro)
+- [ ] Fail-fast: Zip fehlt (Exit 4, beide URLs), Benchmark fehlt (Liste + Pro-Hinweis), Exit 111/114/116 uebersetzt
+- [ ] `apply_usecase.sh ciscat`, Make `ciscat`, `ciscat-seclab`, `ciscat-list`
+- [ ] `doc/ciscat-runbook.md` mit Lite/Pro-Matrix und Abschnitt "Pro-Annahmen - nicht verifiziert"
+
+### Abschluss
+
+- [ ] CHANGELOG `[1.5.0]`, VERSION, CLAUDE.md-Absatz, `make lint`, End-to-End seclab + plain container
+
 ## seclab - intentionally insecure security baseline (2026-10-15)
 
 Auftrag: `tasks/prompt-seclab.md` (entfernt, in der History:

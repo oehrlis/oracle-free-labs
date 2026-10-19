@@ -7,6 +7,55 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/provide_jre.sh CONTAINER [DIR]`: copies a Java 21 runtime from the local image
+  `ASSESS_JRE_IMAGE` (default `eclipse-temurin:21-jre`, pulled if missing) into a running
+  Oracle container - `/opt/oracle/oradata/tools/jre21` for lab services (persistent as
+  `data/<service>/tools/jre21`), `/tmp/jre21` for any other container. Reuses a working
+  JRE and says so, checks the architecture, unpacks as `oracle` (a `chown` does not stick
+  on Docker Desktop bind mounts), verifies Java 17+. Exit 0/1/2/3. An explicit target
+  is validated before the root `rm -rf` (absolute, no whitespace, quotes or `..`, last
+  component `jre*`), paths reach the container as arguments, never inside a command
+  string; the temporary JRE container is removed on any exit. One mechanism for DBSAT
+  now and CIS-CAT later.
+- `run_dbsat.sh -j/--java-home DIR`; `make check` reports whether the JRE image is
+  present (when a DBSAT zip is there or for seclab); `ASSESS_JRE_IMAGE` in `.env.example`
+  and the Makefile.
+
+### Changed
+
+- DBSAT report runs with Java 17+: `make dbsat-seclab` and `make dbsat` /
+  `apply_usecase.sh dbsat` provide the JRE first (target chosen by `provide_jre.sh`,
+  `run_dbsat.sh` finds it without `-j`; `make dbsat-seclab` stops on a container
+  problem, exit 1). `run_dbsat.sh` v1.1.0 sets `JAVA_HOME`
+  (`-j`, else the first of `$JAVA_HOME`, `/opt/oracle/oradata/tools/jre21`, `/tmp/jre21`
+  with Java 17+) and reports each skipped candidate. Without Java 17+ it still collects,
+  then stops with **exit 5** and names the command that provides Java;
+  `apply_usecase.sh` copies the collection back in that case. python3 is no longer a hard
+  prerequisite (DBSAT 4.x does not report with it).
+- `make lint-shell` also covers `config/common/scripts/*.sh` and
+  `config/*/setup|startup/*.sh`; `fmt-shell` / `fmt-shell-write` stay on `scripts/`.
+- `doc/dbsat-runbook.md`: status "not verified" replaced by the measured state (DBSAT 4.3,
+  2026-10-19, seclab and plain Oracle image), Java prerequisite, exit codes,
+  troubleshooting. `doc/seclab.md`: DBSAT column with the rule IDs and ratings measured
+  against seclab, deviations for S06 and S07 named.
+- `.env.example`: `DB_BASE_IMAGE` defaults to `free:latest` (26ai); docs aligned. The
+  Makefile fallback without `.env` is unchanged.
+
+### Fixed
+
+- `run_dbsat.sh`: DBSAT 4.x extracts into a `dbsat/` subdirectory; the script took that
+  directory for the launcher (`-x` is true for directories). It now searches for a file
+  named `dbsat` and stops with an error if there is none.
+- `run_dbsat.sh` on the plain Oracle image: `create_dbsat_user.sql` failed with
+  `SP2-0606` because `/opt/oracle/scripts/logs` does not exist there; the script now
+  creates `SQL_LOG_DIR` like `seclab_apply.sh`.
+- `apply_usecase.sh dbsat`: a symlinked DBSAT zip was copied as a dangling link
+  (`docker cp -L` now).
+- shellcheck SC2164 in `00_enable_unified_audit.sh` and `01_check_unified_audit.sh`
+  (`make -C` instead of an unchecked `cd`).
+
 ## [1.4.0] - 2026-10-16
 
 ### Added
