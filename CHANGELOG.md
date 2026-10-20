@@ -36,6 +36,45 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   seclab result, false positives from column names and comments), troubleshooting rows;
   `doc/seclab.md` S08 links the discover result.
 
+- CIS-CAT Lite and Pro with one code path (Lite 4.67.0 verified, Pro not verified):
+  `config/common/scripts/run_ciscat.sh` runs as root in the container, extracts the zip
+  without the bundled Windows JRE (cached while the zip is unchanged, reuse reported),
+  checks Java 21, reports edition (license directory) and version (manifest), lists
+  benchmarks and profiles from the XCCDF (one parser, multi-line tags, entities decoded)
+  and selects `CISCAT_BENCHMARK=auto|<name part>|<path>` and `CISCAT_PROFILE`. Every
+  assessment runs from a generated `-cfg` XML (mktemp 0600, removed on exit, INT and TERM;
+  stale files of a killed run are removed and reported). `auto` with Lite stops with exit 2, the benchmark list, the
+  Pro link and the mechanics demo; a platform mismatch is reported as such (exit 3, score
+  0 is no result); `CISCAT_IGNORE_PLATFORM=1` forces it with a warning. Requested
+  formats html/json/csv/txt, the written ones are named (Lite: HTML only). Exit codes
+  4 (no zip, both links), 5 (no Java 21), 111/114/116 translated. DB mode for an
+  Oracle Database benchmark (Pro, NOT VERIFIED): `CISCAT_USER` via
+  `create_dbsat_user.sql`, JDBC URL and listener.ora as interactive values; a password
+  with `@ / "` or whitespace is refused, the password is masked (raw and XML-escaped) in
+  the log and every report file, a file that still contains it is named in a WARN.
+- CIS-CAT root hardening: java runs only from a root-owned JRE (no file owned by another
+  user, none world-writable), `provide_jre.sh --owner root` provides it in
+  `/root/.cache/jre21` (never below a bind mount, lost on container recreate); the
+  extraction cache is `/root/.cache/ciscat` (root-owned parent, mode 700), reused only
+  while every file in it belongs to root, otherwise removed and extracted again; the
+  work dir must not overlap the zip or report directory; `apply_usecase.sh` always copies
+  the zip into the root-owned `/root/.cache/ciscat-zip`.
+- `scripts/apply_usecase.sh ciscat|ciscat-list`, `make ciscat CONTAINER=x [PDB=..]
+  [CISCAT_BENCHMARK=..] [CISCAT_PROFILE=..] [CISCAT_IGNORE_PLATFORM=1]`, `make ciscat-seclab`,
+  `make ciscat-list [CONTAINER=..]`; reports in `data/ciscat/<container>/`. The zip is
+  copied with `docker cp -L` (a host symlink works); the DB password is passed to
+  `ciscat` only, never to `ciscat-list`.
+- `scripts/provide_jre.sh -m/--min-java N` (default 17; CIS-CAT passes 21) and
+  `-o/--owner oracle|root`.
+- `make check`: CIS-CAT zip present, edition guess and whether an Oracle Database / Oracle
+  Linux benchmark is inside (`unzip -Z1`, no extraction); the JRE image check also runs
+  when only a CIS-CAT zip is there; a Lite zip reports one SKIP instead of two WARNs
+  unless `SERVICE=seclab`.
+- `doc/ciscat-runbook.md` (Lite/Pro matrix, runtime rules, exit codes, Lite evidence,
+  "Pro assumptions - not verified"), `config/common/data/ciscat/README.md` (tracked, zip
+  ignored), `CISCAT_*` in `.env.example` (commented out, defaults in `run_ciscat.sh`),
+  `doc/seclab.md` section "Expected CIS Rule (Pro, Unverified)" with areas only.
+
 ### Changed
 
 - DBSAT report runs with Java 17+: `make dbsat-seclab` and `make dbsat` /

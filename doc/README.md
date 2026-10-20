@@ -11,6 +11,7 @@ Each topic is covered in a dedicated Markdown file for modular use.
 | [seclab Runbook](seclab-runbook.md) | INTENTIONALLY INSECURE security baseline - quick start, remediation loop |
 | [seclab Scenario Catalog](seclab.md) | S01-S11: weakness, proof, remediation class, expected DBSAT rule |
 | [DBSAT Runbook](dbsat-runbook.md) | Run DBSAT against any lab container |
+| [CIS-CAT Runbook](ciscat-runbook.md) | CIS-CAT Lite (verified) and Pro (assumptions) in any lab container |
 | [Setup Lab Environment](setup_lab_environment.md) | Prepare host, install prerequisites, configure environment |
 | [Service Setup](service_setup.md) | Walkthrough for configuring and starting each service |
 | [Demo and Engineering Overlays](demo_overlay.md) | Extend the lab with demo scripts and config from external repos |

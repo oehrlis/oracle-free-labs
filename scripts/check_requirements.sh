@@ -6,10 +6,10 @@
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026.10.19
-# Revision...: v1.1.0
+# Revision...: v1.2.0
 # Purpose....: Pre-flight check before starting a lab service: container
-#              runtime, compose, VM resources, image, .env, ports, and the
-#              JRE image for the assessment tools.
+#              runtime, compose, VM resources, image, .env, ports, the
+#              JRE image for the assessment tools and the CIS-CAT archive.
 # Notes......: - Read-only. Prints PASS / WARN / FAIL / SKIP per check, exit 1 on FAIL.
 #              - Knows Docker Desktop, Colima and Podman (docker CLI).
 #              - Never prints secret values, only whether they are set.
@@ -246,8 +246,9 @@ check_service() {
 # ------------------------------------------------------------------------------
 check_assess_jre() {
     local image arch engine
-    if [[ "${SERVICE}" != seclab ]] && ! compgen -G "${REPO_ROOT}/config/common/data/dbsat/dbsat*.zip" > /dev/null; then
-        skip "JRE image check - no DBSAT zip in config/common/data/dbsat/ and SERVICE is not seclab"
+    if [[ "${SERVICE}" != seclab ]] && ! compgen -G "${REPO_ROOT}/config/common/data/dbsat/dbsat*.zip" > /dev/null \
+        && ! compgen -G "${REPO_ROOT}/config/common/data/ciscat/*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip" > /dev/null; then
+        skip "JRE image check - no DBSAT or CIS-CAT zip in config/common/data/ and SERVICE is not seclab"
         return 0
     fi
     if ! command -v docker > /dev/null 2>&1 || ! docker info > /dev/null 2>&1; then
@@ -269,7 +270,63 @@ check_assess_jre() {
     if [[ -n "${engine}" && "${arch}" != "${engine}" ]]; then
         warn "JRE image ${image} is ${arch}, engine is ${engine} - run: docker pull --platform linux/${engine} ${image}"
     else
-        pass "JRE image ${image} present (${arch}) - copied into the container for DBSAT report"
+        pass "JRE image ${image} present (${arch}) - copied into the container for DBSAT report and CIS-CAT"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Function...: check_ciscat
+# Purpose....: CIS-CAT zip present? Edition guess and Oracle benchmarks inside
+#              (unzip -l only, nothing is extracted)
+# ------------------------------------------------------------------------------
+check_ciscat() {
+    local dir="${REPO_ROOT}/config/common/data/ciscat" zip="" f list licenses db os
+    # keep in sync with ZIP_GLOB in config/common/scripts/run_ciscat.sh
+    for f in "${dir}"/*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip; do
+        if [[ -L "${f}" && ! -e "${f}" ]]; then
+            warn "CIS-CAT zip ${f##*/} is a dangling symlink"
+        elif [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
+            zip="${f}"
+        fi
+    done
+    if [[ -z "${zip}" ]]; then
+        if [[ "${SERVICE}" == seclab ]]; then
+            warn "no CIS-CAT zip in config/common/data/ciscat/ - make ciscat-seclab will stop and explain"
+        else
+            skip "CIS-CAT check - no zip in config/common/data/ciscat/ (optional, see doc/ciscat-runbook.md)"
+        fi
+        return 0
+    fi
+    if ! command -v unzip > /dev/null 2>&1; then
+        skip "CIS-CAT content check - unzip not found (archive ${zip##*/} present)"
+        return 0
+    fi
+    if ! list="$(unzip -Z1 "${zip}" 2> /dev/null)"; then
+        warn "CIS-CAT zip ${zip##*/} cannot be read by unzip - damaged download?"
+        return 0
+    fi
+    licenses="$(grep -cE '/license/[^/]+$' <<< "${list}" || true)"
+    db="$(grep -cE 'benchmarks/CIS_Oracle_Database_[^/]*-xccdf\.xml$' <<< "${list}" || true)"
+    os="$(grep -cE 'benchmarks/CIS_Oracle_Linux_[^/]*-xccdf\.xml$' <<< "${list}" || true)"
+    if [[ ${licenses} -eq 0 ]]; then
+        pass "CIS-CAT archive ${zip##*/}: edition guess Lite (empty license directory)"
+    else
+        pass "CIS-CAT archive ${zip##*/}: edition guess Pro (${licenses} license file(s), not verified)"
+    fi
+    # Lite without Oracle benchmarks is the expected case - a WARN only matters for seclab
+    if [[ ${licenses} -eq 0 && ${db} -eq 0 && ${os} -eq 0 && "${SERVICE}" != seclab ]]; then
+        skip "CIS-CAT Oracle benchmarks - Lite: no Oracle benchmarks, Pro needed for DB (mechanics demo only)"
+        return 0
+    fi
+    if [[ ${db} -gt 0 ]]; then
+        pass "CIS-CAT: ${db} Oracle Database benchmark(s) inside"
+    else
+        warn "CIS-CAT: no Oracle Database benchmark inside - the database needs CIS-CAT Pro (make ciscat stops with exit 2)"
+    fi
+    if [[ ${os} -gt 0 ]]; then
+        pass "CIS-CAT: ${os} Oracle Linux benchmark(s) inside"
+    else
+        warn "CIS-CAT: no Oracle Linux benchmark inside - only a mechanics demo is possible (see doc/ciscat-runbook.md)"
     fi
 }
 
@@ -292,6 +349,7 @@ main() {
         check_service "${SERVICE}"
     fi
     check_assess_jre
+    check_ciscat
     echo "Summary: ${FAILS} FAIL, ${WARNS} WARN"
     if [[ ${FAILS} -gt 0 ]]; then
         return 1

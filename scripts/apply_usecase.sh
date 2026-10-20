@@ -17,13 +17,15 @@
 #              - Secrets are taken from the environment or from .env and
 #                handed over as environment variables, never as arguments.
 #              - Runs on macOS (bash 3.2) and Linux.
-#              - Use cases: seclab, dbsat, dbsat-discover (more follow, see
-#                tasks/repo-audit-*.md).
+#              - Use cases: seclab, dbsat, dbsat-discover, ciscat, ciscat-list.
 #              - dbsat and dbsat-discover provide a JRE 21 first
 #                (scripts/provide_jre.sh, image ASSESS_JRE_IMAGE): DBSAT 4.x
 #                report and discover need Java 17+. Arguments after -- go
 #                to run_dbsat.sh (e.g. -- -g -S SCOTT); -s -z -o -e -j are
 #                set here and rejected after --. DISC_TIMEOUT is passed on.
+#              - ciscat copies the zip to a root-owned dir, provides a
+#                root-owned JRE 21 (provide_jre.sh --owner root) and runs
+#                run_ciscat.sh as root (docker exec -u 0), see doc/ciscat-runbook.md.
 # Usage......: scripts/apply_usecase.sh [options] USECASE CONTAINER [-- ARGS]
 # Reference..: doc/seclab-runbook.md
 # License....: Apache License Version 2.0, January 2004 as shown
@@ -40,6 +42,9 @@ source "${SCRIPT_DIR}/lib_dotenv.sh"
 readonly TARGET_DIR="/opt/oracle/common/scripts"
 readonly DBSAT_HOST_DIR="${REPO_ROOT}/config/common/data/dbsat"
 readonly DBSAT_URL="https://www.oracle.com/database/technologies/security/dbsat.html"
+readonly CISCAT_HOST_DIR="${REPO_ROOT}/config/common/data/ciscat"
+# keep in sync with ZIP_GLOB in config/common/scripts/run_ciscat.sh
+readonly CISCAT_GLOB="*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip"
 
 PDB=""
 ENV_FILE="${REPO_ROOT}/.env"
@@ -74,6 +79,15 @@ Use cases:
            (see run_dbsat.sh -h; -g gathers missing statistics, changes the DB).
            -s -z -o -e -j are set by this script and rejected after --.
            DISC_TIMEOUT (seconds, default 1800) is passed on if set
+  ciscat   CIS-CAT Lite or Pro, local assessment as root in the container,
+           reports copied to data/ciscat/<container>/. Needs the CIS-CAT zip
+           in config/common/data/ciscat/ (copied to a root-owned dir) and a
+           root-owned JRE 21 (provide_jre.sh --owner root). Selection
+           via CISCAT_BENCHMARK (auto|name part|path), CISCAT_PROFILE,
+           CISCAT_IGNORE_PLATFORM=1; DB mode (Pro only, not verified) needs
+           CISCAT_PWD (falls back to DBSAT_PWD, SECLAB_DBSAT_PWD)
+  ciscat-list
+           Edition, benchmarks, profiles and the auto choice of CIS-CAT
 
 Options:
   -p, --pdb PDB          Target PDB (default: ORACLE_PDB of the container, else FREEPDB1)
@@ -92,6 +106,8 @@ Example (plain Oracle image):
   SECLAB_USER_PWD=<pwd> SECLAB_SCOTT_PWD=tiger ${SCRIPT_NAME} seclab free26ai
   DBSAT_PWD=<pwd> ${SCRIPT_NAME} dbsat free26ai
   DBSAT_PWD=<pwd> ${SCRIPT_NAME} dbsat-discover free26ai -- -g
+  CISCAT_BENCHMARK=ubuntu CISCAT_IGNORE_PLATFORM=1 ${SCRIPT_NAME} ciscat free26ai
+  # or: make ciscat CONTAINER=free26ai CISCAT_BENCHMARK=ubuntu CISCAT_IGNORE_PLATFORM=1
 EOF
     exit "${1:-0}"
 }
@@ -321,6 +337,118 @@ run_dbsat_usecase() {
 }
 
 # ------------------------------------------------------------------------------
+# Function...: run_ciscat_usecase
+# Purpose....: Provide scripts, the CIS-CAT zip and a JRE 21, run
+#              run_ciscat.sh as root, copy the reports back (ciscat) or only
+#              list edition and benchmarks (ciscat-list)
+# ------------------------------------------------------------------------------
+run_ciscat_usecase() {
+    local mode="$1" container="$2" zip="" f zip_dir rc=0
+    for f in "${CISCAT_HOST_DIR}"/${CISCAT_GLOB}; do
+        if [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
+            zip="${f}"
+        fi
+    done
+    if [[ -z "${zip}" ]]; then
+        echo "ERROR: no CIS-CAT zip (${CISCAT_GLOB}) in ${CISCAT_HOST_DIR}" >&2
+        echo "ERROR: CIS-CAT is not part of this repository (CIS license terms). Download it:" >&2
+        echo "ERROR:   Lite: https://learn.cisecurity.org/cis-cat-lite" >&2
+        echo "ERROR:   Pro:  https://www.cisecurity.org/cybersecurity-tools/cis-cat-pro (CIS WorkBench)" >&2
+        echo "ERROR: copy the zip there and run again." >&2
+        return 4
+    fi
+    echo "INFO: CIS-CAT archive ${zip}"
+    provide_scripts "${container}"
+    if [[ "${DRY_RUN}" != true ]] && ! docker exec "${container}" test -x "${TARGET_DIR}/run_ciscat.sh"; then
+        echo "ERROR: ${container}:${TARGET_DIR} has no run_ciscat.sh - the bind mount points to a checkout" >&2
+        echo "ERROR: without it (other branch or worktree); recreate the container from this checkout" >&2
+        return 1
+    fi
+
+    # run_ciscat.sh runs the zip content as root: always a fresh copy in a
+    # root-owned 700 dir, never a bind-mounted file the container side may
+    # change (docker cp -L also resolves a host symlink, keeps the mtime)
+    zip_dir="/root/.cache/ciscat-zip"
+    if [[ "${DRY_RUN}" == true ]]; then
+        echo "DRY-RUN: docker cp -L ${zip} -> ${container}:${zip_dir}/ (root, mode 700)"
+    else
+        docker exec -u root "${container}" bash -c 'umask 077 && rm -rf -- "$1" && mkdir -p -- "$1"' _ "${zip_dir}"
+        docker cp -L "${zip}" "${container}:${zip_dir}/"
+        docker exec -u root "${container}" bash -c 'chown -R root:root -- "$1" && chmod 600 -- "$1"/*' _ "${zip_dir}"
+        echo "INFO: copied ${zip##*/} to ${container}:${zip_dir}/ (root, mode 700, previous copy removed)"
+    fi
+
+    local jre_args=(--owner root --min-java 21)
+    if [[ "${DRY_RUN}" == true ]]; then
+        jre_args+=(--dry-run)
+    fi
+    "${SCRIPT_DIR}/provide_jre.sh" "${jre_args[@]}" "${container}" || rc=$?
+    if [[ ${rc} -ne 0 ]]; then
+        echo "ERROR: no root-owned JRE 21 in ${container} (provide_jre.sh exit ${rc}) - CIS-CAT cannot run (exit 5)" >&2
+        return 5
+    fi
+
+    local var env_args=() run_args=(-z "${zip_dir}" -t "${container}")
+    for var in CISCAT_BENCHMARK CISCAT_PROFILE CISCAT_IGNORE_PLATFORM CISCAT_XMX; do
+        env_from_file "${var}"
+        if [[ -n "${!var:-}" ]]; then
+            env_args+=(-e "${var}")
+        fi
+    done
+    # the DB password only for an assessment, never for the listing
+    if [[ "${mode}" == ciscat ]]; then
+        env_from_file CISCAT_PWD
+        for var in DBSAT_PWD SECLAB_DBSAT_PWD; do
+            if [[ -z "${CISCAT_PWD:-}" ]]; then
+                env_from_file "${var}"
+                if [[ -n "${!var:-}" ]]; then
+                    export CISCAT_PWD="${!var}"
+                    echo "INFO: CISCAT_PWD not set - using ${var} (DB mode only)"
+                fi
+            fi
+        done
+        if [[ -n "${CISCAT_PWD:-}" ]]; then
+            env_args+=(-e CISCAT_PWD)
+        fi
+    fi
+    if [[ -n "${PDB}" ]]; then
+        run_args+=(-s "${PDB}")
+    fi
+    if [[ "${mode}" == ciscat-list ]]; then
+        run_args+=(--list)
+    fi
+    local out_dir="/opt/oracle/oradata/ciscat" host_out="${REPO_ROOT}/data/ciscat/${container}"
+    if [[ "${DRY_RUN}" == true ]]; then
+        echo "DRY-RUN: docker exec -u 0 ${env_args[*]+"${env_args[*]}"} ${container} ${TARGET_DIR}/run_ciscat.sh ${run_args[*]} -o ${out_dir}"
+        echo "DRY-RUN: docker cp ${container}:${out_dir}/. ${host_out}/"
+        return 0
+    fi
+    rc=0
+    docker exec -u 0 "${env_args[@]+"${env_args[@]}"}" "${container}" "${TARGET_DIR}/run_ciscat.sh" \
+        "${run_args[@]}" -o "${out_dir}" || rc=$?
+    if [[ "${mode}" == ciscat-list ]]; then
+        return "${rc}"
+    fi
+    if [[ ${rc} -ne 0 && ${rc} -ne 3 ]]; then
+        echo "ERROR: CIS-CAT run in ${container} failed (exit ${rc})" >&2
+        return "${rc}"
+    fi
+    mkdir -p "${host_out}"
+    docker cp "${container}:${out_dir}/." "${host_out}/"
+    for f in "${host_out}"/*; do
+        if [[ -f "${f}" && ! -r "${f}" ]]; then
+            echo "WARN: ${f} is not readable on the host" >&2
+        fi
+    done
+    echo "INFO: CIS-CAT reports copied to ${host_out}/"
+    ls -l "${host_out}"
+    if [[ ${rc} -eq 3 ]]; then
+        echo "WARN: platform mismatch - the report holds no valid compliance result (exit 3)" >&2
+    fi
+    return "${rc}"
+}
+
+# ------------------------------------------------------------------------------
 # Function...: main
 # Purpose....: Validate, prepare and run the use case
 # ------------------------------------------------------------------------------
@@ -371,8 +499,12 @@ main() {
                 fi
             fi
             ;;
+        ciscat | ciscat-list)
+            entry="${TARGET_DIR}/run_ciscat.sh"
+            vars=""
+            ;;
         *)
-            echo "ERROR: unknown use case '${usecase}' (available: seclab, dbsat, dbsat-discover)" >&2
+            echo "ERROR: unknown use case '${usecase}' (available: seclab, dbsat, dbsat-discover, ciscat, ciscat-list)" >&2
             return 1
             ;;
     esac
@@ -384,6 +516,12 @@ main() {
     if ! docker exec "${container}" bash -c 'test -x "${ORACLE_HOME}/bin/sqlplus"'; then
         echo "ERROR: ${container} does not look like an Oracle Database container (no sqlplus)" >&2
         return 1
+    fi
+    # CIS-CAT assesses the OS without the database; DB mode (Pro) checks it itself
+    if [[ "${usecase}" == ciscat* ]]; then
+        echo "INFO: use case ${usecase} -> container ${container}"
+        run_ciscat_usecase "${usecase}" "${container}"
+        return $?
     fi
 
     local env_args=() missing=0

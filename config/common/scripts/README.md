@@ -114,6 +114,15 @@ config/common/scripts/
   `GATHER` collects them (`GATHER EMPTY`, custom schemas only). Used by `run_dbsat.sh`
   and `seclab_apply.sh`.
 
+### 🛡️ CIS-CAT
+
+* **run\_ciscat.sh** - CIS-CAT Lite or Pro (one code path) as root inside a container.
+  Not shipped; without a CIS-CAT zip in `config/common/data/ciscat/` it stops with exit 4
+  and names both download pages. Needs a root-owned Java 21 (exit 5), extracts without
+  the Windows JRE into a root-owned cache and reuses it, selects `CISCAT_BENCHMARK` / `CISCAT_PROFILE`, fails
+  fast with the benchmark list. DB mode (Pro) reuses `create_dbsat_user.sql` for
+  `CISCAT_USER` - not verified. See `doc/ciscat-runbook.md`.
+
 ### ⚠️ seclab - INTENTIONALLY INSECURE Scenarios
 
 Used by the `seclab` service and by `scripts/apply_usecase.sh seclab <container>`.

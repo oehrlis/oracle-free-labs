@@ -71,6 +71,31 @@ differently. Deviations from the scenario intent:
 CIS benchmark numbers are deliberately not listed - add them only with a
 source.
 
+### Expected CIS Rule (Pro, Unverified)
+
+CIS-CAT Lite has no Oracle Database benchmark, so no CIS result could be
+measured (see [ciscat-runbook.md](ciscat-runbook.md)). With CIS-CAT Pro and
+the CIS Oracle Database benchmark, each scenario is **expected** to fail a
+rule in the area named below. Area only, no recommendation numbers - they
+differ between benchmark versions and need a Pro run as source.
+
+<!-- markdownlint-disable MD013 MD060 -->
+| ID | Expected CIS area (Pro, unverified) |
+| --- | --- |
+| S01, S02 | PUBLIC object and package privileges (`UTL_FILE` and other packages revoked from PUBLIC) |
+| S03 | authentication: `SQLNET.ALLOWED_LOGON_VERSION_SERVER` |
+| S04 | password profile limits and password verify function |
+| S05 | excessive system privileges and roles (`DBA`, `ANY` privileges, `WITH ADMIN OPTION`) |
+| S06, S11 | default and sample accounts, default passwords |
+| S07 | unified audit policies (logon, object access) |
+| S09 | network encryption and integrity (`sqlnet.ora`) |
+| S10 | initialization parameters (`SQL92_SECURITY`) |
+<!-- markdownlint-restore -->
+
+S08 (TDE): no expectation - whether the benchmark version covers encryption at
+rest is not known. Replace this table with measured rule IDs once a Pro run
+exists.
+
 ## Verification
 
 ```bash
