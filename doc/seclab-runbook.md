@@ -185,14 +185,16 @@ and `SECPDB1` with the PDB name.
 ## DBSAT
 
 ```bash
-make dbsat-seclab               # service
-make dbsat CONTAINER=free26ai   # any container
+make dbsat-seclab # service
+make dbsat CONTAINER=free26ai # any container
+make dbsat-discover-seclab # sensitive data discovery, service
+make dbsat-discover CONTAINER=free26ai # sensitive data discovery, any container
 ```
 
-DBSAT is not shipped. Without the zip both commands stop with exit 4 and
-explain where to get it. Both copy a JRE 21 from `eclipse-temurin:21-jre`
-into the container first, because DBSAT 4.x needs Java 17+ for the report.
-Details: [dbsat-runbook.md](dbsat-runbook.md).
+DBSAT is not shipped. Without the zip these commands stop with exit 4 and
+explain where to get it. They copy a JRE 21 from `eclipse-temurin:21-jre`
+into the container first, because DBSAT 4.x needs Java 17+ for report and
+discover. Details: [dbsat-runbook.md](dbsat-runbook.md).
 
 ## Troubleshooting
 
@@ -204,7 +206,7 @@ Details: [dbsat-runbook.md](dbsat-runbook.md).
 | `DBT-60127 ... TNS_ADMIN` and restart loop | repository outside the VM mounts (Colima/Podman), or plain image used for the service | clone below `$HOME`; `make build`; or use path B |
 | `Summary: ... ABSENT` after a fix | expected - that is the remediation loop | `INSECURE` mode or `make reset-seclab` restores the baseline |
 | `ERROR: ... publishes ports beyond localhost` | path B on a container started with `-p 1521:1521` | recreate with `-p 127.0.0.1:1521:1521` |
-| `seclab apply stopped in step N/10` | a step failed, the output above names the statement | fix the cause, rerun - all steps are rerunnable |
+| `seclab apply stopped in step N/11` | a step failed, the output above names the statement | fix the cause, rerun - all steps are rerunnable |
 | `make verify-seclab` exit 2 | the check itself could not run (container down, PDB closed) | `make up-seclab`, `make logs-seclab` |
 <!-- markdownlint-restore -->
 
