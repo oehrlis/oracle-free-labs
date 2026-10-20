@@ -161,3 +161,24 @@ Verzeichnis existiert ein Aufraeum-Schritt davor
 - `make tag` verweigert bei jeder Fremdaenderung im Tree. Fremdes nicht anfassen: die
   Guards (VERSION committet, Tag neu, nur Fremddatei dirty) von Hand pruefen, dann
   `git tag -a vX -m "Release vX"` wie im Target.
+
+## 2026-10-20 - Assessment-Tools zeichnen ihre Prozessumgebung auf
+
+- `dbsat collect` (DBSAT 4.3) schreibt die Umgebung des Collector-Prozesses in
+  `dbsat_<pdb>.json`. Im Container stehen dort `ORACLE_PWD` und alle `SECLAB_*_PWD`
+  im Klartext - die Collection ist damit selbst ein Geheimnis. Aufgefallen erst,
+  weil ein Review-Agent die Ausgaben gegen die echten Passwortwerte gegrept hat.
+- Regel: Assessment-Tools (DBSAT, CIS-CAT, aehnliche) immer ohne Variablen starten,
+  deren Name auf ein Geheimnis deutet (`env -u` fuer `*PWD*`, `*PASSW*`, `*SECRET*`,
+  `*TOKEN*`; `PWD`/`OLDPWD` ausgenommen) und die entfernten Namen ausgeben. Das
+  Passwort des Tools selbst geht ueber stdin oder eine 0600-Datei, nie ueber die
+  Umgebung.
+- Nachweis am Artefakt, nicht an der Annahme: nach jedem Lauf alle Ausgaben, Logs und
+  generierten Konfigurationen mit `grep -rlF` gegen die tatsaechlichen Werte pruefen
+  (Werte im Container aus `${!var}`, nie ausgeben). 0 Treffer ist das Kriterium.
+- Altbestand gehoert dazu: Collections von vor dem Fix enthalten die Werte weiter -
+  loeschen und die betroffenen Passwoerter rotieren.
+
+verify: nach jedem DBSAT- oder CIS-CAT-Lauf liefert ein `grep -rlF` mit den Werten von
+`ORACLE_PWD` und `SECLAB_*_PWD` (im Container aus `${!v}`) ueber
+`/opt/oracle/oradata/dbsat` und `/opt/oracle/oradata/ciscat` nichts
