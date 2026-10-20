@@ -4,8 +4,8 @@
 --  Name......: create_dbsat_user.sql
 --  Author....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 --  Editor....: Stefan Oehrli
---  Date......: 2026.10.15
---  Revision..: v1.0.0
+--  Date......: 2026.10.20
+--  Revision..: v1.1.0
 --  Purpose...: Create a dedicated, minimally privileged account for the DBSAT
 --              collector (instead of SYS).
 --  Notes.....: - Execute in the PDB to assess as SYSDBA (pair with require_pdb.sql).
@@ -16,6 +16,8 @@
 --                check it against the guide of the version in use. Each grant
 --                is reported; a grant that fails is named as WARN, not hidden.
 --              - Idempotent: an existing account is dropped and reported.
+--              - Guard: refuses (ORA-20011, nothing dropped) SYS, SYSTEM,
+--                PDBADMIN and every account with ORACLE_MAINTAINED = 'Y'.
 --  License...: Apache License Version 2.0, January 2004 as shown
 --              at http://www.apache.org/licenses/
 --------------------------------------------------------------------------------
@@ -37,6 +39,7 @@ PROMPT - Create DBSAT collector account &_USER
 DECLARE
   l_user  VARCHAR2(128) := DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER('&&_USER'));
   l_count PLS_INTEGER;
+  l_maint VARCHAR2(1);
   TYPE t_list IS TABLE OF VARCHAR2(200);
   l_grants t_list := t_list(
     'CREATE SESSION',
@@ -51,7 +54,13 @@ BEGIN
   IF '&&_PWD' IS NULL THEN
     RAISE_APPLICATION_ERROR(-20010, 'create_dbsat_user.sql: password parameter is empty');
   END IF;
-  SELECT COUNT(*) INTO l_count FROM dba_users WHERE username = l_user;
+  SELECT COUNT(*), MAX(oracle_maintained) INTO l_count, l_maint
+    FROM dba_users WHERE username = l_user;
+  -- the account is dropped below: never a built-in or Oracle-maintained one
+  IF l_user IN ('SYS', 'SYSTEM', 'PDBADMIN') OR l_maint = 'Y' THEN
+    RAISE_APPLICATION_ERROR(-20011, 'create_dbsat_user.sql: refused to drop and recreate ' || l_user
+      || ' (SYS, SYSTEM, PDBADMIN or Oracle-maintained) - use a dedicated account');
+  END IF;
   IF l_count > 0 THEN
     EXECUTE IMMEDIATE 'DROP USER ' || l_user || ' CASCADE';
     dbms_output.put_line('- dropped existing user ' || l_user);

@@ -5,8 +5,8 @@
 # Name.......: seclab_apply.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.15
-# Revision...: v1.0.0
+# Date.......: 2026.10.19
+# Revision...: v1.1.0
 # Purpose....: seclab - apply the whole intentionally insecure security
 #              baseline (scenarios S01-S11) to an existing PDB and verify it.
 # Notes......: *** INTENTIONALLY INSECURE - lab use only ***
@@ -20,6 +20,9 @@
 #              - Rerunnable: accounts are dropped and recreated, existing
 #                demo schemas and audit policies are kept and reported.
 #              - Needs SECLAB_USER_PWD and SECLAB_SCOTT_PWD in the environment.
+#              - Gathers missing optimizer statistics of the custom schemas
+#                (gather_missing_stats.sql, GATHER EMPTY): DBSAT discover
+#                skips tables without statistics (e.g. SCOTT.BONUS).
 #              - Exit code is the exit code of seclab_verify.sh (0/1/2), or 3
 #                if a step failed.
 # Usage......: seclab_apply.sh [-p PDB] [-s SERVICE] [--no-restart] [-n] [-h]
@@ -41,7 +44,7 @@ SERVICE=""
 RESTART=true
 DRY_RUN=false
 STEP=0
-readonly STEPS=10
+readonly STEPS=11
 
 # ------------------------------------------------------------------------------
 # Function...: usage
@@ -228,6 +231,9 @@ apply_scenarios() {
 
     step "Logins of the accounts in use (service ${SERVICE})"
     run "${COMMON_DIR}/seclab_simulate_logins.sh" -s "${SERVICE}"
+
+    step "Missing optimizer statistics of the custom schemas (DBSAT discover)"
+    run "${RUN}" -p "${PDB}" gather_missing_stats.sql ALL GATHER N
 }
 
 # ------------------------------------------------------------------------------

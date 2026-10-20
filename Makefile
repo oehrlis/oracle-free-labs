@@ -99,7 +99,7 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Lab Services (use SERVICE=<name> or per-service shortcut):$(COLOR_RESET)"
-	@grep -hE '^(check|up|down|ps|logs|bash|sql|reset|apply|dbsat):.*?## ' $(MAKEFILE_LIST) | \
+	@grep -hE '^(check|up|down|ps|logs|bash|sql|reset|apply|dbsat|dbsat-discover):.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "  $(COLOR_BOLD)Available services$(COLOR_RESET) (each supports: up | down | logs | bash | sql | reset)"
@@ -116,7 +116,7 @@ help: ## Show this help message
 	@echo   "  seclab      1534    INTENTIONALLY INSECURE security baseline (127.0.0.1 only)"
 	@echo ""
 	@echo   "  Shortcut: make up-labdb  |  make logs-odbdemo  |  make reset-odbenc"
-	@echo   "  seclab  : make up-seclab | make verify-seclab | make dbsat-seclab"
+	@echo   "  seclab  : make up-seclab | make verify-seclab | make dbsat-seclab | make dbsat-discover-seclab"
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Build:$(COLOR_RESET)"
 	@grep -hE '^(build)[a-zA-Z_-]*:.*?## ' $(MAKEFILE_LIST) | \
@@ -223,6 +223,14 @@ dbsat: ## Run DBSAT against any running container: make dbsat CONTAINER=<name> [
 		exit 1; \
 	fi
 	@"$(APPLY_SCRIPT)" $(if $(PDB),-p "$(PDB)") dbsat "$(CONTAINER)"
+
+.PHONY: dbsat-discover
+dbsat-discover: ## DBSAT sensitive data discovery: make dbsat-discover CONTAINER=<name> [PDB=..] [DBSAT_ARGS="-g -S SCOTT"]
+	@if [[ -z "$(CONTAINER)" ]]; then \
+		echo "Error: CONTAINER is required. Example: make dbsat-discover CONTAINER=free26ai"; \
+		exit 1; \
+	fi
+	@"$(APPLY_SCRIPT)" $(if $(PDB),-p "$(PDB)") dbsat-discover "$(CONTAINER)" $(if $(DBSAT_ARGS),-- $(DBSAT_ARGS))
 
 .PHONY: up
 up: ## Start a service by profile: make up SERVICE=labdb
@@ -541,8 +549,8 @@ reset-seclab: ## Full reset of seclab (destructive!)
 verify-seclab: ## Verify the seclab scenarios (read-only, exit 1 if one is ABSENT)
 	docker compose exec seclab /opt/oracle/common/scripts/seclab_verify.sh -p SECPDB1
 
-.PHONY: dbsat-seclab
-dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*.zip, copies a JRE 21 first)
+# JRE 21 into seclab, then run_dbsat.sh with the extra arguments $(1)
+define seclab_dbsat
 	@cid="$$(docker ps -q --filter name='^seclab$$')"; \
 	if [[ -z "$$cid" ]]; then \
 		echo "Error: seclab is not running - start it with: make up-seclab"; \
@@ -553,10 +561,19 @@ dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*
 		echo "Error: provide_jre.sh exit 1 - container problem, DBSAT not started"; \
 		exit 1; \
 	elif [[ $$rc -ne 0 ]]; then \
-		echo "WARN: no JRE 21 in seclab (provide_jre.sh exit $$rc) - collect runs, report will stop with exit 5"; \
+		echo "WARN: no JRE 21 in seclab (provide_jre.sh exit $$rc) - report/discover will stop with exit 5"; \
 	fi; \
-	echo "docker exec seclab run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD"; \
-	docker exec "$$cid" /opt/oracle/common/scripts/run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD
+	echo "docker exec seclab run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD$(if $(strip $(1)), $(strip $(1)))"; \
+	docker exec "$$cid" /opt/oracle/common/scripts/run_dbsat.sh -s SECPDB1 -e SECLAB_DBSAT_PWD $(1)
+endef
+
+.PHONY: dbsat-seclab
+dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*.zip, copies a JRE 21 first)
+	$(call seclab_dbsat,)
+
+.PHONY: dbsat-discover-seclab
+dbsat-discover-seclab: ## DBSAT discover against seclab; -g is a safety net (seclab setup already gathers missing stats) [DBSAT_ARGS=...]
+	$(call seclab_dbsat,-m discover -g $(DBSAT_ARGS))
 
 # ==============================================================================
 # Build

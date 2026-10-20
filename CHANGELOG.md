@@ -22,6 +22,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `run_dbsat.sh -j/--java-home DIR`; `make check` reports whether the JRE image is
   present (when a DBSAT zip is there or for seclab); `ASSESS_JRE_IMAGE` in `.env.example`
   and the Makefile.
+- DBSAT discover (sensitive data discovery): `run_dbsat.sh` v1.2.0 `-m` selects
+  `collect`, `report`, `discover` or `all` (default `collect,report` as before); use
+  case `apply_usecase.sh dbsat-discover`, targets `make dbsat-discover` and
+  `make dbsat-discover-seclab`. Options `-P`, `-S`, `-r`, `-O`, `-x`, `-g`, `--existing-user`,
+  `DISC_TIMEOUT`; the prompts are answered through a pseudo terminal. Output
+  `dbsat_<pdb>_discover.{html,csv,json}`, `_discoverer.log` and a summary line.
+- `gather_missing_stats.sql`: names tables without optimizer statistics in a schema scope
+  (DBSAT discover skips them without a message, also with MINROWS 0) and gathers them
+  with `GATHER EMPTY`. `run_dbsat.sh -m discover` always reports them, `-g` gathers;
+  `seclab_apply.sh` v1.1.0 gathers them as step 10 of 11.
+- `doc/dbsat-runbook.md` section Discover (options, pseudo terminal, statistics, measured
+  seclab result, false positives from column names and comments), troubleshooting rows;
+  `doc/seclab.md` S08 links the discover result.
 
 ### Changed
 
@@ -55,6 +68,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `run_dbsat.sh` on the plain Oracle image: `create_dbsat_user.sql` failed with
   `SP2-0606` because `/opt/oracle/scripts/logs` does not exist there; the script now
   creates `SQL_LOG_DIR` like `seclab_apply.sh`.
+- Security: `create_dbsat_user.sql` dropped and recreated whatever account name it got.
+  It now refuses SYS, SYSTEM, PDBADMIN and Oracle-maintained accounts (nothing dropped);
+  `run_dbsat.sh -u` refuses those names before anything runs.
 - `apply_usecase.sh dbsat`: a symlinked DBSAT zip was copied as a dangling link
   (`docker cp -L` now).
 - shellcheck SC2164 in `00_enable_unified_audit.sh` and `01_check_unified_audit.sh`

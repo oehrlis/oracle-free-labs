@@ -95,13 +95,24 @@ config/common/scripts/
 ### 🛡️ DBSAT
 
 * **create\_dbsat\_user.sql** `<user> <password>` - minimally privileged DBSAT collector
-  account (not SYS).
+  account (not SYS). Refuses SYS, SYSTEM, PDBADMIN and Oracle-maintained accounts
+  (it drops and recreates the account).
 * **run\_dbsat.sh** - DBSAT collect and report inside a container. DBSAT itself is not
   shipped; without `config/common/data/dbsat/dbsat*.zip` it stops with exit 4 and
   explains where to get it. The report needs Java 17+ (`-j DIR`, else `$JAVA_HOME`,
   `/opt/oracle/oradata/tools/jre21`, `/tmp/jre21`); without it the collection runs
   and the script stops with exit 5. The JRE comes from `scripts/provide_jre.sh` on
-  the host.
+  the host. Since v1.2.0 `-m collect|report|discover|all` (default `collect,report`):
+  discover generates its config per run, answers the username/password prompts through
+  a pseudo terminal (`script`, password masked), names tables without optimizer
+  statistics and gathers them with `-g`. Exit 5 also for discover without Java 17+.
+  A prompt after the password (rejected credentials) stops discover with exit 1;
+  `DISC_TIMEOUT` (default 1800 s) limits the whole run. `-u` refuses SYS, SYSTEM, PDBADMIN.
+* **gather\_missing\_stats.sql** `[ALL|schema,...] [REPORT|GATHER] [N|Y]` - names the
+  tables without optimizer statistics (DBSAT discover skips them silently) and schemas
+  in scope that do not exist, and with
+  `GATHER` collects them (`GATHER EMPTY`, custom schemas only). Used by `run_dbsat.sh`
+  and `seclab_apply.sh`.
 
 ### ⚠️ seclab - INTENTIONALLY INSECURE Scenarios
 

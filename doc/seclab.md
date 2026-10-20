@@ -281,6 +281,13 @@ so `DBA_USERS.LAST_LOGIN` separates them from the S06 accounts. The
   and location, united vs isolated mode, backup of the keystore, online or
   offline encryption, impact on backup and cloning). The `odbenc*` services
   of this repository show one implementation.
+- **Which data is at stake - DBSAT discover (4.3, measured 2026-10-19):**
+  `make dbsat-discover-seclab` lists the sensitive columns in SECPDB1: 3
+  schemas (APP_OWNER, SCOTT, TVD_HR), 35 columns in 9 tables plus 12 in the
+  view `TVD_HR.EMP_DETAILS_VIEW`, risk levels High and Low - among them
+  `APP_OWNER.CUSTOMERS` (`EMAIL`, `FULL_NAME`, `IBAN`). Some hits are false
+  positives from column names and comments; see
+  [dbsat-runbook.md](dbsat-runbook.md#discover).
 
 ### S09 - Network Encryption Not Enforced
 

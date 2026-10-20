@@ -5,8 +5,8 @@
 # Name.......: apply_usecase.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.19
-# Revision...: v1.1.0
+# Date.......: 2026.10.20
+# Revision...: v1.2.0
 # Purpose....: Apply a lab use case to ANY running Oracle Database Free
 #              container - also one started directly from the Oracle image,
 #              without this repository's compose file or build.
@@ -17,10 +17,14 @@
 #              - Secrets are taken from the environment or from .env and
 #                handed over as environment variables, never as arguments.
 #              - Runs on macOS (bash 3.2) and Linux.
-#              - Use cases: seclab, dbsat (more follow, see tasks/repo-audit-*.md).
-#              - dbsat provides a JRE 21 first (scripts/provide_jre.sh, image
-#                ASSESS_JRE_IMAGE): DBSAT 4.x report needs Java 17+.
-# Usage......: scripts/apply_usecase.sh [options] USECASE CONTAINER
+#              - Use cases: seclab, dbsat, dbsat-discover (more follow, see
+#                tasks/repo-audit-*.md).
+#              - dbsat and dbsat-discover provide a JRE 21 first
+#                (scripts/provide_jre.sh, image ASSESS_JRE_IMAGE): DBSAT 4.x
+#                report and discover need Java 17+. Arguments after -- go
+#                to run_dbsat.sh (e.g. -- -g -S SCOTT); -s -z -o -e -j are
+#                set here and rejected after --. DISC_TIMEOUT is passed on.
+# Usage......: scripts/apply_usecase.sh [options] USECASE CONTAINER [-- ARGS]
 # Reference..: doc/seclab-runbook.md
 # License....: Apache License Version 2.0, January 2004 as shown
 #              at http://www.apache.org/licenses/
@@ -40,6 +44,7 @@ readonly DBSAT_URL="https://www.oracle.com/database/technologies/security/dbsat.
 PDB=""
 ENV_FILE="${REPO_ROOT}/.env"
 EXTRA_ARGS=()
+DBSAT_ARGS=()
 ALLOW_PUBLIC=false
 DRY_RUN=false
 WAIT_SECONDS=900
@@ -50,7 +55,7 @@ WAIT_SECONDS=900
 # ------------------------------------------------------------------------------
 usage() {
     cat << EOF
-Usage: ${SCRIPT_NAME} [options] USECASE CONTAINER
+Usage: ${SCRIPT_NAME} [options] USECASE CONTAINER [-- RUN_DBSAT_ARGS]
 
 Apply a lab use case to a running Oracle Database Free container.
 
@@ -62,6 +67,13 @@ Use cases:
            config/common/data/dbsat/ and DBSAT_PWD (falls back to SECLAB_DBSAT_PWD).
            Copies a JRE 21 from the image ASSESS_JRE_IMAGE (default
            eclipse-temurin:21-jre) into the container for the report
+  dbsat-discover
+           DBSAT sensitive data discovery (run_dbsat.sh -m discover), same
+           prerequisites as dbsat, results copied to data/dbsat/<container>/.
+           Discover options after --, e.g. -- -g -S SCOTT,TVD_HR
+           (see run_dbsat.sh -h; -g gathers missing statistics, changes the DB).
+           -s -z -o -e -j are set by this script and rejected after --.
+           DISC_TIMEOUT (seconds, default 1800) is passed on if set
 
 Options:
   -p, --pdb PDB          Target PDB (default: ORACLE_PDB of the container, else FREEPDB1)
@@ -79,6 +91,7 @@ Example (plain Oracle image):
     -e ORACLE_PWD=<pwd> container-registry.oracle.com/database/free:latest
   SECLAB_USER_PWD=<pwd> SECLAB_SCOTT_PWD=tiger ${SCRIPT_NAME} seclab free26ai
   DBSAT_PWD=<pwd> ${SCRIPT_NAME} dbsat free26ai
+  DBSAT_PWD=<pwd> ${SCRIPT_NAME} dbsat-discover free26ai -- -g
 EOF
     exit "${1:-0}"
 }
@@ -210,11 +223,34 @@ provide_scripts() {
 }
 
 # ------------------------------------------------------------------------------
+# Function...: check_dbsat_args
+# Purpose....: Reject run_dbsat.sh arguments after -- that would override the
+#              options this script sets itself (service, zip, output, password
+#              variable, Java)
+# ------------------------------------------------------------------------------
+check_dbsat_args() {
+    local arg
+    for arg in "${DBSAT_ARGS[@]+"${DBSAT_ARGS[@]}"}"; do
+        case "${arg}" in
+            -s | --service | -z | --zip-dir | -o | --out-dir | -e | --env | -j | --java-home)
+                echo "ERROR: ${arg} after -- is fixed by ${SCRIPT_NAME} (service, zip, output, password variable, Java)" \
+                    "- use -p PDB for the target; output goes to data/dbsat/<container>/" >&2
+                return 1
+                ;;
+        esac
+    done
+}
+
+# ------------------------------------------------------------------------------
 # Function...: run_dbsat_usecase
-# Purpose....: Provide the DBSAT zip, run run_dbsat.sh, copy the reports back
+# Purpose....: Provide the DBSAT zip, run run_dbsat.sh, copy the reports back.
+#              $2 = use case: dbsat (collect + report) or dbsat-discover
 # ------------------------------------------------------------------------------
 run_dbsat_usecase() {
-    local container="$1" zip="" f zip_dir mounts
+    local container="$1" usecase="$2" zip="" f zip_dir mounts mode_args=()
+    if [[ "${usecase}" == dbsat-discover ]]; then
+        mode_args=(-m discover)
+    fi
     for f in "${DBSAT_HOST_DIR}"/dbsat*.zip; do
         if [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
             zip="${f}"
@@ -253,16 +289,22 @@ run_dbsat_usecase() {
         jre_args=(--dry-run)
     fi
     "${SCRIPT_DIR}/provide_jre.sh" "${jre_args[@]+"${jre_args[@]}"}" "${container}" \
-        || echo "WARN: no JRE 21 in ${container} (provide_jre.sh exit $?) - collect runs, report will stop with exit 5"
+        || echo "WARN: no JRE 21 in ${container} (provide_jre.sh exit $?) - report/discover will stop with exit 5"
 
     local out_dir="/opt/oracle/oradata/dbsat" host_out="${REPO_ROOT}/data/dbsat/${container}"
+    local run_args=(-s "${PDB}" -z "${zip_dir}" -o "${out_dir}" -e DBSAT_PWD
+        "${mode_args[@]+"${mode_args[@]}"}" "${DBSAT_ARGS[@]+"${DBSAT_ARGS[@]}"}")
+    # DISC_TIMEOUT (seconds for the whole discover run) is passed on if set
+    local env_args=(-e DBSAT_PWD)
+    if [[ -n "${DISC_TIMEOUT:-}" ]]; then
+        env_args+=(-e DISC_TIMEOUT)
+    fi
     if [[ "${DRY_RUN}" == true ]]; then
-        echo "DRY-RUN: docker exec -e DBSAT_PWD ${container} ${TARGET_DIR}/run_dbsat.sh -s ${PDB} -z ${zip_dir} -o ${out_dir}"
+        echo "DRY-RUN: docker exec ${env_args[*]} ${container} ${TARGET_DIR}/run_dbsat.sh ${run_args[*]}"
         echo "DRY-RUN: docker cp ${container}:${out_dir}/. ${host_out}/"
         return 0
     fi
-    docker exec -e DBSAT_PWD "${container}" "${TARGET_DIR}/run_dbsat.sh" \
-        -s "${PDB}" -z "${zip_dir}" -o "${out_dir}" -e DBSAT_PWD || rc=$?
+    docker exec "${env_args[@]}" "${container}" "${TARGET_DIR}/run_dbsat.sh" "${run_args[@]}" || rc=$?
     if [[ ${rc} -ne 0 && ${rc} -ne 5 ]]; then
         echo "ERROR: DBSAT run in ${container} failed (exit ${rc})" >&2
         return "${rc}"
@@ -270,11 +312,11 @@ run_dbsat_usecase() {
     mkdir -p "${host_out}"
     docker cp "${container}:${out_dir}/." "${host_out}/"
     if [[ ${rc} -eq 5 ]]; then
-        echo "ERROR: only the DBSAT collection was copied to ${host_out}/ - no Java 17+ for the report (exit 5)" >&2
+        echo "ERROR: no Java 17+ in ${container} for report/discover (exit 5) - copied what exists to ${host_out}/" >&2
         ls -l "${host_out}"
         return 5
     fi
-    echo "INFO: DBSAT reports copied to ${host_out}/"
+    echo "INFO: DBSAT results copied to ${host_out}/"
     ls -l "${host_out}"
 }
 
@@ -296,18 +338,28 @@ main() {
             *) break ;;
         esac
     done
-    if [[ $# -ne 2 ]]; then
-        echo "ERROR: USECASE and CONTAINER are required" >&2
+    if [[ $# -lt 2 || ($# -gt 2 && "${3:-}" != "--") ]]; then
+        echo "ERROR: USECASE and CONTAINER are required (further arguments only after --)" >&2
         usage 1
     fi
     local usecase="$1" container="$2" entry vars var
+    shift 2
+    if [[ $# -gt 0 ]]; then
+        shift
+        DBSAT_ARGS=("$@")
+        case "${usecase}" in
+            dbsat | dbsat-discover) ;;
+            *) echo "ERROR: arguments after -- are only for dbsat and dbsat-discover" >&2; return 1 ;;
+        esac
+        check_dbsat_args
+    fi
 
     case "${usecase}" in
         seclab)
             entry="${TARGET_DIR}/seclab_apply.sh"
             vars="SECLAB_USER_PWD SECLAB_SCOTT_PWD"
             ;;
-        dbsat)
+        dbsat | dbsat-discover)
             entry="${TARGET_DIR}/run_dbsat.sh"
             vars="DBSAT_PWD"
             env_from_file DBSAT_PWD
@@ -320,7 +372,7 @@ main() {
             fi
             ;;
         *)
-            echo "ERROR: unknown use case '${usecase}' (available: seclab, dbsat)" >&2
+            echo "ERROR: unknown use case '${usecase}' (available: seclab, dbsat, dbsat-discover)" >&2
             return 1
             ;;
     esac
@@ -359,8 +411,8 @@ main() {
 
     provide_scripts "${container}"
 
-    if [[ "${usecase}" == dbsat ]]; then
-        run_dbsat_usecase "${container}"
+    if [[ "${usecase}" == dbsat || "${usecase}" == dbsat-discover ]]; then
+        run_dbsat_usecase "${container}" "${usecase}"
         return $?
     fi
     if [[ "${DRY_RUN}" == true ]]; then

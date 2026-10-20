@@ -45,13 +45,13 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
 
 ### PR 2 - DBSAT discover
 
-- [ ] `run_dbsat.sh` Modi `collect|report|discover|all` (eigene Option, DBSAT-`-n` nicht mit Dry-Run verwechseln)
-- [ ] Config pro Lauf generieren (`DB_HOSTNAME=localhost`, Port 1521, Service), `sensitive*.ini` daneben;
+- [x] `run_dbsat.sh` Modi `collect|report|discover|all` (eigene Option, DBSAT-`-n` nicht mit Dry-Run verwechseln)
+- [x] Config pro Lauf generieren (`DB_HOSTNAME=localhost`, Port 1521, Service), `sensitive*.ini` daneben;
   Parameter: Pattern-Datei, `SCHEMA_SCOPE`, `MINROWS`, `-o`
-- [ ] Credentials per `script`-PTY, Passwort maskiert; Ausgabe `dbsat_<pdb>_discover.{html,csv,json}`
-- [ ] Tabellen ohne Statistik benennen (nicht still auslassen); seclab-Setup sammelt Schema-Statistik
-- [ ] Make: `dbsat-discover`, `dbsat-discover-seclab` (+ Help-Regex Zeile 92, Hinweis Zeile 109)
-- [ ] Runbook-Abschnitt Discover, `doc/seclab.md` S08 verknuepfen
+- [x] Credentials per `script`-PTY, Passwort maskiert; Ausgabe `dbsat_<pdb>_discover.{html,csv,json}`
+- [x] Tabellen ohne Statistik benennen (nicht still auslassen); seclab-Setup sammelt Schema-Statistik
+- [x] Make: `dbsat-discover`, `dbsat-discover-seclab` (+ Help-Regex Zeile 92, Hinweis Zeile 109)
+- [x] Runbook-Abschnitt Discover, `doc/seclab.md` S08 verknuepfen
 
 ### PR 3 - CIS-CAT (Lite verifiziert, Pro nur Annahmen)
 
