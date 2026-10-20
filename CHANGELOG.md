@@ -45,6 +45,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Security: `dbsat collect` writes its process environment into `dbsat_<pdb>.json`,
+  so `ORACLE_PWD` and the `SECLAB_*_PWD` values landed there in clear text.
+  `run_dbsat.sh` now runs DBSAT with every secret-like variable removed (`env -u`)
+  and names them. Collections written before this fix still contain the values.
 - `run_dbsat.sh`: DBSAT 4.x extracts into a `dbsat/` subdirectory; the script took that
   directory for the launcher (`-x` is true for directories). It now searches for a file
   named `dbsat` and stops with an error if there is none.

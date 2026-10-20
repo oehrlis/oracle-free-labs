@@ -180,6 +180,29 @@ resolve_java() {
 }
 
 # ------------------------------------------------------------------------------
+# Function...: scrub_env
+# Purpose....: Fill SCRUB_ENV with env -u options for every secret-like
+#              variable. dbsat collect writes its process environment into
+#              the collection JSON - ORACLE_PWD and the SECLAB_*_PWD values
+#              would land there in clear text. The collector password goes
+#              in on stdin, so DBSAT needs none of them.
+# ------------------------------------------------------------------------------
+scrub_env() {
+    local v names=""
+    SCRUB_ENV=()
+    for v in $(compgen -e); do
+        case "${v}" in
+            PWD | OLDPWD) ;;
+            *PWD* | *PASSW* | *SECRET* | *TOKEN*)
+                SCRUB_ENV+=(-u "${v}")
+                names+=" ${v}"
+                ;;
+        esac
+    done
+    echo "INFO: DBSAT runs without the secret-like variable(s):${names:- none}"
+}
+
+# ------------------------------------------------------------------------------
 # Function...: check_prereqs
 # Purpose....: Report the runtime prerequisites of DBSAT in this image
 # ------------------------------------------------------------------------------
@@ -272,9 +295,10 @@ main() {
     done
 
     local rc=0
+    scrub_env
     echo "INFO: dbsat collect ${DBSAT_USER}@//localhost:1521/${SERVICE}"
     (cd "${OUT_DIR}" && printf '%s\n' "${!PWD_VAR}" \
-        | "${dbsat}" collect -n "${DBSAT_USER}@//localhost:1521/${SERVICE}" "${OUT_DIR}/${name}") || rc=$?
+        | env "${SCRUB_ENV[@]}" "${dbsat}" collect -n "${DBSAT_USER}@//localhost:1521/${SERVICE}" "${OUT_DIR}/${name}") || rc=$?
     if [[ ${rc} -ne 0 || ! -s "${OUT_DIR}/${name}.json" ]]; then
         echo "ERROR: dbsat collect failed (rc=${rc}) or wrote no ${OUT_DIR}/${name}.json" >&2
         return 1
@@ -284,7 +308,7 @@ main() {
     fi
 
     echo "INFO: dbsat report ${OUT_DIR}/${name} (JAVA_HOME=${JAVA_HOME})"
-    (cd "${OUT_DIR}" && "${dbsat}" report -n "${OUT_DIR}/${name}") || rc=$?
+    (cd "${OUT_DIR}" && env "${SCRUB_ENV[@]}" "${dbsat}" report -n "${OUT_DIR}/${name}") || rc=$?
     if [[ ${rc} -ne 0 ]]; then
         echo "ERROR: dbsat report failed (rc=${rc})" >&2
         return 1

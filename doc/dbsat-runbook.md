@@ -130,6 +130,14 @@ compare it with the guide of your version. A grant that fails is printed as
 `WARN`, never skipped silently. The account is dropped and recreated on every
 run.
 
+`dbsat collect` records its process environment in `dbsat_<pdb>.json`. The
+container environment holds `ORACLE_PWD` and, for seclab, the `SECLAB_*_PWD`
+values. `run_dbsat.sh` therefore starts DBSAT without any variable whose name
+contains `PWD`, `PASSW`, `SECRET` or `TOKEN` and lists the removed names; the
+collector password goes in on stdin. Collections written before this change
+(2026-10-20) contain these values in clear text - delete them or treat them as
+secrets.
+
 ## Compare Before and After a Change
 
 ```bash
