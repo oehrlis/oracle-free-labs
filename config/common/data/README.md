@@ -14,6 +14,10 @@ Shared data artifacts used across multiple services.
   Place the Oracle DBSAT zip here (not shipped, Oracle license). Used by
   `make dbsat-seclab`, see [dbsat/README.md](dbsat/README.md)
 
+- **ciscat/**  
+  Place the CIS-CAT Lite or Pro zip here (not shipped, CIS license). Used by
+  `make ciscat`, see [ciscat/README.md](ciscat/README.md)
+
 ## Notes
 
 - This folder is mounted once into the container at `/opt/oracle/data`

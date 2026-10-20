@@ -55,15 +55,20 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
 
 ### PR 3 - CIS-CAT (Lite verifiziert, Pro nur Annahmen)
 
-- [ ] `config/common/data/ciscat/` + README + `.gitignore`-Whitelist
-- [ ] `run_ciscat.sh` (root): entpacken ohne `*/jre/*`, Edition/Version erkennen, Benchmarks dynamisch
+- [x] `config/common/data/ciscat/` + README + `.gitignore`-Whitelist
+- [x] `run_ciscat.sh` (root): entpacken ohne `*/jre/*`, Edition/Version erkennen, Benchmarks dynamisch
   (`-l`), `CISCAT_BENCHMARK=auto|<name>`, `CISCAT_PROFILE`; DB-Modus mit chmod-600 `-cfg`-XML (Pro)
-- [ ] Fail-fast: Zip fehlt (Exit 4, beide URLs), Benchmark fehlt (Liste + Pro-Hinweis), Exit 111/114/116 uebersetzt
-- [ ] `apply_usecase.sh ciscat`, Make `ciscat`, `ciscat-seclab`, `ciscat-list`
-- [ ] `doc/ciscat-runbook.md` mit Lite/Pro-Matrix und Abschnitt "Pro-Annahmen - nicht verifiziert"
+  - Stand: jeder Lauf ueber `-cfg` (auch OS), Lite-verifiziert; DB-Modus nur mechanisch (umbenanntes XCCDF)
+- [x] Fail-fast: Zip fehlt (Exit 4, beide URLs), Benchmark fehlt (Liste + Pro-Hinweis), Exit 111/114/116 uebersetzt
+  - Stand: Profil wird vor dem Start geprueft (111); Assessor selbst liefert 1 + "invalid profile" - Mapping
+    vorhanden, nicht ausgeloest
+- [x] `apply_usecase.sh ciscat`, Make `ciscat`, `ciscat-seclab`, `ciscat-list`
+- [x] `doc/ciscat-runbook.md` mit Lite/Pro-Matrix und Abschnitt "Pro-Annahmen - nicht verifiziert"
+- [ ] `make ciscat-seclab` gegen seclab erst nach Merge pruefbar (seclab mountet die Skripte des Haupt-Checkouts)
 
 ### Abschluss
 
+- [ ] DRY: newest_zip/provide_zip/copy_back + lib_java.sh fuer dbsat und ciscat (nach Merge von PR 2/3)
 - [ ] CHANGELOG `[1.5.0]`, VERSION, CLAUDE.md-Absatz, `make lint`, End-to-End seclab + plain container
 
 ## seclab - intentionally insecure security baseline (2026-10-15)

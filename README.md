@@ -66,6 +66,7 @@ This environment includes several containerized database services, each with a d
 | A database with known security findings for assessment/remediation tests | [doc/seclab-runbook.md](doc/seclab-runbook.md) |
 | Apply a use case to a plain Oracle Free container you already run | `scripts/apply_usecase.sh seclab <container>` - [doc/seclab-runbook.md](doc/seclab-runbook.md#path-b---apply-seclab-to-any-container) |
 | Run DBSAT against a container | [doc/dbsat-runbook.md](doc/dbsat-runbook.md) |
+| Run CIS-CAT Lite or Pro against a container | [doc/ciscat-runbook.md](doc/ciscat-runbook.md) |
 | One of the classic lab services | the quickstart below |
 
 Before the first start: `make check SERVICE=<service>`.
@@ -214,6 +215,9 @@ It includes step by step guides and practical examples to help you get the most 
 
 - [DBSAT Runbook](doc/dbsat-runbook.md)  
   Run the Database Security Assessment Tool against any lab container
+
+- [CIS-CAT Runbook](doc/ciscat-runbook.md)  
+  CIS-CAT Lite (verified) and Pro (assumptions, not verified) in any lab container
 
 - [Setup Lab Environment](doc/setup_lab_environment.md)  
   Prepare host, install prerequisites, configure `.env`, and start services with Docker or Podman

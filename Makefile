@@ -99,7 +99,7 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Lab Services (use SERVICE=<name> or per-service shortcut):$(COLOR_RESET)"
-	@grep -hE '^(check|up|down|ps|logs|bash|sql|reset|apply|dbsat|dbsat-discover):.*?## ' $(MAKEFILE_LIST) | \
+	@grep -hE '^(check|up|down|ps|logs|bash|sql|reset|apply|dbsat|dbsat-discover|ciscat|ciscat-list):.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-28s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo -e "  $(COLOR_BOLD)Available services$(COLOR_RESET) (each supports: up | down | logs | bash | sql | reset)"
@@ -116,7 +116,7 @@ help: ## Show this help message
 	@echo   "  seclab      1534    INTENTIONALLY INSECURE security baseline (127.0.0.1 only)"
 	@echo ""
 	@echo   "  Shortcut: make up-labdb  |  make logs-odbdemo  |  make reset-odbenc"
-	@echo   "  seclab  : make up-seclab | make verify-seclab | make dbsat-seclab | make dbsat-discover-seclab"
+	@echo   "  seclab  : make up-seclab | make verify-seclab | make dbsat-seclab | make dbsat-discover-seclab | make ciscat-seclab"
 	@echo ""
 	@echo -e "$(COLOR_BOLD)Build:$(COLOR_RESET)"
 	@grep -hE '^(build)[a-zA-Z_-]*:.*?## ' $(MAKEFILE_LIST) | \
@@ -231,6 +231,22 @@ dbsat-discover: ## DBSAT sensitive data discovery: make dbsat-discover CONTAINER
 		exit 1; \
 	fi
 	@"$(APPLY_SCRIPT)" $(if $(PDB),-p "$(PDB)") dbsat-discover "$(CONTAINER)" $(if $(DBSAT_ARGS),-- $(DBSAT_ARGS))
+
+# -- CIS-CAT (Lite verified, Pro assumptions, see doc/ciscat-runbook.md) -------
+# CISCAT_* given on the command line are exported by make; apply_usecase.sh
+# reads the ones in .env itself
+
+.PHONY: ciscat
+ciscat: ## Run CIS-CAT in any running container: make ciscat CONTAINER=<name> [PDB=..] [CISCAT_BENCHMARK=..] [CISCAT_PROFILE=..]
+	@if [[ -z "$(CONTAINER)" ]]; then \
+		echo "Error: CONTAINER is required. Example: make ciscat CONTAINER=free26ai CISCAT_BENCHMARK=ubuntu CISCAT_IGNORE_PLATFORM=1"; \
+		exit 1; \
+	fi
+	@"$(APPLY_SCRIPT)" $(if $(PDB),-p "$(PDB)") ciscat "$(CONTAINER)"
+
+.PHONY: ciscat-list
+ciscat-list: ## List CIS-CAT edition, benchmarks, profiles: make ciscat-list [CONTAINER=seclab]
+	@"$(APPLY_SCRIPT)" ciscat-list "$(or $(CONTAINER),seclab)"
 
 .PHONY: up
 up: ## Start a service by profile: make up SERVICE=labdb
@@ -574,6 +590,10 @@ dbsat-seclab: ## Run DBSAT against seclab (needs config/common/data/dbsat/dbsat*
 .PHONY: dbsat-discover-seclab
 dbsat-discover-seclab: ## DBSAT discover against seclab; -g is a safety net (seclab setup already gathers missing stats) [DBSAT_ARGS=...]
 	$(call seclab_dbsat,-m discover -g $(DBSAT_ARGS))
+
+.PHONY: ciscat-seclab
+ciscat-seclab: ## Run CIS-CAT against seclab (needs config/common/data/ciscat/ zip, copies a root-owned JRE 21 first)
+	@$(MAKE) --no-print-directory ciscat CONTAINER=seclab
 
 # ==============================================================================
 # Build
