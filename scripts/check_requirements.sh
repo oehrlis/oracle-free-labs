@@ -5,11 +5,12 @@
 # Name.......: check_requirements.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.15
-# Revision...: v1.0.0
+# Date.......: 2026.10.19
+# Revision...: v1.1.0
 # Purpose....: Pre-flight check before starting a lab service: container
-#              runtime, compose, VM resources, image, .env, ports.
-# Notes......: - Read-only. Prints PASS / WARN / FAIL per check, exit 1 on FAIL.
+#              runtime, compose, VM resources, image, .env, ports, and the
+#              JRE image for the assessment tools.
+# Notes......: - Read-only. Prints PASS / WARN / FAIL / SKIP per check, exit 1 on FAIL.
 #              - Knows Docker Desktop, Colima and Podman (docker CLI).
 #              - Never prints secret values, only whether they are set.
 #              - Runs on macOS (bash 3.2) and Linux.
@@ -57,6 +58,7 @@ EOF
 pass() { echo "PASS  $*"; }
 warn() { echo "WARN  $*"; WARNS=$((WARNS + 1)); }
 fail() { echo "FAIL  $*"; FAILS=$((FAILS + 1)); }
+skip() { echo "SKIP  $*"; }
 
 # ------------------------------------------------------------------------------
 # Function...: env_value
@@ -237,6 +239,41 @@ check_service() {
 }
 
 # ------------------------------------------------------------------------------
+# Function...: check_assess_jre
+# Purpose....: JRE image for DBSAT report (Java 17+) present and matching the
+#              engine architecture - only for seclab or with a DBSAT zip, and
+#              only with a reachable engine
+# ------------------------------------------------------------------------------
+check_assess_jre() {
+    local image arch engine
+    if [[ "${SERVICE}" != seclab ]] && ! compgen -G "${REPO_ROOT}/config/common/data/dbsat/dbsat*.zip" > /dev/null; then
+        skip "JRE image check - no DBSAT zip in config/common/data/dbsat/ and SERVICE is not seclab"
+        return 0
+    fi
+    if ! command -v docker > /dev/null 2>&1 || ! docker info > /dev/null 2>&1; then
+        skip "JRE image check - container engine not reachable"
+        return 0
+    fi
+    image="$(env_value ASSESS_JRE_IMAGE)"
+    # keep in sync with Makefile ASSESS_JRE_IMAGE and scripts/provide_jre.sh
+    image="${image:-eclipse-temurin:21-jre}"
+    if ! arch="$(docker image inspect -f '{{.Architecture}}' "${image}" 2> /dev/null)"; then
+        warn "JRE image ${image} not present - DBSAT report needs it (Java 17+); run: docker pull ${image}"
+        return 0
+    fi
+    engine="$(docker info --format '{{.Architecture}}' 2> /dev/null || true)"
+    case "${engine}" in
+        aarch64) engine=arm64 ;;
+        x86_64) engine=amd64 ;;
+    esac
+    if [[ -n "${engine}" && "${arch}" != "${engine}" ]]; then
+        warn "JRE image ${image} is ${arch}, engine is ${engine} - run: docker pull --platform linux/${engine} ${image}"
+    else
+        pass "JRE image ${image} present (${arch}) - copied into the container for DBSAT report"
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Function...: main
 # Purpose....: Run all checks and summarise
 # ------------------------------------------------------------------------------
@@ -254,6 +291,7 @@ main() {
     if [[ -n "${SERVICE}" ]]; then
         check_service "${SERVICE}"
     fi
+    check_assess_jre
     echo "Summary: ${FAILS} FAIL, ${WARNS} WARN"
     if [[ ${FAILS} -gt 0 ]]; then
         return 1

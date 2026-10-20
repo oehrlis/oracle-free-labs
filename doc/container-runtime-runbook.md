@@ -26,8 +26,9 @@ Image facts (measured):
 - The extended image `oracle-free-labs:<tag>` (`make build`) adds the OraDBA tools,
   `rlwrap` and the `/opt/oracle/network/admin` symlink that all named services
   need for `TNS_ADMIN`. It is about 13.2 GB.
-- `.env.example` still defaults to `free:23.9.0.0` (23ai). The seclab service was
-  verified on `free:latest`; set `DB_BASE_IMAGE` accordingly (see below).
+- `.env.example` defaults `DB_BASE_IMAGE` to `free:latest`, on which the seclab
+  service was verified. Without `.env` the Makefile still falls back to
+  `free:23.9.0.0`. Pin a release tag in `.env` for a reproducible build.
 
 ## Pre-Flight Check
 

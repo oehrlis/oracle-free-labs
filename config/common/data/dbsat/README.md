@@ -17,4 +17,10 @@ zip it stops with exit code 4 and prints these steps.
 ## Notes
 
 - `*.zip` is ignored by Git - the archive never leaves your machine.
-- Reports are written to `data/<service>/dbsat/`, also ignored by Git.
+- Reports are written to `data/seclab/dbsat/` (`make dbsat-seclab`, the
+  service's bind-mounted `/opt/oracle/oradata/dbsat`) and to
+  `data/dbsat/<container>/` (`make dbsat CONTAINER=<name>`, copied back from
+  the container). Both are ignored by Git.
+- DBSAT 4.x needs Java 17+ for the report; both make targets copy a JRE 21
+  into the container first (`scripts/provide_jre.sh`, see
+  `doc/dbsat-runbook.md`).
