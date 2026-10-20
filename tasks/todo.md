@@ -2,8 +2,7 @@
 
 ## Assessments: DBSAT report/discover + CIS-CAT Lite/Pro (2026-10-19)
 
-Status: PR #2 (feat/assess-jre21), #3 (feat/assess-discover), #4 (feat/assess-ciscat) offen,
-gestapelt - Merge in dieser Reihenfolge. Review/Merge durch Stefan.
+Status: erledigt - PR #2, #3, #4 gemergt, Release v1.5.0 (2026-10-20); Rotation via PR #5.
 Analyse durch drei Agents, Evidenz in `tasks/state-2026-10-19.md` und im
 Session-Scratchpad (nicht im Repo).
 
@@ -65,15 +64,15 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
     vorhanden, nicht ausgeloest
 - [x] `apply_usecase.sh ciscat`, Make `ciscat`, `ciscat-seclab`, `ciscat-list`
 - [x] `doc/ciscat-runbook.md` mit Lite/Pro-Matrix und Abschnitt "Pro-Annahmen - nicht verifiziert"
-- [ ] `make ciscat-seclab` gegen seclab erst nach Merge pruefbar (seclab mountet die Skripte des Haupt-Checkouts)
+- [x] `make ciscat-seclab` gegen seclab erst nach Merge pruefbar (seclab mountet die Skripte des Haupt-Checkouts)
 
 ### Abschluss
 
 - [ ] DRY: newest_zip/provide_zip/copy_back + lib_java.sh fuer dbsat und ciscat (nach Merge von PR 2/3)
 - [x] CLAUDE.md-Absatz (in PR 3), `make lint`, End-to-End seclab + plain container
-- [ ] Nach Merge: `make dbsat-seclab`, `make dbsat-discover-seclab`, `make ciscat-seclab` im Haupt-Checkout
-- [ ] Release: CHANGELOG `[1.5.0]`, VERSION, Tag (Stefan)
-- [ ] Alte Collection `data/seclab/dbsat/dbsat_secpdb1.json` (2026-10-16) enthaelt Lab-Passwoerter
+- [x] Nach Merge: `make dbsat-seclab`, `make dbsat-discover-seclab`, `make ciscat-seclab` im Haupt-Checkout
+- [x] Release: CHANGELOG `[1.5.0]`, VERSION, Tag v1.5.0
+- [x] Alte Collection `data/seclab/dbsat/dbsat_secpdb1.json` (2026-10-16) enthaelt Lab-Passwoerter
   im Klartext - loeschen, Lab-Passwoerter rotieren (Stefan)
 
 ## seclab - intentionally insecure security baseline (2026-10-15)
