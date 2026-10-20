@@ -7,6 +7,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- seclab: own SYS/SYSTEM/PDBADMIN password `SECLAB_ORACLE_PWD` (falls back to
+  `ORACLE_PWD`), so seclab passwords can be rotated without touching the
+  `ORACLE_PWD` shared by all services. `seclab_set_admin_pwd.sh` applies it to an
+  existing database; runbook section Rotate Passwords.
+
 ## [1.5.0] - 2026-10-20
 
 ### Added

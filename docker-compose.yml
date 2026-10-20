@@ -225,7 +225,9 @@ services:
     profiles: ["seclab"]
     environment:
       - TZ=${TZ}
-      - ORACLE_PWD=${ORACLE_PWD}
+      # Own SYS/SYSTEM/PDBADMIN password for seclab, falls back to ORACLE_PWD.
+      # ORACLE_PWD is shared by all services - rotating it breaks their DBs.
+      - ORACLE_PWD=${SECLAB_ORACLE_PWD:-${ORACLE_PWD}}
       - ORACLE_SID=${DB_ORACLE_SID}
       - ORACLE_PDB=${ORACLE_PDB}
       - TNS_ADMIN=/opt/oracle/network/admin

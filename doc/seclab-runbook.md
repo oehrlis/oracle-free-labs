@@ -101,7 +101,8 @@ print(conn.version)
 ```
 
 The accounts and their purpose are listed in [seclab.md](seclab.md#accounts-and-objects).
-`SYS`/`SYSTEM` use `ORACLE_PWD`. The host clients above were not part of the
+`SYS`/`SYSTEM`/`PDBADMIN` use `SECLAB_ORACLE_PWD`, or `ORACLE_PWD` when it is
+empty (see [Rotate Passwords](#rotate-passwords)). The host clients above were not part of the
 measured runs; the in-container logins over the listener were.
 
 ### 6. Stop, Restart, Reset
@@ -195,6 +196,27 @@ DBSAT is not shipped. Without the zip these commands stop with exit 4 and
 explain where to get it. They copy a JRE 21 from `eclipse-temurin:21-jre`
 into the container first, because DBSAT 4.x needs Java 17+ for report and
 discover. Details: [dbsat-runbook.md](dbsat-runbook.md).
+
+## Rotate Passwords
+
+The container environment holds the lab passwords. Before DBSAT 4.x ran
+without secret-like variables (v1.5.0), `dbsat collect` wrote them into
+`dbsat_<pdb>.json`. To rotate after such a leak - or any time:
+
+1. Set new values in `.env`: `SECLAB_USER_PWD`, `SECLAB_DBSAT_PWD`, and
+   `SECLAB_ORACLE_PWD` for SYS/SYSTEM/PDBADMIN of seclab only. Do not rotate
+   the shared `ORACLE_PWD` for this - every service with a persistent DB under
+   `data/` uses it. `SECLAB_SCOTT_PWD=tiger` stays: it is scenario S11.
+2. Recreate the container so it gets the new environment (data stays):
+   `docker compose --profile seclab up -d --force-recreate seclab`
+3. Set the new SYS/SYSTEM/PDBADMIN password inside the container - the image
+   only applies `ORACLE_PWD` when it creates the database:
+   `docker exec seclab /opt/oracle/common/scripts/seclab_set_admin_pwd.sh`
+4. Re-apply the scenarios (drops and recreates the demo accounts with the new
+   `SECLAB_USER_PWD`), then verify:
+   `scripts/apply_usecase.sh seclab seclab && make verify-seclab`
+
+`DBSAT_USER` is recreated with `SECLAB_DBSAT_PWD` on every DBSAT run.
 
 ## Troubleshooting
 
