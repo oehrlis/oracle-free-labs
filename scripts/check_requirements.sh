@@ -5,8 +5,8 @@
 # Name.......: check_requirements.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.19
-# Revision...: v1.2.0
+# Date.......: 2026.10.23
+# Revision...: v1.3.0
 # Purpose....: Pre-flight check before starting a lab service: container
 #              runtime, compose, VM resources, image, .env, ports, the
 #              JRE image for the assessment tools and the CIS-CAT archive.
@@ -26,8 +26,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 readonly SCRIPT_DIR
 readonly REPO_ROOT="${SCRIPT_DIR%/*}"
 readonly ENV_FILE="${REPO_ROOT}/.env"
-# shellcheck source=scripts/lib_dotenv.sh
-source "${SCRIPT_DIR}/lib_dotenv.sh"
+# dotenv_value, newest_zip, dangling_links and the assessment defaults
+# shellcheck source=scripts/lib_usecase.sh
+source "${SCRIPT_DIR}/lib_usecase.sh"
 # Measured on 23.26.3 arm64: seclab peaks at about 2.8 GiB during setup
 readonly MIN_MEM_GIB=4
 readonly REC_MEM_GIB=6
@@ -216,7 +217,11 @@ check_service() {
                 fail "${var} not set - add it to .env (see .env.example)"
             fi
         done
-        if [[ -n "$(ls "${REPO_ROOT}"/config/common/data/dbsat/dbsat*.zip 2> /dev/null)" ]]; then
+        local name
+        while IFS= read -r name; do
+            warn "DBSAT zip ${name} is a dangling symlink"
+        done < <(dangling_links "${REPO_ROOT}/config/common/data/dbsat" "${DBSAT_GLOB}")
+        if [[ -n "$(newest_zip "${REPO_ROOT}/config/common/data/dbsat" "${DBSAT_GLOB}")" ]]; then
             pass "DBSAT archive found in config/common/data/dbsat/"
         else
             warn "no DBSAT zip in config/common/data/dbsat/ - make dbsat-seclab will stop and explain"
@@ -246,8 +251,8 @@ check_service() {
 # ------------------------------------------------------------------------------
 check_assess_jre() {
     local image arch engine
-    if [[ "${SERVICE}" != seclab ]] && ! compgen -G "${REPO_ROOT}/config/common/data/dbsat/dbsat*.zip" > /dev/null \
-        && ! compgen -G "${REPO_ROOT}/config/common/data/ciscat/*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip" > /dev/null; then
+    if [[ "${SERVICE}" != seclab && -z "$(newest_zip "${REPO_ROOT}/config/common/data/dbsat" "${DBSAT_GLOB}")" \
+        && -z "$(newest_zip "${REPO_ROOT}/config/common/data/ciscat" "${CISCAT_GLOB}")" ]]; then
         skip "JRE image check - no DBSAT or CIS-CAT zip in config/common/data/ and SERVICE is not seclab"
         return 0
     fi
@@ -256,10 +261,9 @@ check_assess_jre() {
         return 0
     fi
     image="$(env_value ASSESS_JRE_IMAGE)"
-    # keep in sync with Makefile ASSESS_JRE_IMAGE and scripts/provide_jre.sh
-    image="${image:-eclipse-temurin:21-jre}"
+    image="${image:-${ASSESS_JRE_IMAGE_DEFAULT}}"
     if ! arch="$(docker image inspect -f '{{.Architecture}}' "${image}" 2> /dev/null)"; then
-        warn "JRE image ${image} not present - DBSAT report needs it (Java 17+); run: docker pull ${image}"
+        warn "JRE image ${image} not present - DBSAT report needs it (Java ${DBSAT_MIN_JAVA}+); run: docker pull ${image}"
         return 0
     fi
     engine="$(docker info --format '{{.Architecture}}' 2> /dev/null || true)"
@@ -280,15 +284,11 @@ check_assess_jre() {
 #              (unzip -l only, nothing is extracted)
 # ------------------------------------------------------------------------------
 check_ciscat() {
-    local dir="${REPO_ROOT}/config/common/data/ciscat" zip="" f list licenses db os
-    # keep in sync with ZIP_GLOB in config/common/scripts/run_ciscat.sh
-    for f in "${dir}"/*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip; do
-        if [[ -L "${f}" && ! -e "${f}" ]]; then
-            warn "CIS-CAT zip ${f##*/} is a dangling symlink"
-        elif [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
-            zip="${f}"
-        fi
-    done
+    local dir="${REPO_ROOT}/config/common/data/ciscat" zip name list licenses db os
+    while IFS= read -r name; do
+        warn "CIS-CAT zip ${name} is a dangling symlink"
+    done < <(dangling_links "${dir}" "${CISCAT_GLOB}")
+    zip="$(newest_zip "${dir}" "${CISCAT_GLOB}")"
     if [[ -z "${zip}" ]]; then
         if [[ "${SERVICE}" == seclab ]]; then
             warn "no CIS-CAT zip in config/common/data/ciscat/ - make ciscat-seclab will stop and explain"

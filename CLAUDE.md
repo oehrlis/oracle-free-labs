@@ -89,6 +89,9 @@ and CIS-CAT need Java 17+/21; the image has JDK 11, so `scripts/provide_jre.sh`
 copies a JRE from `eclipse-temurin:21-jre` (`ASSESS_JRE_IMAGE`) into the container
 (CIS-CAT runs as root and gets a root-owned copy). Assessment tools never run with
 secret-like variables in their environment (`dbsat collect` records it).
+Shared helpers: `scripts/lib_usecase.sh` on the host (zip into the container, copy-back,
+password fallback, defaults), `config/common/scripts/lib_java.sh` and `lib_assess.sh` in the
+container (Java resolution, newest zip, env scrub) - sourced from the script's own directory.
 Pre-flight check: `make check [SERVICE=...]`. Runbooks: `doc/container-runtime-runbook.md`,
 `doc/seclab-runbook.md`, `doc/dbsat-runbook.md`, `doc/ciscat-runbook.md`.
 

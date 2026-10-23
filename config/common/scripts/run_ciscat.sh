@@ -5,8 +5,8 @@
 # Name.......: run_ciscat.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.19
-# Revision...: v1.0.0
+# Date.......: 2026.10.23
+# Revision...: v1.1.0
 # Purpose....: Run a CIS-CAT Assessor (Lite or Pro, one code path) locally
 #              inside an Oracle Database Free container.
 # Notes......: - CIS-CAT is NOT shipped with this repository (CIS license).
@@ -39,6 +39,9 @@
 #              - Output: OUT_DIR/ciscat_<target>_<benchmark>.<fmt> plus a .log
 #                with the full assessor output. Old files of the same name are
 #                removed first and reported.
+#              - Java, zip and environment helpers are shared with
+#                run_dbsat.sh: lib_java.sh and lib_assess.sh, sourced from
+#                the directory of this script.
 #              - Exit codes: 0 done, 1 error, 2 no applicable or selected
 #                benchmark, 3 assessed but platform mismatch (no valid result),
 #                4 no CIS-CAT zip, 5 no Java 21, 111 invalid profile,
@@ -51,14 +54,20 @@
 set -euo pipefail
 
 readonly SCRIPT_NAME="${0##*/}"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly LIB_DIR
+# shellcheck source=config/common/scripts/lib_java.sh
+source "${LIB_DIR}/lib_java.sh"
+# shellcheck source=config/common/scripts/lib_assess.sh
+source "${LIB_DIR}/lib_assess.sh"
 readonly COMMON_DIR="${COMMON_SCRIPTS_DIR:-/opt/oracle/common/scripts}"
 readonly PRO_URL="https://www.cisecurity.org/cybersecurity-tools/cis-cat-pro"
 readonly LITE_URL="https://learn.cisecurity.org/cis-cat-lite"
-readonly MIN_JAVA=21
+readonly MIN_JAVA="${CISCAT_MIN_JAVA}"
 # root-owned JRE only - keep in sync with default_target (--owner root) in
 # scripts/provide_jre.sh
 readonly JRE_CANDIDATES="/root/.cache/jre21"
-# keep in sync with CISCAT_GLOB in scripts/apply_usecase.sh and check_requirements.sh
+# keep in sync with CISCAT_GLOB in scripts/lib_usecase.sh
 readonly ZIP_GLOB="*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip"
 readonly FORMATS="html json csv txt"
 ZIP_DIR="/opt/oracle/data/ciscat"
@@ -147,12 +156,10 @@ cleanup() {
 # Purpose....: Explain how to provide CIS-CAT, exit 4
 # ------------------------------------------------------------------------------
 missing_ciscat() {
-    local dangling="" f
-    for f in "${ZIP_DIR}"/${ZIP_GLOB}; do
-        if [[ -L "${f}" && ! -e "${f}" ]]; then
-            dangling="${dangling} ${f##*/}"
-        fi
-    done
+    local dangling="" name
+    while IFS= read -r name; do
+        dangling="${dangling} ${name}"
+    done < <(dangling_links "${ZIP_DIR}" "${ZIP_GLOB}")
     cat >&2 << EOF
 ERROR: no readable CIS-CAT zip (${ZIP_GLOB}) in ${ZIP_DIR}
        CIS-CAT is not part of this repository (CIS license terms).
@@ -170,72 +177,19 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
-# Function...: java_major
-# Purpose....: Print the Java major version of $1/bin/java, empty if it fails
-# Notes......: keep in sync with java_major in scripts/provide_jre.sh
-# ------------------------------------------------------------------------------
-java_major() {
-    local out line ver
-    out="$("$1/bin/java" -version 2>&1)" || true
-    line="${out%%$'\n'*}"
-    case "${line}" in
-        *version*\"*\"*) ;;
-        *) return 0 ;;
-    esac
-    ver="${line#*\"}"
-    ver="${ver%%\"*}"
-    ver="${ver#1.}"
-    ver="${ver%%[.+-]*}"
-    case "${ver}" in
-        '' | *[!0-9]*) return 0 ;;
-    esac
-    echo "${ver}"
-}
-
-# ------------------------------------------------------------------------------
-# Function...: untrusted_file
-# Purpose....: Print the first entry below $1 (incl. $1) that is not owned by
-#              root or is world-writable (symlinks aside), empty if none
-# ------------------------------------------------------------------------------
-untrusted_file() {
-    find "$1" \( ! -user root -o \( ! -type l -perm -0002 \) \) -print -quit 2> /dev/null || true
-}
-
-# ------------------------------------------------------------------------------
-# Function...: resolve_java
-# Purpose....: Set JAVA_BIN to the first root-owned candidate with Java 21+,
+# Function...: find_java
+# Purpose....: Set JAVA_BIN to the first root-owned candidate with Java 21+
+#              (resolve_java -r of lib_java.sh reports every rejected one),
 #              else exit 5
 # ------------------------------------------------------------------------------
-resolve_java() {
-    local candidates=() dir major bad
-    if [[ -n "${JAVA_DIR}" ]]; then
-        candidates=("${JAVA_DIR}")
-    else
-        # shellcheck disable=SC2206 # fixed list without whitespace in paths
-        candidates=(${JAVA_HOME:-} ${JRE_CANDIDATES})
+find_java() {
+    if resolve_java -r "${MIN_JAVA}" "${JAVA_DIR}" "${JRE_CANDIDATES}"; then
+        JAVA_BIN="${JAVA_FOUND_DIR}/bin/java"
+        echo "INFO: Java ${JAVA_FOUND_MAJOR} in ${JAVA_FOUND_DIR}"
+        return 0
     fi
-    for dir in "${candidates[@]}"; do
-        if [[ ! -x "${dir}/bin/java" ]]; then
-            echo "INFO: no java in ${dir} - skipped"
-            continue
-        fi
-        # root runs this java: a JRE that oracle (or anyone) can change is refused
-        bad="$(untrusted_file "${dir}/")"
-        if [[ -n "${bad}" ]]; then
-            echo "WARN: JRE ${dir} refused - ${bad} has owner $(stat -c %U -- "${bad}"), mode" \
-                "$(stat -c %a -- "${bad}") (not root or world-writable); root must not run code another user can change"
-            continue
-        fi
-        major="$(java_major "${dir}")"
-        if [[ -n "${major}" && ${major} -ge ${MIN_JAVA} ]]; then
-            JAVA_BIN="${dir}/bin/java"
-            echo "INFO: Java ${major} in ${dir}"
-            return 0
-        fi
-        echo "INFO: Java ${major:-unknown} in ${dir} is older than ${MIN_JAVA} - skipped"
-    done
     cat >&2 << EOF
-ERROR: CIS-CAT needs a root-owned Java ${MIN_JAVA}+ - none usable in: ${candidates[*]}
+ERROR: CIS-CAT needs a root-owned Java ${MIN_JAVA}+ - none usable in: ${JAVA_CANDIDATES}
        The image JDK (\$ORACLE_HOME/jdk, Java 11) is too old, the bundled JRE of
        the zip is for Windows, a JRE owned by oracle is refused (run as root).
        Provide a root-owned JRE 21 from the host, then run again:
@@ -279,12 +233,8 @@ validate_work_dir() {
 # Purpose....: Print the newest readable CIS-CAT zip in ZIP_DIR, exit 4 if none
 # ------------------------------------------------------------------------------
 find_zip() {
-    local zip="" f
-    for f in "${ZIP_DIR}"/${ZIP_GLOB}; do
-        if [[ -f "${f}" && -r "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
-            zip="${f}"
-        fi
-    done
+    local zip
+    zip="$(newest_zip "${ZIP_DIR}" "${ZIP_GLOB}")"
     if [[ -z "${zip}" ]]; then
         missing_ciscat
     fi
@@ -959,16 +909,10 @@ run_assessment() {
 
     # The assessor needs no secret from the environment (the DB password is in
     # the cfg file); drop secret-like variables so no OS check or log records
-    # them - same rule as run_dbsat.sh scrub_env
-    local v scrub=()
-    for v in $(compgen -e); do
-        case "${v}" in
-            PWD | OLDPWD) ;;
-            *PWD* | *PASSW* | *SECRET* | *TOKEN*) scrub+=(-u "${v}") ;;
-        esac
-    done
-    echo "INFO: assessing $(bench_name "${bench}") (full output: ${OUT_DIR}/${prefix}.log, $((${#scrub[@]} / 2)) secret-like variable(s) removed from its environment)"
-    (cd "${ASSESSOR}" && env "${scrub[@]}" "${JAVA_BIN}" "-Xmx${XMX}" -jar "${ASSESSOR}/Assessor-CLI.jar" -cfg "${cfg}") \
+    # them - scrub_env of lib_assess.sh, same rule as run_dbsat.sh
+    scrub_env
+    echo "INFO: assessing $(bench_name "${bench}") (full output: ${OUT_DIR}/${prefix}.log, $((${#SCRUB_ENV[@]} / 2)) secret-like variable(s) removed from its environment)"
+    (cd "${ASSESSOR}" && env "${SCRUB_ENV[@]}" "${JAVA_BIN}" "-Xmx${XMX}" -jar "${ASSESSOR}/Assessor-CLI.jar" -cfg "${cfg}") \
         > "${raw}" 2>&1 || rc=$?
     rm -f -- "${cfg}"
     local log="${OUT_DIR}/${prefix}.log"
@@ -1087,7 +1031,7 @@ main() {
     local zip
     zip="$(find_zip)"
     echo "INFO: CIS-CAT archive ${zip}"
-    resolve_java
+    find_java
     if ! command -v unzip > /dev/null 2>&1; then
         echo "ERROR: unzip not found - cannot extract CIS-CAT" >&2
         exit 1

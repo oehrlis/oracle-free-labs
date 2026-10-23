@@ -66,7 +66,8 @@ export DB_IMAGE
 REGISTRY           ?= ghcr.io/oehrlis
 DOCKER_BUILD_ARGS  ?=
 # Java runtime copied into DB containers for DBSAT report/discover (Java 17+)
-# keep in sync with scripts/provide_jre.sh and scripts/check_requirements.sh
+# and CIS-CAT (Java 21) - keep in sync with ASSESS_JRE_IMAGE_DEFAULT in
+# scripts/lib_usecase.sh
 ASSESS_JRE_IMAGE   ?= eclipse-temurin:21-jre
 export ASSESS_JRE_IMAGE
 

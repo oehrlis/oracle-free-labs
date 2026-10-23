@@ -14,6 +14,32 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ORACLE_PWD` shared by all services. `seclab_set_admin_pwd.sh` applies it to an
   existing database; runbook section Rotate Passwords.
 
+### Changed
+
+- DBSAT and CIS-CAT share their helpers instead of keeping copies: `scripts/lib_usecase.sh`
+  on the host (`newest_zip`, `dangling_links`, `warn_dangling`, `provide_zip`, `copy_back`, `env_fallback`,
+  `env_from_file` and the defaults `DBSAT_MIN_JAVA`, `CISCAT_MIN_JAVA`,
+  `ASSESS_JRE_IMAGE_DEFAULT`, the zip globs), sourced by `apply_usecase.sh`,
+  `check_requirements.sh` and `provide_jre.sh`; `config/common/scripts/lib_java.sh`
+  (`java_major`, `resolve_java`, `untrusted_file`, minimum Java versions) and
+  `lib_assess.sh` (`newest_zip`, `dangling_links`, `scrub_env`) in the container, sourced
+  by `run_dbsat.sh` and `run_ciscat.sh` from their own directory. Output unchanged for
+  seclab (dry runs of `dbsat`, `dbsat-discover`, `ciscat`, `ciscat-list` identical); on a
+  plain container the DBSAT dry run now shows the `docker cp -L` it always used.
+- `run_dbsat.sh` and the host zip lookup treat an unreadable zip as missing (exit 4),
+  like `run_ciscat.sh`, instead of failing later in unzip or `docker cp`.
+- A dangling symlink among the zips is named instead of skipped silently:
+  `apply_usecase.sh` (WARN), `make check` for the DBSAT zip (WARN, CIS-CAT did it already),
+  `run_dbsat.sh` in the exit 4 message (like `run_ciscat.sh`).
+
+### Fixed
+
+- `apply_usecase.sh dbsat|dbsat-discover`: a symlinked DBSAT zip in a bind-mounted
+  `config/common/data` dangles inside the container, `run_dbsat.sh` stopped with exit 4.
+  The zip is now used through the bind mount only if it is readable there, otherwise it
+  is copied with `docker cp -L` to `/tmp/dbsat-zip` (reported as WARN), the way CIS-CAT
+  always gets its zip.
+
 ## [1.5.0] - 2026-10-20
 
 ### Added

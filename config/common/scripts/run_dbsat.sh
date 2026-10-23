@@ -5,15 +5,16 @@
 # Name.......: run_dbsat.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.20
-# Revision...: v1.2.0
+# Date.......: 2026.10.23
+# Revision...: v1.3.0
 # Purpose....: Run the Oracle Database Security Assessment Tool (DBSAT)
 #              collector, reporter and sensitive data discovery inside a
 #              lab container.
 # Notes......: - DBSAT is NOT shipped with this repository (Oracle license).
 #                Place the downloaded dbsat*.zip in config/common/data/dbsat/
 #                on the host (= /opt/oracle/data/dbsat in the container).
-#                Without it the script stops with exit 4 and says what to do.
+#                Without it the script stops with exit 4 and says what to do
+#                (a dangling symlink there is named).
 #              - -m selects the steps: collect, report, discover or all,
 #                comma separated. Default collect,report (as before v1.2.0).
 #              - Collects as a dedicated account (create_dbsat_user.sql), not
@@ -52,6 +53,9 @@
 #                dbsat_<pdb>_discover.{html,csv,json} plus
 #                dbsat_<pdb>_discoverer.log (discover). Old files of the
 #                same name are removed first and the removal is reported.
+#              - Java, zip and environment helpers are shared with
+#                run_ciscat.sh: lib_java.sh and lib_assess.sh, sourced from
+#                the directory of this script.
 #              - Exit codes: 0 all selected steps done, 1 error, 4 no DBSAT
 #                zip, 5 no Java 17+ for report/discover (a selected
 #                collection is done).
@@ -68,10 +72,17 @@ if [[ $- == *x* ]]; then
 fi
 
 readonly SCRIPT_NAME="${0##*/}"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly LIB_DIR
+# shellcheck source=config/common/scripts/lib_java.sh
+source "${LIB_DIR}/lib_java.sh"
+# shellcheck source=config/common/scripts/lib_assess.sh
+source "${LIB_DIR}/lib_assess.sh"
 readonly COMMON_DIR="${COMMON_SCRIPTS_DIR:-/opt/oracle/common/scripts}"
 readonly DBSAT_URL="https://www.oracle.com/database/technologies/security/dbsat.html"
-# keep in sync with MIN_JAVA in scripts/provide_jre.sh
-readonly MIN_JAVA=17
+readonly MIN_JAVA="${DBSAT_MIN_JAVA}"
+# keep in sync with DBSAT_GLOB in scripts/lib_usecase.sh
+readonly ZIP_GLOB="dbsat*.zip"
 # keep in sync with default_target in scripts/provide_jre.sh
 readonly JRE_CANDIDATES="/opt/oracle/oradata/tools/jre21 /tmp/jre21"
 # seconds to wait for each discover prompt (username, password)
@@ -158,13 +169,19 @@ EOF
 # Purpose....: Explain how to provide DBSAT, exit 4
 # ------------------------------------------------------------------------------
 missing_dbsat() {
+    local dangling
+    dangling="$(dangling_links "${ZIP_DIR}" "${ZIP_GLOB}" | tr '\n' ' ')"
     cat >&2 << EOF
-ERROR: no dbsat*.zip found in ${ZIP_DIR}
+ERROR: no readable ${ZIP_GLOB} found in ${ZIP_DIR}
        DBSAT is not part of this repository (Oracle license terms).
        1. Download DBSAT (Oracle account required): ${DBSAT_URL}
        2. Copy the zip on the host to: config/common/data/dbsat/
        3. Run again: make dbsat-seclab
 EOF
+    if [[ -n "${dangling}" ]]; then
+        echo "       Dangling symlink(s) in ${ZIP_DIR}: ${dangling% } - a host symlink is not visible" >&2
+        echo "       through a bind mount; make dbsat CONTAINER=<name> copies the zip with docker cp -L." >&2
+    fi
     exit 4
 }
 
@@ -219,82 +236,22 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
-# Function...: java_major
-# Purpose....: Print the Java major version of $1/bin/java, empty if it fails
-# Notes......: keep in sync with java_major in scripts/provide_jre.sh
-# ------------------------------------------------------------------------------
-java_major() {
-    local out line ver
-    out="$("$1/bin/java" -version 2>&1)" || true
-    line="${out%%$'\n'*}"
-    case "${line}" in
-        *version*\"*\"*) ;;
-        *) return 0 ;;
-    esac
-    ver="${line#*\"}"
-    ver="${ver%%\"*}"
-    ver="${ver#1.}"
-    ver="${ver%%[.+-]*}"
-    case "${ver}" in
-        '' | *[!0-9]*) return 0 ;;
-    esac
-    echo "${ver}"
-}
-
-# ------------------------------------------------------------------------------
-# Function...: resolve_java
+# Function...: find_java
 # Purpose....: Export JAVA_HOME as the first candidate with Java 17+ and set
-#              JAVA_OK; every rejected candidate is reported
+#              JAVA_OK (resolve_java of lib_java.sh reports every rejected
+#              candidate)
 # ------------------------------------------------------------------------------
-resolve_java() {
-    local candidates=() dir major
-    if [[ -n "${JAVA_DIR}" ]]; then
-        candidates=("${JAVA_DIR}")
-    else
-        # shellcheck disable=SC2206 # fixed list without whitespace in paths
-        candidates=(${JAVA_HOME:-} ${JRE_CANDIDATES})
+find_java() {
+    if resolve_java "${MIN_JAVA}" "${JAVA_DIR}" "${JRE_CANDIDATES}"; then
+        export JAVA_HOME="${JAVA_FOUND_DIR}"
+        JAVA_OK=true
+        JAVA_MAJOR="${JAVA_FOUND_MAJOR}"
+        echo "INFO: Java ${JAVA_MAJOR} in ${JAVA_HOME} - JAVA_HOME for dbsat report/discover"
+        return 0
     fi
-    for dir in "${candidates[@]}"; do
-        if [[ ! -x "${dir}/bin/java" ]]; then
-            echo "INFO: no java in ${dir} - skipped"
-            continue
-        fi
-        major="$(java_major "${dir}")"
-        if [[ -n "${major}" && ${major} -ge ${MIN_JAVA} ]]; then
-            export JAVA_HOME="${dir}"
-            JAVA_OK=true
-            JAVA_MAJOR="${major}"
-            echo "INFO: Java ${major} in ${dir} - JAVA_HOME for dbsat report/discover"
-            return 0
-        fi
-        echo "INFO: Java ${major:-unknown} in ${dir} is older than ${MIN_JAVA} - skipped"
-    done
     if [[ -n "$(java_steps)" ]]; then
         echo "WARN: no Java ${MIN_JAVA}+ found in $(java_search_list) - dbsat $(java_steps) cannot run (exit 5)"
     fi
-}
-
-# ------------------------------------------------------------------------------
-# Function...: scrub_env
-# Purpose....: Fill SCRUB_ENV with env -u options for every secret-like
-#              variable. dbsat collect writes its process environment into
-#              the collection JSON - ORACLE_PWD and the SECLAB_*_PWD values
-#              would land there in clear text. The collector password goes
-#              in on stdin, so DBSAT needs none of them.
-# ------------------------------------------------------------------------------
-scrub_env() {
-    local v names=""
-    SCRUB_ENV=()
-    for v in $(compgen -e); do
-        case "${v}" in
-            PWD | OLDPWD) ;;
-            *PWD* | *PASSW* | *SECRET* | *TOKEN*)
-                SCRUB_ENV+=(-u "${v}")
-                names+=" ${v}"
-                ;;
-        esac
-    done
-    echo "INFO: DBSAT runs without the secret-like variable(s):${names:- none}"
 }
 
 # ------------------------------------------------------------------------------
@@ -303,7 +260,7 @@ scrub_env() {
 # ------------------------------------------------------------------------------
 check_prereqs() {
     echo "INFO: python3: $(command -v python3 || echo none) - only DBSAT releases before 4.x report with it"
-    resolve_java
+    find_java
     if command -v zip > /dev/null 2>&1; then
         echo "INFO: zip present - still using -n for a scriptable, unencrypted run"
     else
@@ -752,12 +709,8 @@ parse_args() {
 main() {
     parse_args "$@"
 
-    local zip="" f steps=""
-    for f in "${ZIP_DIR}"/dbsat*.zip; do
-        if [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
-            zip="${f}"
-        fi
-    done
+    local zip steps=""
+    zip="$(newest_zip "${ZIP_DIR}" "${ZIP_GLOB}")"
     if [[ -z "${zip}" ]]; then
         missing_dbsat
     fi
@@ -816,8 +769,11 @@ main() {
         fi
     fi
 
+    # dbsat collect writes its process environment into the collection JSON;
+    # the collector password goes in on stdin, so DBSAT needs no secret
     local rc=0
     scrub_env
+    echo "INFO: DBSAT runs without the secret-like variable(s):${SCRUB_NAMES:- none}"
     if [[ "${DO_COLLECT}" == true ]]; then
         remove_old "${OUT_DIR}/${name}.json"
         echo "INFO: dbsat collect ${DBSAT_USER}@//localhost:1521/${SERVICE}"

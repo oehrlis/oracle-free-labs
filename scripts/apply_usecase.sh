@@ -5,8 +5,8 @@
 # Name.......: apply_usecase.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.20
-# Revision...: v1.2.0
+# Date.......: 2026.10.23
+# Revision...: v1.3.0
 # Purpose....: Apply a lab use case to ANY running Oracle Database Free
 #              container - also one started directly from the Oracle image,
 #              without this repository's compose file or build.
@@ -26,6 +26,8 @@
 #              - ciscat copies the zip to a root-owned dir, provides a
 #                root-owned JRE 21 (provide_jre.sh --owner root) and runs
 #                run_ciscat.sh as root (docker exec -u 0), see doc/ciscat-runbook.md.
+#              - Zip, copy-back, password fallback and the defaults are shared
+#                with check_requirements.sh in lib_usecase.sh.
 # Usage......: scripts/apply_usecase.sh [options] USECASE CONTAINER [-- ARGS]
 # Reference..: doc/seclab-runbook.md
 # License....: Apache License Version 2.0, January 2004 as shown
@@ -37,14 +39,12 @@ readonly SCRIPT_NAME="${0##*/}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 readonly SCRIPT_DIR
 readonly REPO_ROOT="${SCRIPT_DIR%/*}"
-# shellcheck source=scripts/lib_dotenv.sh
-source "${SCRIPT_DIR}/lib_dotenv.sh"
+# shellcheck source=scripts/lib_usecase.sh
+source "${SCRIPT_DIR}/lib_usecase.sh"
 readonly TARGET_DIR="/opt/oracle/common/scripts"
 readonly DBSAT_HOST_DIR="${REPO_ROOT}/config/common/data/dbsat"
 readonly DBSAT_URL="https://www.oracle.com/database/technologies/security/dbsat.html"
 readonly CISCAT_HOST_DIR="${REPO_ROOT}/config/common/data/ciscat"
-# keep in sync with ZIP_GLOB in config/common/scripts/run_ciscat.sh
-readonly CISCAT_GLOB="*[Cc][Ii][Ss]*[Cc][Aa][Tt]*.zip"
 
 PDB=""
 ENV_FILE="${REPO_ROOT}/.env"
@@ -71,7 +71,7 @@ Use cases:
            data/dbsat/<container>/ on the host. Needs the DBSAT zip in
            config/common/data/dbsat/ and DBSAT_PWD (falls back to SECLAB_DBSAT_PWD).
            Copies a JRE 21 from the image ASSESS_JRE_IMAGE (default
-           eclipse-temurin:21-jre) into the container for the report
+           ${ASSESS_JRE_IMAGE_DEFAULT}) into the container for the report
   dbsat-discover
            DBSAT sensitive data discovery (run_dbsat.sh -m discover), same
            prerequisites as dbsat, results copied to data/dbsat/<container>/.
@@ -110,21 +110,6 @@ Example (plain Oracle image):
   # or: make ciscat CONTAINER=free26ai CISCAT_BENCHMARK=ubuntu CISCAT_IGNORE_PLATFORM=1
 EOF
     exit "${1:-0}"
-}
-
-# ------------------------------------------------------------------------------
-# Function...: env_from_file
-# Purpose....: Export variable $1 from ENV_FILE if it is not set already
-# ------------------------------------------------------------------------------
-env_from_file() {
-    local name="$1" value
-    if [[ -n "${!name:-}" ]]; then
-        return 0
-    fi
-    value="$(dotenv_value "${name}" "${ENV_FILE}")"
-    if [[ -n "${value}" ]]; then
-        export "${name}=${value}"
-    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -263,48 +248,33 @@ check_dbsat_args() {
 #              $2 = use case: dbsat (collect + report) or dbsat-discover
 # ------------------------------------------------------------------------------
 run_dbsat_usecase() {
-    local container="$1" usecase="$2" zip="" f zip_dir mounts mode_args=()
+    local container="$1" usecase="$2" zip zip_dir mode_args=()
     if [[ "${usecase}" == dbsat-discover ]]; then
         mode_args=(-m discover)
     fi
-    for f in "${DBSAT_HOST_DIR}"/dbsat*.zip; do
-        if [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
-            zip="${f}"
-        fi
-    done
+    warn_dangling "${DBSAT_HOST_DIR}" "${DBSAT_GLOB}"
+    zip="$(newest_zip "${DBSAT_HOST_DIR}" "${DBSAT_GLOB}")"
     if [[ -z "${zip}" ]]; then
-        echo "ERROR: no dbsat*.zip in ${DBSAT_HOST_DIR}" >&2
+        echo "ERROR: no ${DBSAT_GLOB} in ${DBSAT_HOST_DIR}" >&2
         echo "ERROR: DBSAT is not part of this repository (Oracle license terms)." >&2
         echo "ERROR: download it from ${DBSAT_URL}, copy the zip there and run again." >&2
         return 4
     fi
     echo "INFO: DBSAT archive ${zip}"
 
-    mounts="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{end}}' "${container}")"
-    case " ${mounts} " in
-        *" /opt/oracle/data "*)
-            zip_dir="/opt/oracle/data/dbsat"
-            echo "INFO: using the bind-mounted ${zip_dir} of ${container}"
-            ;;
-        *)
-            zip_dir="/tmp/dbsat-zip"
-            if [[ "${DRY_RUN}" == true ]]; then
-                echo "DRY-RUN: docker cp ${zip} -> ${container}:${zip_dir}/"
-            else
-                docker exec "${container}" bash -c 'rm -rf "$1" && mkdir -p "$1"' _ "${zip_dir}"
-                docker cp -L "${zip}" "${container}:${zip_dir}/"
-                echo "INFO: copied ${zip##*/} to ${container}:${zip_dir}/ (previous copy removed)"
-            fi
-            ;;
-    esac
+    # the bind-mounted config/common/data (lab services) if the zip is readable
+    # there, else a copy in /tmp/dbsat-zip (also for a host symlink, which
+    # dangles through the bind mount)
+    provide_zip "${container}" "${zip}" /tmp/dbsat-zip oracle /opt/oracle/data/dbsat
+    zip_dir="${ZIP_DIR_IN_CONTAINER}"
 
     # provide_jre.sh picks the target (persistent tools path on a bind-mounted
     # oradata, else /tmp), run_dbsat.sh finds it there without -j
-    local jre_args=() rc=0
+    local jre_args=(--min-java "${DBSAT_MIN_JAVA}") rc=0
     if [[ "${DRY_RUN}" == true ]]; then
-        jre_args=(--dry-run)
+        jre_args+=(--dry-run)
     fi
-    "${SCRIPT_DIR}/provide_jre.sh" "${jre_args[@]+"${jre_args[@]}"}" "${container}" \
+    "${SCRIPT_DIR}/provide_jre.sh" "${jre_args[@]}" "${container}" \
         || echo "WARN: no JRE 21 in ${container} (provide_jre.sh exit $?) - report/discover will stop with exit 5"
 
     local out_dir="/opt/oracle/oradata/dbsat" host_out="${REPO_ROOT}/data/dbsat/${container}"
@@ -317,7 +287,7 @@ run_dbsat_usecase() {
     fi
     if [[ "${DRY_RUN}" == true ]]; then
         echo "DRY-RUN: docker exec ${env_args[*]} ${container} ${TARGET_DIR}/run_dbsat.sh ${run_args[*]}"
-        echo "DRY-RUN: docker cp ${container}:${out_dir}/. ${host_out}/"
+        copy_back "${container}" "${out_dir}" "${host_out}" ""
         return 0
     fi
     docker exec "${env_args[@]}" "${container}" "${TARGET_DIR}/run_dbsat.sh" "${run_args[@]}" || rc=$?
@@ -325,15 +295,12 @@ run_dbsat_usecase() {
         echo "ERROR: DBSAT run in ${container} failed (exit ${rc})" >&2
         return "${rc}"
     fi
-    mkdir -p "${host_out}"
-    docker cp "${container}:${out_dir}/." "${host_out}/"
     if [[ ${rc} -eq 5 ]]; then
-        echo "ERROR: no Java 17+ in ${container} for report/discover (exit 5) - copied what exists to ${host_out}/" >&2
-        ls -l "${host_out}"
+        copy_back "${container}" "${out_dir}" "${host_out}" \
+            "ERROR: no Java ${DBSAT_MIN_JAVA}+ in ${container} for report/discover (exit 5) - copied what exists to ${host_out}/"
         return 5
     fi
-    echo "INFO: DBSAT results copied to ${host_out}/"
-    ls -l "${host_out}"
+    copy_back "${container}" "${out_dir}" "${host_out}" "INFO: DBSAT results copied to ${host_out}/"
 }
 
 # ------------------------------------------------------------------------------
@@ -343,12 +310,9 @@ run_dbsat_usecase() {
 #              list edition and benchmarks (ciscat-list)
 # ------------------------------------------------------------------------------
 run_ciscat_usecase() {
-    local mode="$1" container="$2" zip="" f zip_dir rc=0
-    for f in "${CISCAT_HOST_DIR}"/${CISCAT_GLOB}; do
-        if [[ -f "${f}" && "${f}" -nt "${zip:-/nonexistent}" ]]; then
-            zip="${f}"
-        fi
-    done
+    local mode="$1" container="$2" zip zip_dir rc=0
+    warn_dangling "${CISCAT_HOST_DIR}" "${CISCAT_GLOB}"
+    zip="$(newest_zip "${CISCAT_HOST_DIR}" "${CISCAT_GLOB}")"
     if [[ -z "${zip}" ]]; then
         echo "ERROR: no CIS-CAT zip (${CISCAT_GLOB}) in ${CISCAT_HOST_DIR}" >&2
         echo "ERROR: CIS-CAT is not part of this repository (CIS license terms). Download it:" >&2
@@ -366,25 +330,18 @@ run_ciscat_usecase() {
     fi
 
     # run_ciscat.sh runs the zip content as root: always a fresh copy in a
-    # root-owned 700 dir, never a bind-mounted file the container side may
-    # change (docker cp -L also resolves a host symlink, keeps the mtime)
-    zip_dir="/root/.cache/ciscat-zip"
-    if [[ "${DRY_RUN}" == true ]]; then
-        echo "DRY-RUN: docker cp -L ${zip} -> ${container}:${zip_dir}/ (root, mode 700)"
-    else
-        docker exec -u root "${container}" bash -c 'umask 077 && rm -rf -- "$1" && mkdir -p -- "$1"' _ "${zip_dir}"
-        docker cp -L "${zip}" "${container}:${zip_dir}/"
-        docker exec -u root "${container}" bash -c 'chown -R root:root -- "$1" && chmod 600 -- "$1"/*' _ "${zip_dir}"
-        echo "INFO: copied ${zip##*/} to ${container}:${zip_dir}/ (root, mode 700, previous copy removed)"
-    fi
+    # root-owned 700 dir (no MOUNT_DIR), never a bind-mounted file the
+    # container side may change
+    provide_zip "${container}" "${zip}" /root/.cache/ciscat-zip root
+    zip_dir="${ZIP_DIR_IN_CONTAINER}"
 
-    local jre_args=(--owner root --min-java 21)
+    local jre_args=(--owner root --min-java "${CISCAT_MIN_JAVA}")
     if [[ "${DRY_RUN}" == true ]]; then
         jre_args+=(--dry-run)
     fi
     "${SCRIPT_DIR}/provide_jre.sh" "${jre_args[@]}" "${container}" || rc=$?
     if [[ ${rc} -ne 0 ]]; then
-        echo "ERROR: no root-owned JRE 21 in ${container} (provide_jre.sh exit ${rc}) - CIS-CAT cannot run (exit 5)" >&2
+        echo "ERROR: no root-owned JRE ${CISCAT_MIN_JAVA} in ${container} (provide_jre.sh exit ${rc}) - CIS-CAT cannot run (exit 5)" >&2
         return 5
     fi
 
@@ -397,16 +354,7 @@ run_ciscat_usecase() {
     done
     # the DB password only for an assessment, never for the listing
     if [[ "${mode}" == ciscat ]]; then
-        env_from_file CISCAT_PWD
-        for var in DBSAT_PWD SECLAB_DBSAT_PWD; do
-            if [[ -z "${CISCAT_PWD:-}" ]]; then
-                env_from_file "${var}"
-                if [[ -n "${!var:-}" ]]; then
-                    export CISCAT_PWD="${!var}"
-                    echo "INFO: CISCAT_PWD not set - using ${var} (DB mode only)"
-                fi
-            fi
-        done
+        env_fallback -n "DB mode only" CISCAT_PWD DBSAT_PWD SECLAB_DBSAT_PWD
         if [[ -n "${CISCAT_PWD:-}" ]]; then
             env_args+=(-e CISCAT_PWD)
         fi
@@ -420,7 +368,7 @@ run_ciscat_usecase() {
     local out_dir="/opt/oracle/oradata/ciscat" host_out="${REPO_ROOT}/data/ciscat/${container}"
     if [[ "${DRY_RUN}" == true ]]; then
         echo "DRY-RUN: docker exec -u 0 ${env_args[*]+"${env_args[*]}"} ${container} ${TARGET_DIR}/run_ciscat.sh ${run_args[*]} -o ${out_dir}"
-        echo "DRY-RUN: docker cp ${container}:${out_dir}/. ${host_out}/"
+        copy_back "${container}" "${out_dir}" "${host_out}" ""
         return 0
     fi
     rc=0
@@ -433,15 +381,7 @@ run_ciscat_usecase() {
         echo "ERROR: CIS-CAT run in ${container} failed (exit ${rc})" >&2
         return "${rc}"
     fi
-    mkdir -p "${host_out}"
-    docker cp "${container}:${out_dir}/." "${host_out}/"
-    for f in "${host_out}"/*; do
-        if [[ -f "${f}" && ! -r "${f}" ]]; then
-            echo "WARN: ${f} is not readable on the host" >&2
-        fi
-    done
-    echo "INFO: CIS-CAT reports copied to ${host_out}/"
-    ls -l "${host_out}"
+    copy_back "${container}" "${out_dir}" "${host_out}" "INFO: CIS-CAT reports copied to ${host_out}/"
     if [[ ${rc} -eq 3 ]]; then
         echo "WARN: platform mismatch - the report holds no valid compliance result (exit 3)" >&2
     fi
@@ -490,14 +430,7 @@ main() {
         dbsat | dbsat-discover)
             entry="${TARGET_DIR}/run_dbsat.sh"
             vars="DBSAT_PWD"
-            env_from_file DBSAT_PWD
-            if [[ -z "${DBSAT_PWD:-}" ]]; then
-                env_from_file SECLAB_DBSAT_PWD
-                if [[ -n "${SECLAB_DBSAT_PWD:-}" ]]; then
-                    export DBSAT_PWD="${SECLAB_DBSAT_PWD}"
-                    echo "INFO: DBSAT_PWD not set - using SECLAB_DBSAT_PWD"
-                fi
-            fi
+            env_fallback DBSAT_PWD SECLAB_DBSAT_PWD
             ;;
         ciscat | ciscat-list)
             entry="${TARGET_DIR}/run_ciscat.sh"
