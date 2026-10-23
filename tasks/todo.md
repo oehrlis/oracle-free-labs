@@ -68,7 +68,7 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
 
 ### Abschluss
 
-- [ ] Security: `apply_usecase.sh` kopiert `config/common/scripts` oracle-owned in den Container,
+- [x] Security: `apply_usecase.sh` kopiert `config/common/scripts` oracle-owned in den Container,
   `run_ciscat.sh` laeuft daraus als root und sourct `lib_java.sh`/`lib_assess.sh` - oracle kann
   Code aendern, den root ausfuehrt. Fuer ciscat root-owned kopieren oder `LIB_DIR` pruefen [P2]
 

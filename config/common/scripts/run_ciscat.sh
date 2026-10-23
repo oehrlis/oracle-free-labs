@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026.10.23
-# Revision...: v1.1.0
+# Revision...: v1.2.0
 # Purpose....: Run a CIS-CAT Assessor (Lite or Pro, one code path) locally
 #              inside an Oracle Database Free container.
 # Notes......: - CIS-CAT is NOT shipped with this repository (CIS license).
@@ -54,8 +54,49 @@
 set -euo pipefail
 
 readonly SCRIPT_NAME="${0##*/}"
-LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly LIB_DIR
+
+# ------------------------------------------------------------------------------
+# Function...: check_code_trust
+# Purpose....: As root, refuse to run (or source) code a non-root user can
+#              change: this script, its libraries and their directory must be
+#              root-owned without group/other write, or on a read-only mount.
+#              Runs before the libraries are sourced, so it is self-contained.
+# ------------------------------------------------------------------------------
+check_code_trust() {
+    local p mode bad="" paths=()
+    [[ ${EUID} -eq 0 ]] || return 0
+    # the code files plus every directory up to / - a writable ancestor lets
+    # a non-root user rename and replace the whole tree
+    paths=("${LIB_DIR}/${BASH_SOURCE[0]##*/}" "${LIB_DIR}/lib_java.sh" "${LIB_DIR}/lib_assess.sh")
+    p="${LIB_DIR}"
+    while [[ -n "${p}" ]]; do
+        paths+=("${p}")
+        p="${p%/*}"
+    done
+    paths+=("/")
+    for p in "${paths[@]}"; do
+        [[ -e "${p}" ]] || continue
+        if findmnt -no OPTIONS -T "${p}" 2> /dev/null | grep -Eq '(^|,)ro(,|$)'; then
+            continue
+        fi
+        mode="$(stat -L -c '%u %A' -- "${p}")"
+        # sticky directories (/tmp) are group/other writable by design; a
+        # root-owned entry in them cannot be renamed by others
+        if [[ "${mode%% *}" != 0 ]] || { [[ "${mode:7:1}" == w || "${mode:10:1}" == w ]] && [[ "${mode:11:1}" != t ]]; }; then
+            bad+=" ${p} ($(stat -L -c '%U:%G %a' -- "${p}"))"
+        fi
+    done
+    if [[ -n "${bad}" ]]; then
+        echo "ERROR: run_ciscat.sh runs as root but this code or a parent directory is writable by" >&2
+        echo "ERROR: non-root users:${bad}" >&2
+        echo "ERROR: run it through make ciscat / scripts/apply_usecase.sh ciscat (root-owned copy)" >&2
+        echo "ERROR: (a read-only mount counts as safe only if no parent directory is writable)" >&2
+        exit 1
+    fi
+}
+check_code_trust
 # shellcheck source=config/common/scripts/lib_java.sh
 source "${LIB_DIR}/lib_java.sh"
 # shellcheck source=config/common/scripts/lib_assess.sh
