@@ -7,6 +7,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-23
+
 ### Added
 
 - seclab: own SYS/SYSTEM/PDBADMIN password `SECLAB_ORACLE_PWD` (falls back to
