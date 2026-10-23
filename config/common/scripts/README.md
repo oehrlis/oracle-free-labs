@@ -123,6 +123,21 @@ config/common/scripts/
   fast with the benchmark list. DB mode (Pro) reuses `create_dbsat_user.sql` for
   `CISCAT_USER` - not verified. See `doc/ciscat-runbook.md`.
 
+### 🧰 Shared Helpers of DBSAT and CIS-CAT
+
+Sourced (not executed) by `run_dbsat.sh` and `run_ciscat.sh` from their own directory,
+so a copied script directory (`COMMON_SCRIPTS_DIR`) works as well.
+
+* **lib\_java.sh** - `DBSAT_MIN_JAVA` (17) and `CISCAT_MIN_JAVA` (21), `java_major`,
+  `resolve_java [-r] MIN DIR LIST` (first JRE with Java MIN+, every rejected candidate
+  reported; `-r` refuses a JRE with an entry not owned by root or world-writable) and
+  `untrusted_file`. The host keeps the same minimums in `scripts/lib_usecase.sh` and its
+  own `java_major` in `scripts/provide_jre.sh` (runs java via `docker exec`).
+* **lib\_assess.sh** - `newest_zip DIR GLOB` (newest readable zip, symlinks followed),
+  `dangling_links DIR GLOB` (named in the exit 4 message: a host symlink dangles through
+  a bind mount) and `scrub_env` (`env -u` options for every secret-like variable - the
+  tools run without them; `dbsat collect` records its environment).
+
 ### ⚠️ seclab - INTENTIONALLY INSECURE Scenarios
 
 Used by the `seclab` service and by `scripts/apply_usecase.sh seclab <container>`.

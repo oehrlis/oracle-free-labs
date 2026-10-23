@@ -5,8 +5,8 @@
 # Name.......: provide_jre.sh
 # Author.....: Stefan Oehrli (oes), stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
-# Date.......: 2026.10.19
-# Revision...: v1.1.0
+# Date.......: 2026.10.23
+# Revision...: v1.2.0
 # Purpose....: Provide a Java 17+ runtime (default image: Java 21) inside a
 #              running Oracle Database Free container for the assessment tools
 #              (DBSAT report/discover need Java 17+, CIS-CAT needs Java 21,
@@ -43,12 +43,15 @@
 set -euo pipefail
 
 readonly SCRIPT_NAME="${0##*/}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+readonly SCRIPT_DIR
+# defaults DBSAT_MIN_JAVA, ASSESS_JRE_IMAGE_DEFAULT (single host-side place)
+# shellcheck source=scripts/lib_usecase.sh
+source "${SCRIPT_DIR}/lib_usecase.sh"
 readonly JRE_SOURCE="/opt/java/openjdk"
-# default keeps in sync with MIN_JAVA in config/common/scripts/run_dbsat.sh,
-# CIS-CAT passes --min-java 21 (MIN_JAVA in run_ciscat.sh)
-MIN_JAVA=17
-# keep in sync with Makefile ASSESS_JRE_IMAGE and scripts/check_requirements.sh
-JRE_IMAGE="${ASSESS_JRE_IMAGE:-eclipse-temurin:21-jre}"
+# default: DBSAT; CIS-CAT passes --min-java CISCAT_MIN_JAVA (apply_usecase.sh)
+MIN_JAVA="${DBSAT_MIN_JAVA}"
+JRE_IMAGE="${ASSESS_JRE_IMAGE:-${ASSESS_JRE_IMAGE_DEFAULT}}"
 DRY_RUN=false
 FORCE=false
 OWNER=oracle
@@ -76,7 +79,7 @@ into a running Oracle container.
 
 Options:
   -i, --image IMAGE      JRE image (default: ${JRE_IMAGE}, env ASSESS_JRE_IMAGE)
-  -m, --min-java N       Minimum Java major version (default: ${MIN_JAVA}, CIS-CAT: 21)
+  -m, --min-java N       Minimum Java major version (default: ${MIN_JAVA}, CIS-CAT: ${CISCAT_MIN_JAVA})
   -o, --owner USER       oracle (default) or root - root-owned copy for tools that
                          run java as root (CIS-CAT), never in a bind mount
   -f, --force            Replace an existing JRE even if it works
@@ -103,7 +106,8 @@ cleanup() {
 # Function...: java_major
 # Purpose....: Print the Java major version of TARGET_DIR/bin/java in the
 #              container, empty if it does not run
-# Notes......: keep in sync with java_major in config/common/scripts/run_dbsat.sh
+# Notes......: keep in sync with java_major in config/common/scripts/lib_java.sh
+#              (that one runs java directly, this one via docker exec)
 # ------------------------------------------------------------------------------
 java_major() {
     local container="$1" dir="$2" out line ver

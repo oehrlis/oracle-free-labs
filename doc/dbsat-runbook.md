@@ -94,7 +94,11 @@ What happens:
    exit 4 with the download link.
 2. `config/common/scripts` and the zip are copied into the container unless they
    are bind-mounted (lab services). A previous copy is replaced and reported.
-   A symlinked zip is followed.
+   A symlinked zip is followed: if it is not readable through the bind mount
+   (a host symlink dangles there), a WARN says so and the zip is copied with
+   `docker cp -L` to `/tmp/dbsat-zip` instead. This applies to `make dbsat
+   CONTAINER=...`; `make dbsat-seclab` runs `run_dbsat.sh` directly and needs a
+   real file - for a symlinked zip use `make dbsat CONTAINER=seclab`.
 3. A JRE 21 is provided with `provide_jre.sh` (see above). If that fails, the
    run continues with a WARN naming the exit code: the collection is still
    useful, the report step stops with exit 5. `make dbsat-seclab` stops right

@@ -68,7 +68,13 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
 
 ### Abschluss
 
-- [ ] DRY: newest_zip/provide_zip/copy_back + lib_java.sh fuer dbsat und ciscat (nach Merge von PR 2/3)
+- [ ] Security: `apply_usecase.sh` kopiert `config/common/scripts` oracle-owned in den Container,
+  `run_ciscat.sh` laeuft daraus als root und sourct `lib_java.sh`/`lib_assess.sh` - oracle kann
+  Code aendern, den root ausfuehrt. Fuer ciscat root-owned kopieren oder `LIB_DIR` pruefen [P2]
+
+- [x] DRY: newest_zip/provide_zip/copy_back + lib_java.sh fuer dbsat und ciscat (nach Merge von PR 2/3)
+  - Stand: `scripts/lib_usecase.sh`, `config/common/scripts/lib_java.sh` + `lib_assess.sh`;
+    Fix symlinked DBSAT-Zip im Bind-Mount (2026-10-23)
 - [x] CLAUDE.md-Absatz (in PR 3), `make lint`, End-to-End seclab + plain container
 - [x] Nach Merge: `make dbsat-seclab`, `make dbsat-discover-seclab`, `make ciscat-seclab` im Haupt-Checkout
 - [x] Release: CHANGELOG `[1.5.0]`, VERSION, Tag v1.5.0
