@@ -75,6 +75,24 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
 - [x] Alte Collection `data/seclab/dbsat/dbsat_secpdb1.json` (2026-10-16) enthaelt Lab-Passwoerter
   im Klartext - loeschen, Lab-Passwoerter rotieren (Stefan)
 
+## TDE-Verify - offene Messungen (uebernommen aus state-2026-09-22, 2026-10-23)
+
+Quelle war eine ungetrackte State-Datei mit Kundenbezug; hier neutral uebernommen.
+
+- [ ] B1-Lauf wiederholen und das Log nach `artefacts/` sichern. Der reparierte Pfad ist
+  nicht im Lab verifiziert - geprueft ist nur die Verdict-Logik gegen die Ausgabe vom
+  2026-09-11 (meldet jetzt FAIL statt PASS) und `shellcheck -x`. Offen: kommt der Lauf mit
+  `--key` bis zum verschluesselten Datafile und wirft dort ORA-00600? `kcbtse` steht in
+  keinem Log unter `artefacts/`, nur in Markdown - die Aussage braucht ein Log [P1]
+- [ ] Auxiliary-Kette end-to-end messen (`45_zdlra_aux_pdb_clone.sh`,
+  `./scripts/tde-verify/run_all.sh --only 45 --yes`) [P2]
+- [ ] Rekey aller verschluesselten Tablespaces plus Database Key gegen den Entzug des
+  Quell-MEK messen. Bis dahin ist Stufe 2 des Stufenmodells gemessen und gescheitert,
+  nicht belegt [P2]
+- [ ] Manuelle B2-Messung vom 2026-09-10: einzige Quelle war
+  `artefacts/manual-run-20260910/phase3_b2_20260910_162358.log` (ungetrackt, in keinem
+  Markdown zitiert). Bei Bedarf neu messen [P3]
+
 ## seclab - intentionally insecure security baseline (2026-10-15)
 
 Auftrag: `tasks/prompt-seclab.md` (entfernt, in der History:
