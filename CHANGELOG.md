@@ -7,6 +7,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-23
+
 ### Fixed
 
 - Security: `apply_usecase.sh` copies `config/common/scripts` oracle-owned into a
