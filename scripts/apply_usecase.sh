@@ -42,6 +42,8 @@ readonly REPO_ROOT="${SCRIPT_DIR%/*}"
 # shellcheck source=scripts/lib_usecase.sh
 source "${SCRIPT_DIR}/lib_usecase.sh"
 readonly TARGET_DIR="/opt/oracle/common/scripts"
+# Root-owned code for run_ciscat.sh (runs as root), see provide_root_scripts
+readonly CISCAT_CODE_DIR="/root/.cache/ofl-ciscat-code"
 readonly DBSAT_HOST_DIR="${REPO_ROOT}/config/common/data/dbsat"
 readonly DBSAT_URL="https://www.oracle.com/database/technologies/security/dbsat.html"
 readonly CISCAT_HOST_DIR="${REPO_ROOT}/config/common/data/ciscat"
@@ -197,6 +199,28 @@ SQL
 }
 
 # ------------------------------------------------------------------------------
+# Function...: provide_root_scripts
+# Purpose....: Copy run_ciscat.sh and the libraries it sources into DIR ($2)
+#              of the container, root-owned, no group/other write, parent
+#              mode 700. run_ciscat.sh refuses code a non-root user can change.
+# ------------------------------------------------------------------------------
+provide_root_scripts() {
+    local container="$1" dir="$2" f
+    local files=(run_ciscat.sh lib_java.sh lib_assess.sh)
+    if [[ "${DRY_RUN}" == true ]]; then
+        echo "DRY-RUN: docker cp ${files[*]} -> ${container}:${dir}/ (root:root, go-w)"
+        return 0
+    fi
+    docker exec -u 0 "${container}" bash -c \
+        'umask 077 && mkdir -p -- "${1%/*}" && chmod 700 -- "${1%/*}" && rm -rf -- "$1" && mkdir -m 755 -- "$1"' _ "${dir}"
+    for f in "${files[@]}"; do
+        docker cp "${REPO_ROOT}/config/common/scripts/${f}" "${container}:${dir}/${f}"
+    done
+    docker exec -u 0 "${container}" bash -c 'chown -R root:root -- "$1" && chmod -R go-w -- "$1"' _ "${dir}"
+    echo "INFO: copied ${files[*]} to ${container}:${dir}/ (root-owned, previous copy removed)"
+}
+
+# ------------------------------------------------------------------------------
 # Function...: provide_scripts
 # Purpose....: Make config/common/scripts available in the container
 # ------------------------------------------------------------------------------
@@ -322,12 +346,12 @@ run_ciscat_usecase() {
         return 4
     fi
     echo "INFO: CIS-CAT archive ${zip}"
+    # run_sql_script.sh (DB mode) runs as oracle from the common scripts dir
     provide_scripts "${container}"
-    if [[ "${DRY_RUN}" != true ]] && ! docker exec "${container}" test -x "${TARGET_DIR}/run_ciscat.sh"; then
-        echo "ERROR: ${container}:${TARGET_DIR} has no run_ciscat.sh - the bind mount points to a checkout" >&2
-        echo "ERROR: without it (other branch or worktree); recreate the container from this checkout" >&2
-        return 1
-    fi
+    # run_ciscat.sh runs as root: it and its libraries come from a root-owned
+    # copy of this checkout - a copy in TARGET_DIR is oracle-owned, so oracle
+    # could change code root executes
+    provide_root_scripts "${container}" "${CISCAT_CODE_DIR}"
 
     # run_ciscat.sh runs the zip content as root: always a fresh copy in a
     # root-owned 700 dir (no MOUNT_DIR), never a bind-mounted file the
@@ -367,12 +391,12 @@ run_ciscat_usecase() {
     fi
     local out_dir="/opt/oracle/oradata/ciscat" host_out="${REPO_ROOT}/data/ciscat/${container}"
     if [[ "${DRY_RUN}" == true ]]; then
-        echo "DRY-RUN: docker exec -u 0 ${env_args[*]+"${env_args[*]}"} ${container} ${TARGET_DIR}/run_ciscat.sh ${run_args[*]} -o ${out_dir}"
+        echo "DRY-RUN: docker exec -u 0 ${env_args[*]+"${env_args[*]}"} ${container} ${CISCAT_CODE_DIR}/run_ciscat.sh ${run_args[*]} -o ${out_dir}"
         copy_back "${container}" "${out_dir}" "${host_out}" ""
         return 0
     fi
     rc=0
-    docker exec -u 0 "${env_args[@]+"${env_args[@]}"}" "${container}" "${TARGET_DIR}/run_ciscat.sh" \
+    docker exec -u 0 "${env_args[@]+"${env_args[@]}"}" "${container}" "${CISCAT_CODE_DIR}/run_ciscat.sh" \
         "${run_args[@]}" -o "${out_dir}" || rc=$?
     if [[ "${mode}" == ciscat-list ]]; then
         return "${rc}"

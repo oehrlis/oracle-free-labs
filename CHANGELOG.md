@@ -7,6 +7,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Security: `apply_usecase.sh` copies `config/common/scripts` oracle-owned into a
+  container, and `run_ciscat.sh` ran from there as root - `oracle` could change code
+  that root executes. `run_ciscat.sh` and its libraries now run from a root-owned copy
+  in `/root/.cache/ofl-ciscat-code`, and `run_ciscat.sh` refuses to run as root when
+  its code or any parent directory is writable by a non-root user. A direct run from
+  `/opt/oracle/common/scripts` is refused (`/opt/oracle` belongs to `oracle`); use
+  `make ciscat` / `make ciscat-seclab`.
+
 ## [1.6.0] - 2026-10-23
 
 ### Added

@@ -66,6 +66,13 @@ Lite proves the mechanics with the Ubuntu benchmark - on Oracle Linux that is
   is reused while the zip is unchanged and every file belongs to root, else
   removed and extracted again - both reported. A work dir overlapping the zip
   or report directory, or with a writable parent such as `/tmp`, is refused.
+- **Root-owned code.** `run_ciscat.sh` refuses to run as root when it, its
+  libraries (`lib_java.sh`, `lib_assess.sh`) or any directory up to `/` are
+  writable by a non-root user (a read-only mount counts as safe, a sticky `/tmp`
+  too). `/opt/oracle` belongs to `oracle`, so a direct run from
+  `/opt/oracle/common/scripts` is refused. `make ciscat` / `apply_usecase.sh
+  ciscat` copy the three files root-owned to `/root/.cache/ofl-ciscat-code` and
+  run them from there.
 
 ## Run It
 
@@ -87,8 +94,10 @@ Pass `CISCAT_*` as make arguments: make exports them to the script.
 What happens:
 
 - zip copied (`docker cp -L`) to the root-owned `/root/.cache/ciscat-zip`,
-  scripts copied unless bind-mounted, root-owned JRE 21 provided;
-- `docker exec -u 0 ... run_ciscat.sh`: cache, edition, selection, assessment
+  scripts copied unless bind-mounted (for `run_sql_script.sh`, runs as oracle),
+  `run_ciscat.sh` and its libraries copied root-owned to
+  `/root/.cache/ofl-ciscat-code`, root-owned JRE 21 provided;
+- `docker exec -u 0 ... /root/.cache/ofl-ciscat-code/run_ciscat.sh`: cache, edition, selection, assessment
   from a generated `-cfg` XML (0600, removed on exit, INT and TERM);
 - reports copied to `data/ciscat/<container>/` on the host (also on exit 3).
 
