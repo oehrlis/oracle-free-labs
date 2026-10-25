@@ -1,7 +1,9 @@
 # Entwurf: Aussagen in doc/tde-clone-independence.md nach den Messungen vom 2026-10-24
 
-Status: **Entwurf, nicht eingearbeitet.** `doc/tde-clone-independence.md` ist kundenseitig
-und wurde nicht geaendert. Jeder Vorschlag nennt den alten Text, den neuen Text und den
+Status: in doc/tde-clone-independence.md uebernommen, PR #9, 2026-10-25
+
+Urspruenglicher Status: **Entwurf, nicht eingearbeitet.** `doc/tde-clone-independence.md`
+ist kundenseitig und wurde nicht geaendert. Jeder Vorschlag nennt den alten Text, den neuen Text und den
 Beleg. Belege verweisen auf `tasks/e2e-facts.md`, Abschnitt "Messwerte der Einzellaeufe vom
 2026-10-24", und von dort auf `artefacts/run_20261024_*.log`. Die Schritte 30, 35, 45 und
 72 liefen am 2026-10-25 mit der finalen Skriptrevision erneut (`artefacts/run_20261025_*.log`),

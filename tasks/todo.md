@@ -112,8 +112,8 @@ Quelle war eine ungetrackte State-Datei mit Kundenbezug; hier neutral uebernomme
   `artefacts/run_20261025_063549.log:212-213`, Verdict `:229`
 - [x] Review 2 (Skriptfixes A1-A15) eingearbeitet und 30/35/45/72 mit der finalen
   Revision wiederholt, alle Verdicts unveraendert `PASS` (2026-10-25) [P1]
-- [ ] Kundendokument nachziehen: Entwurf `tasks/draft-tde-claims-2026-10-23.md` pruefen und
-  in `doc/tde-clone-independence.md` uebernehmen [P2]
+- [x] Kundendokument nachziehen: Entwurf `tasks/draft-tde-claims-2026-10-23.md` pruefen und
+  in `doc/tde-clone-independence.md` uebernehmen [P2] - erledigt 2026-10-25, PR #9
 - [ ] Offen aus Schritt 72: SET KEY gegen Probes isolieren - genuegt `SET KEY` je Container
   plus Rekey der verschluesselten Tablespaces ohne die `ONLINE REKEY`-Probes auf
   `SYSTEM`/`SYSAUX`/`UNDOTBS1`? Der Lauf hat beides ausgefuehrt; nach den Probes aendert sich
