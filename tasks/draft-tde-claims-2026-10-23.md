@@ -1,6 +1,6 @@
 # Entwurf: Aussagen in doc/tde-clone-independence.md nach den Messungen vom 2026-10-24
 
-Status: in doc/tde-clone-independence.md uebernommen, PR <tbd>, 2026-10-25
+Status: in doc/tde-clone-independence.md uebernommen, PR #9, 2026-10-25
 
 Urspruenglicher Status: **Entwurf, nicht eingearbeitet.** `doc/tde-clone-independence.md`
 ist kundenseitig und wurde nicht geaendert. Jeder Vorschlag nennt den alten Text, den neuen Text und den
