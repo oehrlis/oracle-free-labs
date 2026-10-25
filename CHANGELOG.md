@@ -7,6 +7,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `doc/tde-clone-independence.md`: statements aligned with the measurements of 2026-10-24/25
+  (B1, B2, auxiliary chain, full rekey withdrawal); limits stated.
+
 ## [1.7.0] - 2026-10-25
 
 ### Added
