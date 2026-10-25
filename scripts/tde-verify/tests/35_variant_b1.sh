@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.4.0
 # Purpose....: Variant B1: RESTORE DATABASE AS ENCRYPTED USING KEY with the
 #              source MEK present in the target keystore plus a newly created
 #              target MEK.
@@ -35,12 +35,17 @@
 # 2026-09-04  oes  Initial release                                        0.1.0
 # 2026-09-22  oes  Pass --key so the variant runs at all; derive the verdict
 #                  from the output instead of a fixed string               0.2.0
+# 2026-10-24  oes  tde_clone.sh now merges the source keystore for b1; the
+#                  verdict requires the RMAN ORA-00600 line and reports a
+#                  missing source MEK (ORA-28374) as FAIL                  0.3.0
+# 2026-10-24  oes  FAIL message no longer aborts under set -e; clone output
+#                  removed by a trap; header version aligned               0.4.0
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.0"
+VERSION="0.4.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -155,8 +160,11 @@ main() {
     step_header "Attempt RESTORE AS ENCRYPTED USING KEY (prod MEK present)"
     lib_info "DBID: ${dbid}, dev key: ${dev_key_id:0:16}..."
 
-    local clone_exit=0 clone_out
-    clone_out=$(mktemp)
+    local clone_exit=0
+    # Not local: the EXIT trap runs after main has returned.
+    CLONE_OUT=$(mktemp)
+    trap 'rm -f "${CLONE_OUT}"' EXIT
+    local clone_out="${CLONE_OUT}"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant b1 --dbid ${dbid} --cf-piece ${cf_piece} --key <dev_key_id>"
     else
@@ -177,22 +185,27 @@ main() {
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN - no actual RMAN run"
-    elif [[ "${clone_exit}" -ne 0 ]] && grep -q "ORA-00600" "${clone_out}"; then
+    elif [[ "${clone_exit}" -ne 0 ]] && grep -q "ORA-00600: internal error code" "${clone_out}"; then
         verdict="PASS"
-        msg="RMAN failed as expected (exit ${clone_exit}): $(grep -m1 -o "ORA-00600.*" "${clone_out}")"
+        msg="RMAN failed as expected (exit ${clone_exit}): $({ grep -m1 -o "ORA-00600: internal error code.*" "${clone_out}" || true; })"
+    elif [[ "${clone_exit}" -ne 0 ]] && grep -qE "ORA-28374|ORA-19870" "${clone_out}"; then
+        # The source MEK is not in the target keystore - that is variant B2,
+        # not B1. Until tde_clone.sh merged the source keystore, every scripted
+        # B1 run ended here or earlier.
+        verdict="FAIL"
+        msg="RMAN could not read the source blocks (exit ${clone_exit}): $({ grep -m1 -oE "ORA-(28374|19870).*" "${clone_out}" || true; }) - the source MEK is missing, this is B2 and not B1"
     elif [[ "${clone_exit}" -ne 0 ]]; then
         # A non-zero exit alone proves nothing: a usage error looks identical to
         # a controlled RMAN failure. Only an ORA-00600 in the output is the
         # measurement this step exists for - anything else is a failed run and
         # must say so instead of reporting a result that was never obtained.
         verdict="FAIL"
-        msg="clone aborted (exit ${clone_exit}) without ORA-00600 - RMAN never reached the encrypted datafile: $(grep -m1 -iE "ERROR|ORA-[0-9]+" "${clone_out}" | tail -c 120)"
+        msg="clone aborted (exit ${clone_exit}) without ORA-00600 - RMAN never reached the encrypted datafile: $({ grep -m1 -iE "ERROR|ORA-[0-9]+" "${clone_out}" || true; } | tail -c 120)"
     else
         verdict="FAIL"
         msg="RMAN unexpectedly succeeded - investigate the key chain result"
     fi
 
-    rm -f "${clone_out}"
     write_state "VARIANT_B1_EXIT" "${clone_exit}"
 
     print_verdict "${verdict}" "${msg}"

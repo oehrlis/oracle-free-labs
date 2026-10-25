@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.1.1
 # Purpose....: PDB P5 - MEK rotation in the target PDB after P2 (archive) or
 #              P4 (remote clone). Verifies that rotating the MEK in dev only
 #              re-wraps the tablespace key (ENCRYPTEDKEY changes, TEK blocks
@@ -22,12 +22,17 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  compare_canary_blocks reports "differs" as 3; SC2016
+#                  disabled file-wide with reason                         0.1.1
 # ------------------------------------------------------------------------------
 
+# Single-quoted SQL and shell blocks below are expanded inside the container
+# on purpose (KSPWD, v$ views, CDB$ROOT); SC2016 is the intended behaviour.
+# shellcheck disable=SC2016
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -266,7 +271,7 @@ EXIT
     elif [[ "${mek_after_ro}" == "${mek_before}" ]]; then
         verdict="FAIL"
         msg="P5: the PDB master key did not change (${mek_before}) - the rotation itself failed"
-    elif [[ ${canary_a_rc} -ne 0 || ${canary_b_rc} -ne 0 ]]; then
+    elif [[ ${canary_a_rc} -eq 3 || ${canary_b_rc} -eq 3 ]]; then
         verdict="FAIL"
         msg="P5: the rotation changed the ciphertext (A: ${canary_a}, B: ${canary_b}) - a rotation re-wraps and must never rewrite data blocks"
     elif [[ "${mkid_after}" == "${mkid_before}" && "${mkid_rw}" == "${mek_after_rw}" && "${tek_rw}" != "${tek_after}" ]]; then

@@ -1,0 +1,808 @@
+2026-10-24 08:19:06 RUN run_all.sh 0.3.0
+  DRY_RUN=FALSE FORCE_YES=TRUE VERBOSE=FALSE
+  OPT_ONLY= OPT_FROM=00 OPT_TO=15
+
+========================================================================
+  STEP 00: Reset both services and verify clean startup
+  Script: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/scripts/tde-verify/tests/00_reset_lab.sh
+  Time:   2026-10-24 08:19:06
+========================================================================
+2026-10-24 08:19:06 START [00] 00_reset_lab.sh
+2026-10-24 08:19:06 INFO  Starting 00_reset_lab.sh 0.1.0
+
+========================================================================
+== Step 00: Reset lab services
+========================================================================
+
+========================================================================
+== Reset odbencprod
+========================================================================
+2026-10-24 08:19:06 INFO  removed data/xchange/evidence
+2026-10-24 08:19:06 INFO  exchange mount cleared
+2026-10-24 08:19:06 INFO  resetting service 'odbencprod' ...
+ Container odbencprod Stopping 
+ Container odbencprod Stopped 
+ Container odbencprod Removing 
+ Container odbencprod Removed 
+ Network oracle-free-labs_default Removing 
+ Network oracle-free-labs_default Resource is still in use 
+2026-10-24 08:19:09 INFO  removing /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/odbencprod
+2026-10-24 08:19:09 INFO  restored tracked files under data/odbencprod
+2026-10-24 08:19:09 INFO  service 'odbencprod' reset complete
+2026-10-24 08:19:09 INFO  starting service 'odbencprod' ...
+ Container odbencprod Creating 
+ Container odbencprod Created 
+ Container odbencprod Starting 
+ Container odbencprod Started 
+2026-10-24 08:19:10 INFO  waiting for odbencprod to be ready (timeout 900s) ...
+2026-10-24 08:21:41 INFO  odbencprod is ready
+
+========================================================================
+== Reset odbencdev
+========================================================================
+2026-10-24 08:21:41 INFO  resetting service 'odbencdev' ...
+ Container odbencdev Stopping 
+ Container odbencdev Stopped 
+ Container odbencdev Removing 
+ Container odbencdev Removed 
+ Network oracle-free-labs_default Removing 
+ Network oracle-free-labs_default Resource is still in use 
+2026-10-24 08:21:44 INFO  removing /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/odbencdev
+2026-10-24 08:21:44 INFO  restored tracked files under data/odbencdev
+2026-10-24 08:21:44 INFO  service 'odbencdev' reset complete
+2026-10-24 08:21:44 INFO  starting service 'odbencdev' ...
+ Container odbencdev Creating 
+ Container odbencdev Created 
+ Container odbencdev Starting 
+ Container odbencdev Started 
+2026-10-24 08:21:45 INFO  waiting for odbencdev to be ready (timeout 600s) ...
+2026-10-24 08:23:56 INFO  odbencdev is ready
+
+========================================================================
+== Log scan
+========================================================================
+2026-10-24 08:23:56 INFO  odbencprod logs: no ORA-/SP2-/DBT- errors
+2026-10-24 08:23:57 INFO  odbencdev logs: no ORA-/SP2-/DBT- errors
+
+Service              Ready      Log errors
+-------              -----      ----------
+odbencprod           yes        none      
+odbencdev            yes        none      
+
+------------------------------------------------------------------------
+VERDICT: PASS - both services are up, healthy, and clean
+------------------------------------------------------------------------
+2026-10-24 08:23:57 INFO  Done.
+2026-10-24 08:23:57 END   [00] 00_reset_lab.sh: PASS (291s)
+
+========================================================================
+  STEP 10: Create canary tables, READ ONLY, collect baseline evidence
+  Script: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/scripts/tde-verify/tests/10_baseline.sh
+  Time:   2026-10-24 08:23:57
+========================================================================
+2026-10-24 08:23:57 START [10] 10_baseline.sh
+2026-10-24 08:23:57 INFO  Starting 10_baseline.sh 0.1.0
+
+========================================================================
+== Step 10: Collect prod baseline
+========================================================================
+
+========================================================================
+== Create canary in USERS (encrypted)
+========================================================================
+
+Session altered.
+
+ALTER TABLESPACE USERS READ WRITE
+*
+ERROR at line 1:
+ORA-01646: tablespace 'USERS' is not read-only - cannot make read write
+Help: https://docs.oracle.com/error-help/db/ora-01646/
+
+
+========================================================================
+== Create canary table SCOTT.CANARY_TDE in USERS
+========================================================================
+no existing SCOTT.CANARY_TDE to drop
+
+PL/SQL procedure successfully completed.
+
+
+Table created.
+
+
+5000 rows created.
+
+
+Commit complete.
+
+== Row count and segment size ==========================================
+
+CANARY_ROWS
+-----------
+       5000
+
+1 row selected.
+
+
+OWNER		     TABLE_NAME 	  TS_NAME		   BLOCKS      BYTES
+-------------------- -------------------- -------------------- ---------- ----------
+SCOTT		     CANARY_TDE 	  USERS 		      384    3145728
+
+1 row selected.
+
+== Physical block range of the canary rows =============================
+
+RELATIVE_FNO  MIN_BLOCK  MAX_BLOCK DISTINCT_BLOCKS ROWS_TOTAL
+------------ ---------- ---------- --------------- ----------
+	   0	    979       1407	       313	 5000
+
+1 row selected.
+
+== Datafile holding the canary ==========================================
+
+RELATIVE_FNO FILE_NAME								    BLOCK_SIZE	   BLOCKS      BYTES
+------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+	1024 /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_	  8192	     2560   20971520
+	     mf_users_ofrmm540_.dbf
+
+
+1 row selected.
+
+== Marker for the host side plain-text scan ============================
+
+MARKER
+----------------------------------------
+OEHRLI-CANARY-01
+
+1 row selected.
+
+========================================================================
+== Create unencrypted control tablespace CANARY_PLAIN
+========================================================================
+
+Session altered.
+
+ALTER TABLESPACE CANARY_PLAIN READ WRITE
+*
+ERROR at line 1:
+ORA-00959: tablespace 'CANARY_PLAIN' does not exist
+Help: https://docs.oracle.com/error-help/db/ora-00959/
+
+
+DROP TABLESPACE CANARY_PLAIN INCLUDING CONTENTS AND DATAFILES
+*
+ERROR at line 1:
+ORA-00959: tablespace 'CANARY_PLAIN' does not exist
+Help: https://docs.oracle.com/error-help/db/ora-00959/
+
+
+
+Tablespace created.
+
+
+User altered.
+
+
+TABLESPACE_NAME 	       BIG ENC
+------------------------------ --- ---
+CANARY_PLAIN		       YES NO
+
+========================================================================
+== Create control canary in CANARY_PLAIN (unencrypted)
+========================================================================
+
+Session altered.
+
+========================================================================
+== Create canary table SCOTT.CANARY_PLAIN_TAB in CANARY_PLAIN
+========================================================================
+no existing SCOTT.CANARY_PLAIN_TAB to drop
+
+PL/SQL procedure successfully completed.
+
+
+Table created.
+
+
+5000 rows created.
+
+
+Commit complete.
+
+== Row count and segment size ==========================================
+
+CANARY_ROWS
+-----------
+       5000
+
+1 row selected.
+
+
+OWNER		     TABLE_NAME 	  TS_NAME		   BLOCKS      BYTES
+-------------------- -------------------- -------------------- ---------- ----------
+SCOTT		     CANARY_PLAIN_TAB	  CANARY_PLAIN		      384    3145728
+
+1 row selected.
+
+== Physical block range of the canary rows =============================
+
+RELATIVE_FNO  MIN_BLOCK  MAX_BLOCK DISTINCT_BLOCKS ROWS_TOTAL
+------------ ---------- ---------- --------------- ----------
+	   0	    779       1279	       313	 5000
+
+1 row selected.
+
+== Datafile holding the canary ==========================================
+
+RELATIVE_FNO FILE_NAME								    BLOCK_SIZE	   BLOCKS      BYTES
+------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+	1024 /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_	  8192	     2560   20971520
+	     mf_canary_p_ofrmqxxx_.dbf
+
+
+1 row selected.
+
+== Marker for the host side plain-text scan ============================
+
+MARKER
+----------------------------------------
+OEHRLI-CANARY-01
+
+1 row selected.
+
+========================================================================
+== Set USERS and CANARY_PLAIN to READ ONLY
+========================================================================
+
+Session altered.
+
+
+Tablespace altered.
+
+
+Tablespace altered.
+
+
+TABLESPACE_NAME 	       STATUS
+------------------------------ ---------
+CANARY_PLAIN		       READ ONLY
+USERS			       READ ONLY
+
+========================================================================
+== Collect evidence set 'baseline'
+========================================================================
+2026-10-24 08:23:58 INFO  collecting evidence set 'baseline' from odbencprod
+2026-10-24 08:23:58 INFO  Starting tde_evidence.sh 0.1.0
+2026-10-24 08:23:58 INFO  evidence set 'baseline' -> /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline
+2026-10-24 08:23:58 INFO  collecting key chain evidence from odbencprod (CDB$ROOT)
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+CDB$ROOT	     FREE	  FREE		   1519529852 24-OCT-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE	 /opt/oracle/dbconfig/FREE/wallet/tde/					OPEN		   LOCAL_AUTOLOGIN NONE 	 1
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 2
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+3 rows selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AcbfRSw6k0MykQa+qBvTsMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	24.10.2026 06:21:21    24.10.2026 06:21:21
+								    ORE
+CDB$ROOT
+CDB$ROOT															      1
+
+AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	24.10.2026 06:21:25    24.10.2026 06:21:25
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+
+2 rows selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+USERS			      6 AES256	 YES D8D7BB0F7DA7460CACFBFBB60198DBA1		  1 NORMAL	       894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 	       372		  4	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 D8D7BB0F7DA7460CACFBFBB60198DBA1	       372		  4	      1 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 DE57A6A1059D5315B0823BE10B51EAF23C600D8A8730110BDBFE9032A082222B00000000000000000000000000000000 C6DF452C3A9343329106BEA81BD3B0CA YES XTS		  1
+NONE	 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00000000000000000000000000000000 NO  CFB		  2
+AES256	 423EEBB42BC4EE9A37F8DD44CC8B3237E41D683B8330A58C4DE4D8E513CC524C00000000000000000000000000000000 D8D7BB0F7DA7460CACFBFBB60198DBA1 YES XTS		  4
+
+3 rows selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+no rows selected
+
+2026-10-24 08:23:58 INFO  collecting key chain evidence from odbencprod (PDB ODBENCPROD)
+
+Session altered.
+
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+ODBENCPROD	     FREE	  FREE		   1519529852 24-OCT-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+1 row selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	24.10.2026 06:21:25    24.10.2026 06:21:25
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+
+1 row selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+USERS			      6 AES256	 YES D8D7BB0F7DA7460CACFBFBB60198DBA1		  1 NORMAL	       894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 	       372		  4	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 D8D7BB0F7DA7460CACFBFBB60198DBA1	       372		  4	      1 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 423EEBB42BC4EE9A37F8DD44CC8B3237E41D683B8330A58C4DE4D8E513CC524C00000000000000000000000000000000 D8D7BB0F7DA7460CACFBFBB60198DBA1 YES XTS		  4
+
+1 row selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+TS_NAME 	     RELATIVE_FNO FILE_NAME								     BLOCKS BLOCK_SIZE	    BYTES
+-------------------- ------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+USERS			     1024 /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_       2560	  8192	 20971520
+				  mf_users_ofrmm540_.dbf
+
+
+1 row selected.
+
+2026-10-24 08:23:59 INFO  listing datafiles of tablespace USERS in PDB ODBENCPROD
+2026-10-24 08:23:59 INFO  found 1 datafile(s)
+2026-10-24 08:23:59 INFO  fingerprinting o1_mf_users_ofrmm540_.dbf (block size 8192)
+wrote /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline/o1_mf_users_ofrmm540_.dbf.fp
+2026-10-24 08:23:59 INFO  scanning o1_mf_users_ofrmm540_.dbf for the clear-text marker
+no hits - needle not present as plaintext in this datafile
+2026-10-24 08:23:59 INFO  manifest written to /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline/manifest.txt
+2026-10-24 08:23:59 INFO  Done.
+2026-10-24 08:23:59 INFO  collecting evidence for CANARY_PLAIN (control group)
+2026-10-24 08:23:59 INFO  collecting evidence set 'baseline_plain' from odbencprod
+2026-10-24 08:23:59 INFO  Starting tde_evidence.sh 0.1.0
+2026-10-24 08:23:59 INFO  evidence set 'baseline_plain' -> /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline_plain
+2026-10-24 08:23:59 INFO  collecting key chain evidence from odbencprod (CDB$ROOT)
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+CDB$ROOT	     FREE	  FREE		   1519529852 24-OCT-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE	 /opt/oracle/dbconfig/FREE/wallet/tde/					OPEN		   LOCAL_AUTOLOGIN NONE 	 1
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 2
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+3 rows selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AcbfRSw6k0MykQa+qBvTsMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	24.10.2026 06:21:21    24.10.2026 06:21:21
+								    ORE
+CDB$ROOT
+CDB$ROOT															      1
+
+AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	24.10.2026 06:21:25    24.10.2026 06:21:25
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+
+2 rows selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+USERS			      6 AES256	 YES D8D7BB0F7DA7460CACFBFBB60198DBA1		  1 NORMAL	       894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 	       372		  4	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 D8D7BB0F7DA7460CACFBFBB60198DBA1	       372		  4	      1 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 DE57A6A1059D5315B0823BE10B51EAF23C600D8A8730110BDBFE9032A082222B00000000000000000000000000000000 C6DF452C3A9343329106BEA81BD3B0CA YES XTS		  1
+NONE	 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00000000000000000000000000000000 NO  CFB		  2
+AES256	 423EEBB42BC4EE9A37F8DD44CC8B3237E41D683B8330A58C4DE4D8E513CC524C00000000000000000000000000000000 D8D7BB0F7DA7460CACFBFBB60198DBA1 YES XTS		  4
+
+3 rows selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+no rows selected
+
+2026-10-24 08:23:59 INFO  collecting key chain evidence from odbencprod (PDB ODBENCPROD)
+
+Session altered.
+
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+ODBENCPROD	     FREE	  FREE		   1519529852 24-OCT-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE										OPEN		   LOCAL_AUTOLOGIN UNITED	 4
+
+1 row selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	24.10.2026 06:21:25    24.10.2026 06:21:25
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+
+1 row selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+USERS			      6 AES256	 YES D8D7BB0F7DA7460CACFBFBB60198DBA1		  1 NORMAL	       894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 	       372		  4	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2 D8D7BB0F7DA7460CACFBFBB60198DBA1	       372		  4	      1 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 423EEBB42BC4EE9A37F8DD44CC8B3237E41D683B8330A58C4DE4D8E513CC524C00000000000000000000000000000000 D8D7BB0F7DA7460CACFBFBB60198DBA1 YES XTS		  4
+
+1 row selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+TS_NAME 	     RELATIVE_FNO FILE_NAME								     BLOCKS BLOCK_SIZE	    BYTES
+-------------------- ------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+USERS			     1024 /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_       2560	  8192	 20971520
+				  mf_users_ofrmm540_.dbf
+
+
+1 row selected.
+
+2026-10-24 08:24:00 INFO  listing datafiles of tablespace CANARY_PLAIN in PDB ODBENCPROD
+2026-10-24 08:24:00 INFO  found 1 datafile(s)
+2026-10-24 08:24:00 INFO  fingerprinting o1_mf_canary_p_ofrmqxxx_.dbf (block size 8192)
+wrote /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline_plain/o1_mf_canary_p_ofrmqxxx_.dbf.fp
+2026-10-24 08:24:00 INFO  scanning o1_mf_canary_p_ofrmqxxx_.dbf for the clear-text marker
+HITS: 313 (data is readable in the clear)
+2026-10-24 08:24:00 INFO  manifest written to /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline_plain/manifest.txt
+2026-10-24 08:24:00 INFO  Done.
+
+========================================================================
+== Read key values
+========================================================================
+
+========================================================================
+== Dump datafile header (Oracle side)
+========================================================================
+
+Session altered.
+
+========================================================================
+== Oracle side file header dump =========================================
+========================================================================
+== Trace file for this session =========================================
+
+TRACE_FILE
+----------------------------------------------------------------------------------------------------
+/opt/oracle/diag/rdbms/free/FREE/trace/FREE_ora_5325.trc
+
+1 row selected.
+
+== Dump all datafile headers (file_hdrs, level 10) =====================
+
+Session altered.
+
+== Dump block 1 of /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_users_ofrmm540_.dbf
+
+System altered.
+
+== Trace file to collect ===============================================
+
+TRACE_FILE
+----------------------------------------------------------------------------------------------------
+/opt/oracle/diag/rdbms/free/FREE/trace/FREE_ora_5325.trc
+
+1 row selected.
+
+Key summary for baseline:
+  MASTERKEYID : D8D7BB0F7DA7460CACFBFBB60198DBA1
+  Wrapped TEK : 894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2
+  Notes       : DBID=1519529852, set READ ONLY, evidence in /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/baseline
+
+------------------------------------------------------------------------
+VERDICT: PASS - baseline collected, MASTERKEYID and TEK saved to state
+------------------------------------------------------------------------
+2026-10-24 08:24:01 INFO  Done.
+2026-10-24 08:24:01 END   [10] 10_baseline.sh: PASS (4s)
+
+========================================================================
+  STEP 15: RMAN backup + stage source keystore
+  Script: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/scripts/tde-verify/tests/15_backup.sh
+  Time:   2026-10-24 08:24:01
+========================================================================
+2026-10-24 08:24:01 START [15] 15_backup.sh
+2026-10-24 08:24:01 INFO  Starting 15_backup.sh 0.1.0
+
+========================================================================
+== Step 15: RMAN backup and keystore staging
+========================================================================
+
+========================================================================
+== Prepare backup directory
+========================================================================
+
+========================================================================
+== RMAN BACKUP DATABASE PLUS ARCHIVELOG
+========================================================================
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sat Oct 24 08:24:01 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852)
+
+RMAN> 
+
+RMAN> CONFIGURE CONTROLFILE AUTOBACKUP ON;
+using target database control file instead of recovery catalog
+new RMAN configuration parameters:
+CONFIGURE CONTROLFILE AUTOBACKUP ON;
+new RMAN configuration parameters are successfully stored
+
+
+RMAN> CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
+new RMAN configuration parameters:
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
+new RMAN configuration parameters are successfully stored
+
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '/opt/oracle/xchange/backup/%U';
+3>   BACKUP DATABASE PLUS ARCHIVELOG;
+4>   RELEASE CHANNEL c1;
+5> }
+allocated channel: c1
+channel c1: SID=223 device type=DISK
+
+
+Starting backup at 24-OCT-26
+current log archived
+channel c1: starting archived log backup set
+channel c1: specifying archived log(s) in backup set
+input archived log thread=1 sequence=1 RECID=1 STAMP=1247473280
+input archived log thread=1 sequence=2 RECID=2 STAMP=1247473282
+input archived log thread=1 sequence=3 RECID=3 STAMP=1247473283
+input archived log thread=1 sequence=4 RECID=4 STAMP=1247473442
+channel c1: starting piece 1 at 24-OCT-26
+channel c1: finished piece 1 at 24-OCT-26
+piece handle=/opt/oracle/xchange/backup/012ojrp2_1_1_1 tag=TAG20261024T082402 comment=NONE
+channel c1: backup set complete, elapsed time: 00:00:01
+Finished backup at 24-OCT-26
+
+Starting backup at 24-OCT-26
+channel c1: starting full datafile backup set
+channel c1: specifying datafile(s) in backup set
+input datafile file number=00001 name=/opt/oracle/oradata/FREE/system01.dbf
+input datafile file number=00003 name=/opt/oracle/oradata/FREE/sysaux01.dbf
+input datafile file number=00011 name=/opt/oracle/oradata/FREE/undotbs01.dbf
+input datafile file number=00007 name=/opt/oracle/oradata/FREE/users01.dbf
+channel c1: starting piece 1 at 24-OCT-26
+channel c1: finished piece 1 at 24-OCT-26
+piece handle=/opt/oracle/xchange/backup/024ojrp4_2_1_1 tag=TAG20261024T082403 comment=NONE
+channel c1: backup set complete, elapsed time: 00:00:03
+channel c1: starting full datafile backup set
+channel c1: specifying datafile(s) in backup set
+input datafile file number=00017 name=/opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_sysaux_ofrmlftg_.dbf
+input datafile file number=00016 name=/opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_system_ofrmlftd_.dbf
+input datafile file number=00018 name=/opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_undotbs1_ofrmlftg_.dbf
+input datafile file number=00019 name=/opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_audit_da_ofrmljmf_.dbf
+input datafile file number=00020 name=/opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_users_ofrmm540_.dbf
+input datafile file number=00021 name=/opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_canary_p_ofrmqxxx_.dbf
+channel c1: starting piece 1 at 24-OCT-26
+channel c1: finished piece 1 at 24-OCT-26
+piece handle=/opt/oracle/xchange/backup/037ojrp7_3_1_1 tag=TAG20261024T082403 comment=NONE
+channel c1: backup set complete, elapsed time: 00:00:03
+channel c1: starting full datafile backup set
+channel c1: specifying datafile(s) in backup set
+input datafile file number=00004 name=/opt/oracle/oradata/FREE/pdbseed/sysaux01.dbf
+input datafile file number=00002 name=/opt/oracle/oradata/FREE/pdbseed/system01.dbf
+input datafile file number=00009 name=/opt/oracle/oradata/FREE/pdbseed/undotbs01.dbf
+channel c1: starting piece 1 at 24-OCT-26
+channel c1: finished piece 1 at 24-OCT-26
+piece handle=/opt/oracle/xchange/backup/04aojrpa_4_1_1 tag=TAG20261024T082403 comment=NONE
+channel c1: backup set complete, elapsed time: 00:00:01
+Finished backup at 24-OCT-26
+
+Starting backup at 24-OCT-26
+current log archived
+channel c1: starting archived log backup set
+channel c1: specifying archived log(s) in backup set
+input archived log thread=1 sequence=5 RECID=5 STAMP=1247473451
+channel c1: starting piece 1 at 24-OCT-26
+channel c1: finished piece 1 at 24-OCT-26
+piece handle=/opt/oracle/xchange/backup/05bojrpb_5_1_1 tag=TAG20261024T082411 comment=NONE
+channel c1: backup set complete, elapsed time: 00:00:01
+Finished backup at 24-OCT-26
+
+Starting Control File and SPFILE Autobackup at 24-OCT-26
+piece handle=/opt/oracle/xchange/backup/cf_c-1519529852-20261024-00 comment=NONE
+Finished Control File and SPFILE Autobackup at 24-OCT-26
+
+released channel: c1
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+2026-10-24 08:24:13 INFO  backup pieces in /opt/oracle/xchange/backup: 5, controlfile autobackups: 1
+
+========================================================================
+== Stage source keystore to /opt/oracle/xchange/wallet_prod
+========================================================================
+ewallet.p12 staged
+total 8
+drwxr-xr-x 3 oracle oinstall   96 Oct 24 08:24 .
+drwxr-xr-x 4 oracle oinstall  128 Oct 24 08:24 ..
+-rw------- 1 oracle oinstall 5091 Oct 24 08:24 ewallet.p12
+2026-10-24 08:24:13 INFO  backup pieces on host: 6 file(s) in /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/backup
+2026-10-24 08:24:13 INFO  controlfile autobackup: cf_c-1519529852-20261024-00
+
+Backup summary:
+  DBID         : 1519529852
+  Backup dir   : /opt/oracle/xchange/backup
+  CF format    : /opt/oracle/xchange/backup/cf_%F
+  Wallet staged: /opt/oracle/xchange/wallet_prod
+
+------------------------------------------------------------------------
+VERDICT: PASS - RMAN backup complete, source keystore staged
+------------------------------------------------------------------------
+2026-10-24 08:24:13 INFO  Done.
+2026-10-24 08:24:13 END   [15] 15_backup.sh: PASS (12s)
+
+========================================================================
+  TDE Verification Run Results
+  Log: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/artefacts/run_20261024_081906.log
+========================================================================
+
+NR    Result      Duration  Description
+----  ----------  --------  -------------------------------------------
+00    PASS        291s      Reset both services and verify clean startup
+10    PASS        4s        Create canary tables, READ ONLY, collect baseline evidence
+15    PASS        12s       RMAN backup + stage source keystore
+
+All steps PASSED.

@@ -182,3 +182,49 @@ Verzeichnis existiert ein Aufraeum-Schritt davor
 verify: nach jedem DBSAT- oder CIS-CAT-Lauf liefert ein `grep -rlF` mit den Werten von
 `ORACLE_PWD` und `SECLAB_*_PWD` (im Container aus `${!v}`) ueber
 `/opt/oracle/oradata/dbsat` und `/opt/oracle/oradata/ciscat` nichts
+
+## 2026-10-24 - Entzugstests: was das Ergebnis verfaelscht
+
+- Ein Testzweig, der nur loggt "ist ein separater Schritt", fuehrt den Test nicht aus.
+  `tde_clone.sh --variant b1` importierte den Prod-MEK nie - jeder geskriptete B1-Lauf
+  war ein B2-Lauf. Regel: ein Varianten-Zweig stellt seine Vorbedingung her oder bricht
+  ab, und das Verdict prueft die Vorbedingung am Ergebnis (`ORA-28374` heisst: B2).
+- Leerer Keystore ist kein Entzug: die CDB oeffnet dann `READ WRITE` mit
+  `NOT_AVAILABLE`, egal was am Quellschluessel haengt. Entzug heisst: Keystore mit
+  genau den eigenen Schluesseln (`EXPORT KEYS ... WITH IDENTIFIER IN`, neu anlegen,
+  `IMPORT KEYS`).
+- Beobachtet: mit offener abhaengiger Auxiliary-PDB beim Shutdown blieb die CDB mit
+  `ORA-28374` auf `MOUNTED`. Die Ursache (die offene PDB blockiert das Oeffnen der CDB)
+  ist eine **Hypothese**: sie stuetzt sich auf ein live gelesenes, nicht versioniertes
+  Alert-Log, und der Lauf, der es behob, aenderte `CLOSE IMMEDIATE` und `DISCARD STATE`
+  zugleich. Mit vorher geschlossener PDB oeffnet die CDB, und nur die Daten dieser PDB
+  scheitern. Wer PDBs einzeln beurteilen will, schliesst die erwartet abhaengige vorher.
+- Ein fehlender Tablespace-Schluessel erscheint in der Session als `ORA-01187`, nicht
+  als `ORA-28374`; die Ursache steht nur im Alert-Log (`not verified due to error
+  ORA-28374`). Ein Klassifizierer, der nur nach `ORA-28374` sucht, meldet "unklar".
+- `CDB$ROOT` in einem ungequoteten Heredoc wird zu `CDB`, und `WHENEVER SQLERROR
+  CONTINUE` laesst das durch. SQL mit `$` und Passwort gehoert in einen gequoteten
+  Heredoc mit Platzhalter (`sqlplus_kspwd` in `lib.sh`). Doppelte Anfuehrungszeichen in
+  einem SQL-Kommentar innerhalb eines `"..."`-Strings beenden den String - shellcheck
+  meldet es als SC2215, der Lauf selbst ueberspringt still den Block.
+
+verify: `grep -l withdraw_keystore_to_keys scripts/tde-verify/tests/*.sh` nennt jeden
+Entzugstest ausser dem Altbestand `90_withdrawal_test.sh` (pristiner Dev-Keystore)
+
+## 2026-10-25 - Fehlversuche sind Belege, ihre Logs bleiben
+
+- Die erste Session vom 2026-10-24 hat zwei Logs von Fehlversuchen geloescht
+  (Tempfile `ORA-01187`, Klon-Keystore `ORA-28365`). Die Befunde daraus stehen seitdem
+  in `tasks/e2e-facts.md` mit "Zwischenlogs nicht aufbewahrt" - ohne Beleg.
+- Regel: jedes Log jedes Laufs bleibt unter `artefacts/`, auch abgebrochene und
+  gescheiterte. Ein gescheiterter Lauf ist eine Messung des Zustands davor; wer ihn
+  loescht, kann den Befund spaeter nur noch behaupten. Nur die Secret-Pruefung aus
+  `artefacts/README.md` entscheidet, ob ein Log bleiben darf (dann wird das Skript
+  repariert, nicht das Log versteckt).
+- Ein Verdict, das ein Fehlercode-Muster akzeptiert, muss auch das Gegenmuster
+  ausschliessen: B2 akzeptierte `ORA-19870` allein, das auch die B1-Signatur
+  (`ORA-19870` + `ORA-00600`) traegt. Und ein Exit-Code 1 eines abgestuerzten
+  Python-Helpers las sich in `compare_canary_blocks` als "Ciphertext verschieden".
+
+verify: `ls artefacts/run_*.log | wc -l` sinkt nie zwischen zwei Sessions; jeder in
+`tasks/e2e-facts.md` zitierte Fehlversuch hat ein Log unter `artefacts/`

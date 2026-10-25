@@ -85,19 +85,48 @@ Die Skripte setzen `JAVA_HOME` darauf. Ersetzt den geplanten Report-Helper-Conta
 
 Quelle war eine ungetrackte State-Datei mit Kundenbezug; hier neutral uebernommen.
 
-- [ ] B1-Lauf wiederholen und das Log nach `artefacts/` sichern. Der reparierte Pfad ist
-  nicht im Lab verifiziert - geprueft ist nur die Verdict-Logik gegen die Ausgabe vom
-  2026-09-11 (meldet jetzt FAIL statt PASS) und `shellcheck -x`. Offen: kommt der Lauf mit
-  `--key` bis zum verschluesselten Datafile und wirft dort ORA-00600? `kcbtse` steht in
-  keinem Log unter `artefacts/`, nur in Markdown - die Aussage braucht ein Log [P1]
-- [ ] Auxiliary-Kette end-to-end messen (`45_zdlra_aux_pdb_clone.sh`,
-  `./scripts/tde-verify/run_all.sh --only 45 --yes`) [P2]
-- [ ] Rekey aller verschluesselten Tablespaces plus Database Key gegen den Entzug des
-  Quell-MEK messen. Bis dahin ist Stufe 2 des Stufenmodells gemessen und gescheitert,
-  nicht belegt [P2]
-- [ ] Manuelle B2-Messung vom 2026-09-10: einzige Quelle war
-  `artefacts/manual-run-20260910/phase3_b2_20260910_162358.log` (ungetrackt, in keinem
-  Markdown zitiert). Bei Bedarf neu messen [P3]
+- [x] B1-Lauf wiederholen und das Log nach `artefacts/` sichern [P1] - erledigt 2026-10-24:
+  `tde_clone.sh` merged fuer `b1` jetzt den Prod-Keystore (vorher kein Import). RMAN bricht
+  am verschluesselten Datafile 20 mit `ORA-00600 [kcbtse_encdec_tbsblk_1]` ab,
+  `artefacts/run_20261024_082444.log:227-228`, Verdict `:244`; wiederholt 2026-10-25 mit der
+  finalen Skriptrevision, `artefacts/run_20261025_063809.log:227-228`, Verdict `:244`
+- [x] Auxiliary-Kette end-to-end messen (`45_zdlra_aux_pdb_clone.sh`) [P2] - erledigt
+  2026-10-24: `PASS`, Klon liest ohne Quell-MEK, Auxiliary scheitert mit `ORA-28374`,
+  0 von 313 Canary-Bloecken identisch, `artefacts/run_20261024_094125.log:793`, `:950`,
+  `:1008`, `:1027`. Schritt registriert in `run_all.sh`; wiederholt 2026-10-25,
+  `artefacts/run_20261025_064027.log:741`, `:899`, `:935`, `:957`, `:972` (`PASS`)
+- [x] Rekey aller verschluesselten Tablespaces plus Database Key gegen den Entzug des
+  Quell-MEK messen [P2] - erledigt 2026-10-24 (`72_rekey_all_withdrawal.sh`): mit `SET KEY`
+  in jedem Container plus `ONLINE REKEY` oeffnet das Ziel ohne Quell-MEK und liest den Canary,
+  `artefacts/run_20261024_095047.log:849`, `:913`, `:928`; wiederholt 2026-10-25,
+  `artefacts/run_20261025_064340.log:833`, `:897`, `:910`. Gemessen ist damit Stufe 3 ueber
+  den RMAN-Weg - mit SET KEY, Rekey **und** den Probes auf SYSTEM/SYSAUX/UNDO. Stufe 2 (Prod-TEK
+  behalten, nur SET KEY) ist **nicht** "nicht gemessen": die Auxiliary-PDB in Schritt 45 ist
+  ein gemessener Negativ-Datenpunkt (SET KEY in Root und PDB, kein Rekey, TEK unter dem
+  Dev-MEK, nach dem Entzug Datafile 20 `ORA-01187` / Alert-Log `ORA-28374`,
+  `run_20261024_094125.log:663`, `:986`, `:1008`). Vorbehalt: `USERS` war sehr wahrscheinlich
+  `READ ONLY`, P5 haelt dann die Bindung an den Quellschluessel
+- [x] B2 neu messen [P3] - erledigt 2026-10-24: `ORA-19870`/`ORA-28374` beim ersten Piece,
+  `artefacts/run_20261024_082753.log:208-210`, Verdict jetzt aus der Ausgabe abgeleitet;
+  wiederholt 2026-10-25 mit der strengeren Regel (`ORA-28374` und kein `ORA-00600`),
+  `artefacts/run_20261025_063549.log:212-213`, Verdict `:229`
+- [x] Review 2 (Skriptfixes A1-A15) eingearbeitet und 30/35/45/72 mit der finalen
+  Revision wiederholt, alle Verdicts unveraendert `PASS` (2026-10-25) [P1]
+- [ ] Kundendokument nachziehen: Entwurf `tasks/draft-tde-claims-2026-10-23.md` pruefen und
+  in `doc/tde-clone-independence.md` uebernehmen [P2]
+- [ ] Offen aus Schritt 72: SET KEY gegen Probes isolieren - genuegt `SET KEY` je Container
+  plus Rekey der verschluesselten Tablespaces ohne die `ONLINE REKEY`-Probes auf
+  `SYSTEM`/`SYSAUX`/`UNDOTBS1`? Der Lauf hat beides ausgefuehrt; nach den Probes aendert sich
+  der gewrappte Database Key bei gleicher MASTERKEYID (`run_20261024_095047.log:404` gegen
+  `:556`, `run_20261025_064340.log:390` gegen `:542`) - neues Material oder nur neuer IV,
+  offen [P3]
+- [ ] Variante G Entzug mit geschlossener PDB nachmessen: blieb `MOUNTED` wegen des
+  Rekey-ohne-MEK-Wechsel oder wegen desselben Open-/Saved-State-Mechanismus wie in
+  Schritt 45? Bis dahin ist "oeffnet die Zieldatenbank nicht mehr" bedingt [P3]
+- [ ] Stufe 2 mit `READ WRITE`-Tablespace und nur `SET KEY` (ohne Rekey) gegen den Entzug
+  messen - der Datenpunkt aus Schritt 45 gilt nur fuer read-only `USERS` [P3]
+- [ ] Offen aus Schritt 45: Drei-Zonen-Variante (eigene CDB und eigener Keystore fuer die
+  Auxiliary, dritter Service) [P3]
 
 ## seclab - intentionally insecure security baseline (2026-10-15)
 

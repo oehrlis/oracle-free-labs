@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrily@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.1.1
 # Purpose....: Positive control: prove that the block comparison method detects
 #              a TEK change. Creates two fresh encrypted tablespaces with
 #              identical content in odbencprod, compares their block fingerprints.
@@ -29,12 +29,13 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  compare_canary_blocks reports "differs" as 3           0.1.1
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 # --yes accepted for runner compatibility (no destructive operations in this step)
@@ -214,7 +215,7 @@ EXIT
         if [[ ${canary_rc} -eq 2 ]]; then
             verdict="FAIL"
             msg="canary blocks could not be compared - the method cannot be validated"
-        elif [[ ${canary_rc} -eq 1 ]]; then
+        elif [[ ${canary_rc} -eq 3 ]]; then
             verdict="PASS"
             msg="the method is sensitive: identical content under two different tablespace keys produces different ciphertext in every canary block (${canary_cmp}). An 'identical' result elsewhere in the suite therefore means the key really is unchanged"
         else

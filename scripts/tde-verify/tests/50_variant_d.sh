@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-11
-# Version....: 0.1.1
+# Version....: 0.1.2
 # Purpose....: Variant D: RESTORE ... FORCE AS DECRYPTED, then SET KEY (new
 #              dev MEK), then ALTER TABLESPACE USERS ENCRYPTION OFFLINE ENCRYPT.
 #              Tests whether the decrypt-rekey-encrypt cycle creates new TEK
@@ -33,12 +33,16 @@
 # 2026-09-04  oes  Initial release                                        0.1.0
 # 2026-09-11  oes  Keystore and PDB open before the decryption check, and the
 #                  check itself made non-fatal                             0.1.1
+# 2026-10-24  oes  SC2016 disabled file-wide with reason                  0.1.2
 # ------------------------------------------------------------------------------
 
+# Single-quoted SQL and shell blocks below are expanded inside the container
+# on purpose (KSPWD, v$ views, CDB$ROOT); SC2016 is the intended behaviour.
+# shellcheck disable=SC2016
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.1"
+VERSION="0.1.2"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}

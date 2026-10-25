@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.3.0
 # Purpose....: Shared library for TDE verification test scripts.
 #              Source this file from each test script to get common logging,
 #              container helpers, state management and docker wrappers.
@@ -18,6 +18,15 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  sqlplus_kspwd, withdraw_keystore_to_keys and
+#                  read_canary_in_pdb added for steps 45 and 72;
+#                  start_service retries a failed compose up               0.2.0
+# 2026-10-24  oes  compare_canary_blocks: 3 = differs, 2 = error (a crashed
+#                  helper read as "differs"); read_canary_in_pdb: alert log
+#                  only since the attempt, ORA-28365 = rc 3; withdrawal fails
+#                  on a failed auto-login, key export mode 600;
+#                  count_closed_keystores; start_service retries only the
+#                  mount source path error; duplicate get_dbid removed      0.3.0
 # ------------------------------------------------------------------------------
 
 # Guard against being sourced more than once
@@ -305,12 +314,42 @@ reset_service() {
 # Function: start_service
 # Purpose.: Start a compose service in the background
 # Args....: $1  service name
-# Returns.: 0   success
+# Returns.: 0   success, 1 on a non-retryable error or after three failed attempts
+# Notes...: Retries up to three times, and only for the one error that is
+#           known to be transient. Measured 2026-10-24 on Docker Desktop
+#           (macOS): right after reset_service removed and recreated
+#           data/<svc>, "up -d" failed twice within ten minutes with "error
+#           while creating mount source path ... no such file or directory"
+#           although the directory existed on the host - the file sharing
+#           layer still saw the deleted one. A few seconds later the same
+#           command succeeds. Any other error is returned at once: retrying a
+#           broken compose file or a port conflict only hides it.
 # ------------------------------------------------------------------------------
 start_service() {
-    local svc="$1"
+    local svc="$1" attempt out rc
     lib_info "starting service '${svc}' ..."
-    lib_run docker compose --profile "${svc}" up -d
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: docker compose --profile ${svc} up -d"
+        return 0
+    fi
+    for attempt in 1 2 3; do
+        rc=0
+        out=$(docker compose --profile "${svc}" up -d 2>&1) || rc=$?
+        printf '%s\n' "${out}"
+        if [[ ${rc} -eq 0 ]]; then
+            return 0
+        fi
+        if ! grep -q "mount source path" <<<"${out}"; then
+            lib_err "docker compose up for '${svc}' failed (exit ${rc}) - not the transient mount error, no retry"
+            return 1
+        fi
+        if [[ ${attempt} -lt 3 ]]; then
+            lib_warn "docker compose up for '${svc}' hit the transient mount source path error (attempt ${attempt}/3) - retrying in 5s"
+            sleep 5
+        fi
+    done
+    lib_err "could not start '${svc}' after three attempts"
+    return 1
 }
 
 # ------------------------------------------------------------------------------
@@ -438,21 +477,6 @@ rman_dev() {
 read_wallet_pwd() {
     local svc="$1"
     docker exec "${svc}" cat "${WALLET_DIR_CONTAINER}/wallet_pwd.txt" 2>/dev/null || true
-}
-
-# ------------------------------------------------------------------------------
-# Function: get_dbid
-# Purpose.: Query the DBID from a running container
-# Args....: $1  container name
-# Returns.: prints DBID on stdout
-# ------------------------------------------------------------------------------
-get_dbid() {
-    local svc="$1"
-    printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 80 TRIMSPOOL ON
-SELECT dbid FROM v\$database;
-EXIT" \
-    | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
-    | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }'
 }
 
 # ------------------------------------------------------------------------------
@@ -718,17 +742,35 @@ rm -f /tmp/al.$$.log
 INNER
 
     local closed
-    closed=$(printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT COUNT(*) FROM v\$encryption_wallet w
-WHERE w.status NOT IN ('OPEN','OPEN_NO_MASTER_KEY')
-AND NOT EXISTS (SELECT 1 FROM v\$pdbs p WHERE p.con_id = w.con_id AND p.name = 'PDB\$SEED');
-EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
-        | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }')
+    closed=$(count_closed_keystores "${svc}")
     if [[ -z "${closed}" || "${closed}" != "0" ]]; then
         lib_err "keystore in ${svc} is not open after recreating the auto-login"
         return 1
     fi
     lib_info "keystore in ${svc} open via local auto-login"
+}
+
+# ------------------------------------------------------------------------------
+# Function: count_closed_keystores
+# Purpose.: Count the containers whose keystore is not open, PDB$SEED excluded
+# Args....: $1  container name
+# Returns.: 0 always
+# Output..: the count, or nothing if the query failed - callers treat an empty
+#           value like a non-zero one
+# Depends.: docker, sqlplus
+# Example.: closed=$(count_closed_keystores odbencdev)
+# Notes...: PDB$SEED is excluded: its keystore is CLOSED in normal operation.
+#           Shared by ensure_autologin_for and step 45 phase 6, where a freshly
+#           created PDB does not inherit the open password keystore.
+# ------------------------------------------------------------------------------
+count_closed_keystores() {
+    local svc="$1"
+    printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$encryption_wallet w
+WHERE w.status NOT IN ('OPEN','OPEN_NO_MASTER_KEY')
+AND NOT EXISTS (SELECT 1 FROM v\$pdbs p WHERE p.con_id = w.con_id AND p.name = 'PDB\$SEED');
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
+        | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }' || true
 }
 
 # ------------------------------------------------------------------------------
@@ -739,7 +781,7 @@ EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
 #           $3  container holding the canary table
 #           $4  PDB name
 #           $5  table name, default CANARY_TDE
-# Returns.: 0 canary blocks identical, 1 they differ, 2 could not determine
+# Returns.: 0 canary blocks identical, 3 they differ, 2 could not determine
 # Output..: "identical <n> differing <n> total <n>"
 # Depends.: docker, sqlplus, python3
 # Example.: compare_canary_blocks baseline variant_d odbencdev ODBENCPROD
@@ -750,6 +792,12 @@ EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
 #           identical block addresses means the same tablespace key; the wrapped
 #           key in v$encrypted_tablespaces cannot answer that, because it also
 #           changes on a pure re-wrap after a master key rotation.
+#           "Differs" is 3, not 1: an uncaught Python exception also exits 1,
+#           so a crashed comparison used to read as "ciphertext differs" - the
+#           exact result the independence steps look for. The helper catches
+#           every exception and exits 2, and any code other than 0 or 3 is
+#           mapped to 2 here, so only a completed comparison can say "differs".
+#           Also an empty intersection (no canary block in both sets) is 2.
 # ------------------------------------------------------------------------------
 compare_canary_blocks() {
     local a="$1" b="$2" svc="$3" pdb="$4" tab="${5:-CANARY_TDE}"
@@ -778,6 +826,7 @@ EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>/dev/null \
     local blockfile
     blockfile=$(mktemp)
     printf '%s\n' "${blocks}" >"${blockfile}"
+    local rc=0
     python3 -c '
 import sys, pathlib
 def load(p):
@@ -788,16 +837,24 @@ def load(p):
         n, _, h = line.partition("\t")
         d[int(n)] = h
     return d
-a, b = load(sys.argv[1]), load(sys.argv[2])
-want = {int(x) for x in pathlib.Path(sys.argv[3]).read_text().split()}
-common = want & set(a) & set(b)
-diff = {n for n in common if a[n] != b[n]}
+try:
+    a, b = load(sys.argv[1]), load(sys.argv[2])
+    want = {int(x) for x in pathlib.Path(sys.argv[3]).read_text().split()}
+    common = want & set(a) & set(b)
+    diff = {n for n in common if a[n] != b[n]}
+except Exception as exc:
+    print("comparison failed: %s" % exc, file=sys.stderr)
+    sys.exit(2)
 print("identical %d differing %d total %d" % (len(common) - len(diff), len(diff), len(common)))
-sys.exit(1 if diff else 0)
-' "${fp_a}" "${fp_b}" "${blockfile}"
-    local rc=$?
+if not common:
+    sys.exit(2)
+sys.exit(3 if diff else 0)
+' "${fp_a}" "${fp_b}" "${blockfile}" || rc=$?
     rm -f "${blockfile}"
-    return ${rc}
+    case "${rc}" in
+        0|3) return ${rc} ;;
+        *)   lib_err "canary block comparison failed (helper exit ${rc})"; return 2 ;;
+    esac
 }
 
 # ------------------------------------------------------------------------------
@@ -1108,4 +1165,251 @@ for line in sys.stdin.read().split():
         sys.exit(0)
 sys.exit(1)
 ' "${want}"
+}
+
+# ------------------------------------------------------------------------------
+# Function: sqlplus_kspwd
+# Purpose.: Run SQL that needs the keystore password, without the password ever
+#           leaving the container
+# Args....: $1  container name
+#           $2  SQL text; the literal token __KSPWD__ stands for the password
+# Returns.: exit code of SQL*Plus
+# Output..: SQL*Plus output, lines with IDENTIFIED BY / WITH SECRET filtered out
+# Depends.: docker, sqlplus
+# Example.: sqlplus_kspwd odbencdev "ADMINISTER KEY MANAGEMENT SET KEY
+#             FORCE KEYSTORE IDENTIFIED BY \"__KSPWD__\" WITH BACKUP;"
+# Notes...: The SQL travels over stdin inside a quoted heredoc, so neither the
+#           host nor the container shell expands anything in it - v$ views need
+#           no escaping beyond what the caller already writes. The token is
+#           replaced in the container from wallet_pwd.txt. The replacement is
+#           quoted: bash 5.2 otherwise treats an & in the password as the
+#           matched text (patsub_replacement).
+#           Added 2026-10-24 for 45_zdlra_aux_pdb_clone.sh and
+#           72_rekey_all_withdrawal.sh; the older steps keep their own inline
+#           variants.
+# ------------------------------------------------------------------------------
+sqlplus_kspwd() {
+    local svc="$1" sql="$2"
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        echo "--- DRY-RUN [sqlplus ${svc}, keystore password from wallet_pwd.txt] ---"
+        printf '%s\n' "${sql}" | sed 's/__KSPWD__/<kspwd>/g'
+        echo "--- end ---"
+        return 0
+    fi
+    local out rc=0
+    out=$( {
+        # shellcheck disable=SC2016 # $(cat ...) must expand in the container, not here
+        printf 'PW="$(cat %s/wallet_pwd.txt)"\n' "${WALLET_DIR_CONTAINER}"
+        printf '%s\n' "SQL=\"\$(cat <<'__EOSQL__'"
+        printf '%s\n' "${sql}"
+        printf '%s\n' "__EOSQL__" ")\""
+        # shellcheck disable=SC2016
+        printf '%s\n' 'printf "%s\n" "${SQL//__KSPWD__/"${PW}"}" | sqlplus -S / as sysdba'
+    } | docker exec -i "${svc}" bash -s 2>&1) || rc=$?
+    printf '%s\n' "${out}" | grep -viE "identified by|with secret" || true
+    return ${rc}
+}
+
+# ------------------------------------------------------------------------------
+# Function: withdraw_keystore_to_keys
+# Purpose.: Replace the dev keystore with one that holds only the named keys,
+#           so every other key - in particular the source MEK - is gone
+# Args....: $1  SQL identifier list of the keys to keep, quoted, e.g. "'AY..', 'AZ..'"
+#           $2  key export file inside the container
+#           $3  directory the current keystore is moved to
+#           $4  directory the current keystore is copied to as a rollback
+#           $5  transport secret for EXPORT/IMPORT KEYS
+# Returns.: 0 the new keystore is in place and open via local auto-login,
+#           1 a step failed (including the auto-login)
+# Output..: the export/import output and the resulting v$encryption_keys rows
+# Depends.: docker, sqlplus, in_dev, sqlplus_kspwd, sqlplus_dev, ensure_autologin_for
+# Example.: withdraw_keystore_to_keys "'AYon...'" /opt/oracle/xchange/k.exp \
+#             /opt/oracle/xchange/aside /opt/oracle/xchange/backup "${secret}"
+# Notes...: Moved here from 45_zdlra_aux_pdb_clone.sh (withdraw_source_mek) so
+#           step 72 uses the identical mechanism. Export by identifier in
+#           CDB$ROOT (EXPORT KEYS in a PDB: ORA-65040), move the keystore aside,
+#           restart (ORA-28389: an auto-login keystore cannot be closed by SQL,
+#           its memory context survives deleting the files), CREATE KEYSTORE
+#           without a path (WALLET_ROOT is set, an explicit path is ORA-46633),
+#           IMPORT KEYS, recreate the local auto-login.
+#           The restart in between stops at MOUNTED if anything still needs a
+#           key that is not in the empty keystore; the import then runs in the
+#           mounted instance and the caller opens the database afterwards.
+# ------------------------------------------------------------------------------
+withdraw_keystore_to_keys() {
+    local key_ids="$1" keys_file="$2" aside="$3" backup="$4" secret="$5"
+
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would export the keys ${key_ids} to ${keys_file}"
+        lib_info "DRY-RUN: would copy the current keystore to ${backup}"
+        lib_info "DRY-RUN: would move ${WALLET_DIR_CONTAINER}/tde to ${aside}"
+        lib_info "DRY-RUN: would restart, CREATE KEYSTORE, IMPORT KEYS, recreate the auto-login"
+        return 0
+    fi
+
+    # EXPORT KEYS refuses to overwrite its destination with ORA-46642.
+    in_dev "if [ -f ${keys_file} ]; then rm -f ${keys_file} && echo 'removed leftover ${keys_file}'; else echo 'no leftover at ${keys_file}'; fi"
+
+    lib_info "exporting the keys to keep before the keystore is replaced"
+    sqlplus_kspwd "${DEV_SERVICE}" "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET \"${secret}\"
+  TO '${keys_file}'
+  FORCE KEYSTORE IDENTIFIED BY \"__KSPWD__\"
+  WITH IDENTIFIER IN ${key_ids};
+SELECT 'keys exported' AS status FROM dual;
+EXIT
+" || { lib_err "EXPORT KEYS failed - keystore left untouched"; return 1; }
+    # The export holds the kept keys, protected only by the transport secret.
+    # The caller removes it after the run (--keep retains it); until then it is
+    # readable by the oracle user only.
+    in_dev "chmod 600 ${keys_file} && echo 'key export ${keys_file} set to mode 600'" \
+        || { lib_err "could not restrict the permissions of ${keys_file}"; return 1; }
+
+    lib_info "backing the current keystore up to ${backup}"
+    in_dev "
+set -e
+rm -rf ${backup}
+mkdir -p ${backup}
+cp -a ${WALLET_DIR_CONTAINER}/. ${backup}/
+echo 'current keystore backed up to ${backup}'
+"
+
+    lib_info "moving the current keystore aside and creating an empty directory"
+    in_dev "
+set -e
+ks_dir=${WALLET_DIR_CONTAINER}/tde
+if [ -d \${ks_dir} ]; then
+    rm -rf ${aside}
+    mv \${ks_dir} ${aside} || { echo \"ERROR: could not move \${ks_dir} aside\" >&2; exit 1; }
+    echo 'keystore moved to ${aside}'
+fi
+mkdir -p \${ks_dir}
+if [ -n \"\$(ls -A \${ks_dir})\" ]; then
+    echo \"ERROR: \${ks_dir} is not empty:\" >&2
+    ls -la \${ks_dir} >&2
+    exit 1
+fi
+echo \"fresh empty keystore directory: \${ks_dir}\"
+" || return 1
+
+    lib_info "restarting the instance to drop the old keystore from memory"
+    sqlplus_dev "
+WHENEVER SQLERROR CONTINUE
+SHUTDOWN IMMEDIATE
+STARTUP
+SELECT 'OPEN_MODE=' || open_mode AS state FROM v\$database;
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
+EXIT
+" || lib_warn "the restart reported an error - the import below shows whether it mattered"
+
+    lib_info "creating the new keystore and importing the kept keys"
+    sqlplus_kspwd "${DEV_SERVICE}" "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY \"__KSPWD__\";
+-- ORA-28354 (already open) is the desired state.
+WHENEVER SQLERROR CONTINUE
+ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"__KSPWD__\" CONTAINER=ALL;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET \"${secret}\"
+  FROM '${keys_file}'
+  FORCE KEYSTORE IDENTIFIED BY \"__KSPWD__\"
+  WITH BACKUP;
+SET LINESIZE 200 PAGESIZE 100
+COLUMN key_id FORMAT A54
+SELECT con_id, key_id, keystore_type, origin FROM v\$encryption_keys ORDER BY con_id;
+EXIT
+" || { lib_err "CREATE KEYSTORE / IMPORT KEYS failed - rollback copy in ${backup}"; return 1; }
+
+    # A failed auto-login is a harness failure, not a measurement: the restart
+    # that follows would open without a keystore, and every read after it
+    # would fail for that reason instead of a missing key.
+    ensure_autologin_for "${DEV_SERVICE}" || {
+        lib_err "the auto-login could not be recreated - the withdrawal result would be meaningless"
+        return 1
+    }
+}
+
+# ------------------------------------------------------------------------------
+# Function: read_canary_in_pdb
+# Purpose.: Open a PDB and try to read the canary table in it
+# Args....: $1  container name
+#           $2  PDB name
+# Returns.: 0 canary readable
+#           1 blocked by a missing key (ORA-28374, or ORA-01187 with the
+#             matching alert log line written during this attempt)
+#           2 unclear
+#           3 keystore closed (ORA-28365) - says nothing about the key, the
+#             callers report it as UNCLEAR
+# Output..: the full SQL*Plus output of the attempt
+# Depends.: docker, sqlplus, ssenc_canary.sql
+# Example.: read_canary_in_pdb odbencdev PDBAUX_CLONE
+# Notes...: A non-zero return is a measurement, not a harness failure - call it
+#           with "|| rc=$?". Moved here from 45_zdlra_aux_pdb_clone.sh. Success
+#           is the READABLE verdict line of ssenc_canary.sql, not a bare
+#           "rows selected": the container query in the same script prints a
+#           row count of its own whether or not the canary decrypts.
+#           ORA-65019 (PDB already open) is tolerated on purpose.
+#           ORA-28365 used to count as "blocked". A closed keystore is a state
+#           of the harness, not evidence that a key is missing, so it gets a
+#           return code of its own.
+# ------------------------------------------------------------------------------
+read_canary_in_pdb() {
+    local svc="$1" pdb="$2" out
+    local alert_log="/opt/oracle/diag/rdbms/free/FREE/trace/alert_FREE.log"
+    if [[ "${DRY_RUN:-FALSE}" == "TRUE" ]]; then
+        lib_info "DRY-RUN: would open ${pdb} in ${svc} and read ${CANARY_OWNER}.CANARY_TDE"
+        return 0
+    fi
+    # Alert log position before the attempt: only lines written by this
+    # attempt may explain its ORA-01187. Scanning the tail without a start
+    # mark matched the "not verified" line of an earlier attempt on another
+    # PDB just as well.
+    local alert_start
+    alert_start=$(docker exec "${svc}" bash -c "wc -l < ${alert_log} 2>/dev/null || echo 0" 2>/dev/null | tr -d ' ' || true)
+    [[ "${alert_start}" =~ ^[0-9]+$ ]] || alert_start=0
+    out=$(printf '%s\n' "
+WHENEVER SQLERROR CONTINUE
+ALTER PLUGGABLE DATABASE ${pdb} OPEN;
+SELECT name, open_mode FROM v\$pdbs WHERE name='${pdb}';
+ALTER SESSION SET CONTAINER=${pdb};
+@/opt/oracle/common/scripts/ssenc_canary.sql ${CANARY_OWNER} ${CANARY_MARKER} CANARY_TDE
+EXIT" | docker exec -i "${svc}" sqlplus -S / as sysdba 2>&1 || true)
+    printf '%s\n' "${out}"
+    if printf '%s' "${out}" | grep -qE "ORA-28374|not found in wallet"; then
+        return 1
+    fi
+    if printf '%s' "${out}" | grep -q "ORA-28365"; then
+        lib_warn "ORA-28365 in ${pdb}: the keystore is closed - no statement about the key possible"
+        return 3
+    fi
+    # Measured 2026-10-24 (step 45): an encrypted datafile whose key is gone
+    # surfaces in the session as ORA-01187 "failed verification tests", not as
+    # ORA-28374. The cause is only in the alert log ("File 20 not verified due
+    # to error ORA-28374", plus the missing KEY_ID). ORA-01187 alone also has
+    # other causes, so it counts as blocked only with that alert log line,
+    # written after the attempt started and - when ORA-01110 names the file -
+    # for that same file number. The line is printed so the evidence reaches
+    # the run log.
+    if printf '%s' "${out}" | grep -q "ORA-01187"; then
+        local file_no alert_new alert_hit pattern
+        file_no=$(printf '%s' "${out}" | sed -n 's/.*ORA-01110: data file \([0-9][0-9]*\):.*/\1/p' | head -1)
+        if [[ -n "${file_no}" ]]; then
+            pattern="File ${file_no} not verified due to error ORA-28374"
+        else
+            pattern="not verified due to error ORA-28374"
+        fi
+        alert_new=$(docker exec "${svc}" bash -c "tail -n +$((alert_start + 1)) ${alert_log}" 2>/dev/null || true)
+        alert_hit=$(grep -E "${pattern}" <<<"${alert_new}" | tail -1 || true)
+        if [[ -n "${alert_hit}" ]]; then
+            echo "alert log (${svc}, written during this attempt, after line ${alert_start}):"
+            printf '  %s\n' "${alert_hit}"
+            return 1
+        fi
+        lib_warn "ORA-01187 without a matching '${pattern}' alert log line since line ${alert_start} - unclear"
+    fi
+    if printf '%s' "${out}" | grep -q "READABLE - all rows decrypt"; then
+        return 0
+    fi
+    return 2
 }

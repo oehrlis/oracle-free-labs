@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-10
-# Version....: 0.1.0
+# Version....: 0.2.1
 # Purpose....: P4b - remote PDB clone WITHOUT importing the source master key.
 #              The decisive experiment for the whole recommendation: does the
 #              target ever need the source MEK, or does the clone leave it with
@@ -45,12 +45,17 @@
 # 2026-09-10  oes  Verdict rested on readability alone and reported a false  0.2.0
 #                  INDEPENDENT. Now also checks the keystore contents and
 #                  the key reference - the clone transports the source MEK.
+# 2026-10-24  oes  SC2016 disabled file-wide with reason; header
+#                  version aligned                                        0.2.1
 # ------------------------------------------------------------------------------
 
+# Single-quoted SQL and shell blocks below are expanded inside the container
+# on purpose (KSPWD, v$ views, CDB$ROOT); SC2016 is the intended behaviour.
+# shellcheck disable=SC2016
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.0"
+VERSION="0.2.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}

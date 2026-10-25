@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.1.1
 # Purpose....: PDB P2 - Unplug PDBCLONE with key export (ENCRYPT USING),
 #              plug into odbencdev with key import (DECRYPT USING).
 #              The archive secret is a static lab constant; it is not a
@@ -31,12 +31,16 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  SC2016 disabled file-wide with reason                  0.1.1
 # ------------------------------------------------------------------------------
 
+# Single-quoted SQL and shell blocks below are expanded inside the container
+# on purpose (KSPWD, v$ views, CDB$ROOT); SC2016 is the intended behaviour.
+# shellcheck disable=SC2016
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}

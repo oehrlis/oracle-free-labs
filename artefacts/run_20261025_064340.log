@@ -1,0 +1,924 @@
+2026-10-25 06:43:40 RUN run_all.sh 0.4.0
+  DRY_RUN=FALSE FORCE_YES=TRUE VERBOSE=FALSE
+  OPT_ONLY=72 OPT_FROM= OPT_TO=
+
+========================================================================
+  STEP 72: Rekey all + SET KEY per container, then withdraw the source MEK
+  Script: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/scripts/tde-verify/tests/72_rekey_all_withdrawal.sh
+  Time:   2026-10-25 06:43:40
+========================================================================
+2026-10-25 06:43:40 START [72] 72_rekey_all_withdrawal.sh
+2026-10-25 06:43:40 INFO  Starting 72_rekey_all_withdrawal.sh 0.2.0
+
+========================================================================
+== Step 72: Rekey all + database keys, then withdraw the source MEK
+========================================================================
+
+========================================================================
+== Phase 2: Reset odbencdev and restore via variant A
+========================================================================
+2026-10-25 06:43:40 INFO  resetting service 'odbencdev' ...
+ Container odbencdev Stopping 
+ Container odbencdev Stopped 
+ Container odbencdev Removing 
+ Container odbencdev Removed 
+ Network oracle-free-labs_default Removing 
+ Network oracle-free-labs_default Resource is still in use 
+2026-10-25 06:43:43 INFO  removing /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/odbencdev
+2026-10-25 06:43:43 INFO  restored tracked files under data/odbencdev
+2026-10-25 06:43:43 INFO  service 'odbencdev' reset complete
+2026-10-25 06:43:43 INFO  starting service 'odbencdev' ...
+ Container odbencdev Creating 
+ Container odbencdev Created 
+ Container odbencdev Starting 
+ Container odbencdev Started 
+2026-10-25 06:43:43 INFO  waiting for odbencdev to be ready (timeout 600s) ...
+2026-10-25 06:45:55 INFO  odbencdev is ready
+2026-10-25 06:45:55 INFO  Starting tde_clone.sh 0.2.0
+2026-10-25 06:45:55 INFO  variant a: replacing the target keystore with the source keystore
+2026-10-25 06:45:55 INFO  backing the target keystore up to /opt/oracle/xchange/wallet_dev_pristine
+2026-10-25 06:45:55 INFO  backup verified, keystore file present and non-empty
+2026-10-25 06:45:55 INFO  staging the source keystore into /opt/oracle/dbconfig/FREE/wallet
+2026-10-25 06:45:55 INFO  shutting the target down and starting it NOMOUNT
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+ORACLE instance started.
+
+Total System Global Area 1603392144 bytes
+Fixed Size		    5026448 bytes
+Variable Size		  419430400 bytes
+Database Buffers	 1174405120 bytes
+Redo Buffers		    4530176 bytes
+2026-10-25 06:45:57 INFO  moving stale online redo logs to /opt/oracle/xchange/stale_redo_odbencdev
+moved /opt/oracle/oradata/FREE/redo01.log
+moved /opt/oracle/oradata/FREE/redo02.log
+moved /opt/oracle/oradata/FREE/redo03.log
+2026-10-25 06:45:58 INFO  restoring the source control file and mounting
+2026-10-25 06:45:58 INFO  control file autobackup: cf_c-1519529852-20261024-00
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sun Oct 25 06:45:58 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (not mounted)
+
+RMAN> 
+
+RMAN> SET DBID 1519529852;
+executing command: SET DBID
+
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
+4>   RESTORE CONTROLFILE FROM '/opt/oracle/xchange/backup/cf_c-1519529852-20261024-00';
+5>   ALTER DATABASE MOUNT;
+6>   RELEASE CHANNEL c1;
+7> }
+using target database control file instead of recovery catalog
+allocated channel: c1
+channel c1: SID=37 device type=DISK
+
+executing command: SET CONTROLFILE AUTOBACKUP FORMAT
+
+Starting restore at 25-OCT-26
+
+channel c1: restoring control file
+channel c1: restore complete, elapsed time: 00:00:01
+output file name=/opt/oracle/oradata/FREE/control01.ctl
+output file name=/opt/oracle/oradata/FREE/control02.ctl
+Finished restore at 25-OCT-26
+
+Statement processed
+
+released channel: c1
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sun Oct 25 06:46:00 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852, not open)
+
+RMAN> 
+
+RMAN> CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
+using target database control file instead of recovery catalog
+old RMAN configuration parameters:
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
+new RMAN configuration parameters:
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
+new RMAN configuration parameters are successfully stored
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+2026-10-25 06:46:01 INFO  opening the target keystore with the stored keystore password
+
+    CON_ID STATUS	  WALLET_TYPE
+---------- -------------- ----------------
+	 1 OPEN 	  PASSWORD
+2026-10-25 06:46:01 INFO  cataloging the backup pieces
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sun Oct 25 06:46:01 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852, not open)
+
+RMAN> 
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   # No CATALOG: both containers see the exchange directory at the same path, so
+4>   # the restored control file already knows the source pieces. Cataloging would
+5>   # also pick up a previous clone's control file autobackup and its incarnation,
+6>   # which makes recovery fail with ORA-19912.
+7>   RELEASE CHANNEL c1;
+8> }
+using target database control file instead of recovery catalog
+allocated channel: c1
+channel c1: SID=162 device type=DISK
+
+released channel: c1
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+2026-10-25 06:46:02 INFO  restoring with: RESTORE DATABASE;
+2026-10-25 06:46:02 INFO  recovery will stop before archived log sequence 6
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sun Oct 25 06:46:02 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852, not open)
+
+RMAN> 
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   SET UNTIL SEQUENCE 6 THREAD 1;
+4>   RESTORE DATABASE;
+5>   RECOVER DATABASE;
+6>   RELEASE CHANNEL c1;
+7> }
+using target database control file instead of recovery catalog
+allocated channel: c1
+channel c1: SID=37 device type=DISK
+
+executing command: SET until clause (SEQUENCE)
+
+Starting restore at 25-OCT-26
+
+channel c1: starting datafile backup set restore
+channel c1: specifying datafile(s) to restore from backup set
+channel c1: restoring datafile 00001 to /opt/oracle/oradata/FREE/system01.dbf
+channel c1: restoring datafile 00003 to /opt/oracle/oradata/FREE/sysaux01.dbf
+channel c1: restoring datafile 00007 to /opt/oracle/oradata/FREE/users01.dbf
+channel c1: restoring datafile 00011 to /opt/oracle/oradata/FREE/undotbs01.dbf
+channel c1: reading from backup piece /opt/oracle/xchange/backup/024ojrp4_2_1_1
+channel c1: piece handle=/opt/oracle/xchange/backup/024ojrp4_2_1_1 tag=TAG20261024T082403
+channel c1: restored backup piece 1
+channel c1: restore complete, elapsed time: 00:00:04
+channel c1: starting datafile backup set restore
+channel c1: specifying datafile(s) to restore from backup set
+channel c1: restoring datafile 00016 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_system_ofrmlftd_.dbf
+channel c1: restoring datafile 00017 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_sysaux_ofrmlftg_.dbf
+channel c1: restoring datafile 00018 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_undotbs1_ofrmlftg_.dbf
+channel c1: restoring datafile 00019 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_audit_da_ofrmljmf_.dbf
+channel c1: restoring datafile 00020 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_users_ofrmm540_.dbf
+channel c1: restoring datafile 00021 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_canary_p_ofrmqxxx_.dbf
+channel c1: reading from backup piece /opt/oracle/xchange/backup/037ojrp7_3_1_1
+channel c1: piece handle=/opt/oracle/xchange/backup/037ojrp7_3_1_1 tag=TAG20261024T082403
+channel c1: restored backup piece 1
+channel c1: restore complete, elapsed time: 00:00:03
+channel c1: starting datafile backup set restore
+channel c1: specifying datafile(s) to restore from backup set
+channel c1: restoring datafile 00002 to /opt/oracle/oradata/FREE/pdbseed/system01.dbf
+channel c1: restoring datafile 00004 to /opt/oracle/oradata/FREE/pdbseed/sysaux01.dbf
+channel c1: restoring datafile 00009 to /opt/oracle/oradata/FREE/pdbseed/undotbs01.dbf
+channel c1: reading from backup piece /opt/oracle/xchange/backup/04aojrpa_4_1_1
+channel c1: piece handle=/opt/oracle/xchange/backup/04aojrpa_4_1_1 tag=TAG20261024T082403
+channel c1: restored backup piece 1
+channel c1: restore complete, elapsed time: 00:00:01
+Finished restore at 25-OCT-26
+
+Starting recover at 25-OCT-26
+datafile 20 not processed because file is read-only
+datafile 21 not processed because file is read-only
+
+starting media recovery
+
+channel c1: starting archived log restore to default destination
+channel c1: restoring archived log
+archived log thread=1 sequence=5
+channel c1: reading from backup piece /opt/oracle/xchange/backup/05bojrpb_5_1_1
+channel c1: piece handle=/opt/oracle/xchange/backup/05bojrpb_5_1_1 tag=TAG20261024T082411
+channel c1: restored backup piece 1
+channel c1: restore complete, elapsed time: 00:00:01
+recovery status time_needed 2026-10-24 08:24:04
+archived log file name=/opt/oracle/product/26ai/dbhomeFree/dbs/arch1_5_1247473213.dbf thread=1 sequence=5
+media recovery complete, elapsed time: 00:00:00
+Finished recover at 25-OCT-26
+
+released channel: c1
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+2026-10-25 06:46:11 INFO  opening the target with RESETLOGS
+
+Database altered.
+
+
+Pluggable database altered.
+
+
+      DBID NAME      OPEN_MODE		  LOG_MODE
+---------- --------- -------------------- ------------
+1519529852 FREE      READ WRITE 	  ARCHIVELOG
+
+2026-10-25 06:46:14 INFO  recreating the auto-login keystore on the target host
+
+    CON_ID STATUS		WALLET_TYPE
+---------- -------------------- ----------------
+	 1 OPEN 		PASSWORD
+	 2 CLOSED		UNKNOWN
+	 4 OPEN 		PASSWORD
+2026-10-25 06:46:14 INFO  target keystore open via local auto-login
+2026-10-25 06:46:14 INFO  Done.
+
+========================================================================
+== Key inventory BEFORE (restored target, source keystore)
+========================================================================
+== Encrypted tablespaces (all containers) ==
+
+CON_NAME       TS_NAME	      ENCRYPT KEY_VERSION MASTERKEYID			   ENCRYPTEDKEY
+-------------- -------------- ------- ----------- -------------------------------- ----------------------------------------------------------------
+ODBENCPROD     USERS	      AES256		1 D8D7BB0F7DA7460CACFBFBB60198DBA1 894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2
+
+1 row selected.
+
+== Tablespaces with ENCRYPTED and STATUS (all open containers) ==
+
+CON_NAME       TS_NAME	      ENC STATUS     CONTENTS
+-------------- -------------- --- ---------- ---------------------
+CDB$ROOT       SYSAUX	      NO  ONLINE     PERMANENT
+CDB$ROOT       SYSTEM	      NO  ONLINE     PERMANENT
+CDB$ROOT       TEMP	      NO  ONLINE     TEMPORARY
+CDB$ROOT       UNDOTBS1       NO  ONLINE     UNDO
+CDB$ROOT       USERS	      NO  ONLINE     PERMANENT
+ODBENCPROD     AUDIT_DATA     NO  ONLINE     PERMANENT
+ODBENCPROD     CANARY_PLAIN   NO  READ ONLY  PERMANENT
+ODBENCPROD     SYSAUX	      NO  ONLINE     PERMANENT
+ODBENCPROD     SYSTEM	      NO  ONLINE     PERMANENT
+ODBENCPROD     TEMP	      NO  ONLINE     TEMPORARY
+ODBENCPROD     UNDOTBS1       NO  ONLINE     UNDO
+ODBENCPROD     USERS	      YES READ ONLY  PERMANENT
+
+12 rows selected.
+
+== Container database keys ==
+
+CON_NAME       ENCRYPT MASTERKEYID			MAS ENCRYPTEDKEY
+-------------- ------- -------------------------------- --- ----------------------------------------------------------------
+CDB$ROOT       AES256  C6DF452C3A9343329106BEA81BD3B0CA YES DE57A6A1059D5315B0823BE10B51EAF23C600D8A8730110BDBFE9032A082222B
+PDB$SEED       NONE    00000000000000000000000000000000 NO  0000000000000000000000000000000000000000000000000000000000000000
+ODBENCPROD     AES256  D8D7BB0F7DA7460CACFBFBB60198DBA1 YES 423EEBB42BC4EE9A37F8DD44CC8B3237E41D683B8330A58C4DE4D8E513CC524C
+
+3 rows selected.
+
+== Keys in the keystore ==
+
+    CON_ID KEY_ID						  ORIGIN				    CREATOR_PDBNAM ACTIVATION_TIME
+---------- ------------------------------------------------------ ----------------------------------------- -------------- ---------------------------------------------------------------------------
+	 1 AcbfRSw6k0MykQa+qBvTsMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    CDB$ROOT	   24-OCT-26 06.21.21.613393 AM +00:00
+	 4 AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    ODBENCPROD	   24-OCT-26 06.21.25.010162 AM +00:00
+
+2 rows selected.
+2026-10-25 06:46:14 INFO  source MEK ids referenced by the restored target:
+  C6DF452C3A9343329106BEA81BD3B0CA
+  D8D7BB0F7DA7460CACFBFBB60198DBA1
+
+========================================================================
+== Phase 4: Encrypted READ ONLY tablespaces to READ WRITE
+========================================================================
+ODBENCPROD:USERS:READ ONLY
+2026-10-25 06:46:14 INFO  setting ODBENCPROD.USERS READ WRITE
+
+Session altered.
+
+
+Tablespace altered.
+
+========================================================================
+== Phase 5: SET KEY in CDB$ROOT and in every open PDB
+========================================================================
+2026-10-25 06:46:15 INFO  PDBs: ODBENCPROD
+
+Session altered.
+
+
+keystore altered.
+
+Session altered.
+
+
+keystore altered.
+
+========================================================================
+== Phase 6: ONLINE REKEY of every encrypted tablespace
+========================================================================
+2026-10-25 06:46:15 INFO  ONLINE REKEY ODBENCPROD.USERS
+
+Session altered.
+
+
+Tablespace altered.
+
+========================================================================
+== Key inventory AFTER SET KEY + REKEY of the encrypted tablespaces (before probes)
+========================================================================
+== Encrypted tablespaces (all containers) ==
+
+CON_NAME       TS_NAME	      ENCRYPT KEY_VERSION MASTERKEYID			   ENCRYPTEDKEY
+-------------- -------------- ------- ----------- -------------------------------- ----------------------------------------------------------------
+ODBENCPROD     USERS	      AES256		2 6DDB11FBDA7C4C53BA3A743FEE795F29 93E36655AB6D4FFAD16F21E98178BD0A23BDFF61ADA3B5752EBB5A37DD2056CE
+
+1 row selected.
+
+== Tablespaces with ENCRYPTED and STATUS (all open containers) ==
+
+CON_NAME       TS_NAME	      ENC STATUS     CONTENTS
+-------------- -------------- --- ---------- ---------------------
+CDB$ROOT       SYSAUX	      NO  ONLINE     PERMANENT
+CDB$ROOT       SYSTEM	      NO  ONLINE     PERMANENT
+CDB$ROOT       TEMP	      NO  ONLINE     TEMPORARY
+CDB$ROOT       UNDOTBS1       NO  ONLINE     UNDO
+CDB$ROOT       USERS	      NO  ONLINE     PERMANENT
+ODBENCPROD     AUDIT_DATA     NO  ONLINE     PERMANENT
+ODBENCPROD     CANARY_PLAIN   NO  READ ONLY  PERMANENT
+ODBENCPROD     SYSAUX	      NO  ONLINE     PERMANENT
+ODBENCPROD     SYSTEM	      NO  ONLINE     PERMANENT
+ODBENCPROD     TEMP	      NO  ONLINE     TEMPORARY
+ODBENCPROD     UNDOTBS1       NO  ONLINE     UNDO
+ODBENCPROD     USERS	      YES ONLINE     PERMANENT
+
+12 rows selected.
+
+== Container database keys ==
+
+CON_NAME       ENCRYPT MASTERKEYID			MAS ENCRYPTEDKEY
+-------------- ------- -------------------------------- --- ----------------------------------------------------------------
+CDB$ROOT       AES256  4422470BA80A497DA66256E96A83E8A0 YES C36C6D95EC0C106E90063FCACE6E797D50BD9CBD43D158A350E39823FA32FAD3
+PDB$SEED       NONE    00000000000000000000000000000000 NO  0000000000000000000000000000000000000000000000000000000000000000
+ODBENCPROD     AES256  6DDB11FBDA7C4C53BA3A743FEE795F29 YES 65AFA3E6E943554C41515FF22FEFD875B6C467F4F2A02CAFF30F5E32963E0AF3
+
+3 rows selected.
+
+== Keys in the keystore ==
+
+    CON_ID KEY_ID						  ORIGIN				    CREATOR_PDBNAM ACTIVATION_TIME
+---------- ------------------------------------------------------ ----------------------------------------- -------------- ---------------------------------------------------------------------------
+	 1 AcbfRSw6k0MykQa+qBvTsMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    CDB$ROOT	   24-OCT-26 06.21.21.613393 AM +00:00
+	 4 AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    ODBENCPROD	   24-OCT-26 06.21.25.010162 AM +00:00
+	 1 AUQiRwuoCkl9pmJW6WqD6KAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    CDB$ROOT	   25-OCT-26 05.46.15.360154 AM +00:00
+	 4 AW3bEfvafExTujp0P+55XykAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    ODBENCPROD	   25-OCT-26 05.46.15.539224 AM +00:00
+
+4 rows selected.
+
+========================================================================
+== Phase 6b: Probe ONLINE REKEY on SYSTEM SYSAUX UNDOTBS1 TEMP (record only)
+========================================================================
+
+Session altered.
+
+== probes in CDB$ROOT ==
+-- CDB$ROOT.SYSTEM: ALTER TABLESPACE SYSTEM ENCRYPTION ONLINE REKEY
+
+Tablespace altered.
+
+-- CDB$ROOT.SYSAUX: ALTER TABLESPACE SYSAUX ENCRYPTION ONLINE REKEY
+
+Tablespace altered.
+
+-- CDB$ROOT.UNDOTBS1: ALTER TABLESPACE UNDOTBS1 ENCRYPTION ONLINE REKEY
+
+Tablespace altered.
+
+-- CDB$ROOT.TEMP: ALTER TABLESPACE TEMP ENCRYPTION ONLINE REKEY
+ALTER TABLESPACE TEMP ENCRYPTION ONLINE REKEY
+*
+ERROR at line 1:
+ORA-28370: The currently specified encryption option is not allowed on the
+target tablespace - online encryption not allowed for temp and lostwrite
+tablespaces
+Help: https://docs.oracle.com/error-help/db/ora-28370/
+
+
+
+Session altered.
+
+== probes in ODBENCPROD ==
+-- ODBENCPROD.SYSTEM: ALTER TABLESPACE SYSTEM ENCRYPTION ONLINE REKEY
+
+Tablespace altered.
+
+-- ODBENCPROD.SYSAUX: ALTER TABLESPACE SYSAUX ENCRYPTION ONLINE REKEY
+
+Tablespace altered.
+
+-- ODBENCPROD.UNDOTBS1: ALTER TABLESPACE UNDOTBS1 ENCRYPTION ONLINE REKEY
+
+Tablespace altered.
+
+-- ODBENCPROD.TEMP: ALTER TABLESPACE TEMP ENCRYPTION ONLINE REKEY
+ALTER TABLESPACE TEMP ENCRYPTION ONLINE REKEY
+*
+ERROR at line 1:
+ORA-28370: The currently specified encryption option is not allowed on the
+target tablespace - online encryption not allowed for temp and lostwrite
+tablespaces
+Help: https://docs.oracle.com/error-help/db/ora-28370/
+
+========================================================================
+== Phase 7: ALTER DATABASE DICTIONARY REKEY CREDENTIALS
+========================================================================
+2026-10-25 06:46:57 INFO  CDB$ROOT as SYSKM
+== CDB$ROOT (SYSKM): dictionary_credentials_encrypt ==
+
+CON
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ENFORCEM
+--------
+CDB$ROOT
+DISABLED
+
+
+1 row selected.
+
+== CDB$ROOT (SYSKM): ALTER DATABASE DICTIONARY REKEY CREDENTIALS ==
+ALTER DATABASE DICTIONARY REKEY CREDENTIALS
+*
+ERROR at line 1:
+ORA-28446: cannot perform database dictionary rekey or delete key operation due to missing current encryption key
+Help: https://docs.oracle.com/error-help/db/ora-28446/
+
+
+2026-10-25 06:46:57 INFO  ODBENCPROD as SYSDBA
+
+Session altered.
+
+== ODBENCPROD (SYSDBA): dictionary_credentials_encrypt ==
+
+CON
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ENFORCEM
+--------
+ODBENCPROD
+DISABLED
+
+
+1 row selected.
+
+== ODBENCPROD (SYSDBA): ALTER DATABASE DICTIONARY REKEY CREDENTIALS ==
+ALTER DATABASE DICTIONARY REKEY CREDENTIALS
+*
+ERROR at line 1:
+ORA-28447: The user has insufficient privilege to execute the ALTER DATABASE DICTIONARY statement.
+Help: https://docs.oracle.com/error-help/db/ora-28447/
+
+========================================================================
+== Key inventory AFTER (SET KEY + ONLINE REKEY + probes)
+========================================================================
+== Encrypted tablespaces (all containers) ==
+
+CON_NAME       TS_NAME	      ENCRYPT KEY_VERSION MASTERKEYID			   ENCRYPTEDKEY
+-------------- -------------- ------- ----------- -------------------------------- ----------------------------------------------------------------
+ODBENCPROD     USERS	      AES256		2 6DDB11FBDA7C4C53BA3A743FEE795F29 93E36655AB6D4FFAD16F21E98178BD0A23BDFF61ADA3B5752EBB5A37DD2056CE
+
+1 row selected.
+
+== Tablespaces with ENCRYPTED and STATUS (all open containers) ==
+
+CON_NAME       TS_NAME	      ENC STATUS     CONTENTS
+-------------- -------------- --- ---------- ---------------------
+CDB$ROOT       SYSAUX	      NO  ONLINE     PERMANENT
+CDB$ROOT       SYSTEM	      NO  ONLINE     PERMANENT
+CDB$ROOT       TEMP	      NO  ONLINE     TEMPORARY
+CDB$ROOT       UNDOTBS1       NO  ONLINE     UNDO
+CDB$ROOT       USERS	      NO  ONLINE     PERMANENT
+ODBENCPROD     AUDIT_DATA     NO  ONLINE     PERMANENT
+ODBENCPROD     CANARY_PLAIN   NO  READ ONLY  PERMANENT
+ODBENCPROD     SYSAUX	      NO  ONLINE     PERMANENT
+ODBENCPROD     SYSTEM	      NO  ONLINE     PERMANENT
+ODBENCPROD     TEMP	      NO  ONLINE     TEMPORARY
+ODBENCPROD     UNDOTBS1       NO  ONLINE     UNDO
+ODBENCPROD     USERS	      YES ONLINE     PERMANENT
+
+12 rows selected.
+
+== Container database keys ==
+
+CON_NAME       ENCRYPT MASTERKEYID			MAS ENCRYPTEDKEY
+-------------- ------- -------------------------------- --- ----------------------------------------------------------------
+CDB$ROOT       AES256  4422470BA80A497DA66256E96A83E8A0 YES 555B925DAECC05C0A14EBA5A823205E6FF9BB8FCA27F06E80C98D0E632AFBF06
+PDB$SEED       NONE    00000000000000000000000000000000 NO  0000000000000000000000000000000000000000000000000000000000000000
+ODBENCPROD     AES256  6DDB11FBDA7C4C53BA3A743FEE795F29 YES EFAF893C6D698ECB3CB318243928DC78439BB76FEDC399FC23168B4DF7A7A259
+
+3 rows selected.
+
+== Keys in the keystore ==
+
+    CON_ID KEY_ID						  ORIGIN				    CREATOR_PDBNAM ACTIVATION_TIME
+---------- ------------------------------------------------------ ----------------------------------------- -------------- ---------------------------------------------------------------------------
+	 1 AcbfRSw6k0MykQa+qBvTsMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    CDB$ROOT	   24-OCT-26 06.21.21.613393 AM +00:00
+	 4 AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    ODBENCPROD	   24-OCT-26 06.21.25.010162 AM +00:00
+	 1 AUQiRwuoCkl9pmJW6WqD6KAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    CDB$ROOT	   25-OCT-26 05.46.15.360154 AM +00:00
+	 4 AW3bEfvafExTujp0P+55XykAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   LOCAL 				    ODBENCPROD	   25-OCT-26 05.46.15.539224 AM +00:00
+
+4 rows selected.
+2026-10-25 06:46:57 INFO  MEK ids referenced after the rekey:
+  4422470BA80A497DA66256E96A83E8A0
+  6DDB11FBDA7C4C53BA3A743FEE795F29
+2026-10-25 06:46:57 INFO  no tablespace key and no database key references a source MEK any more
+
+========================================================================
+== Phase 8b: Collect 'rekey_all' and compare canary blocks vs baseline
+========================================================================
+2026-10-25 06:46:57 INFO  clearing stale evidence set 'rekey_all'
+2026-10-25 06:46:57 INFO  collecting evidence set 'rekey_all' from odbencdev
+2026-10-25 06:46:57 INFO  Starting tde_evidence.sh 0.1.0
+2026-10-25 06:46:57 INFO  evidence set 'rekey_all' -> /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/rekey_all
+2026-10-25 06:46:57 INFO  collecting key chain evidence from odbencdev (CDB$ROOT)
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+CDB$ROOT	     FREE	  FREE		   1519529852 24-OCT-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE	 /opt/oracle/dbconfig/FREE/wallet/tde/					OPEN		   PASSWORD	   NONE 	 1
+FILE										CLOSED		   UNKNOWN	   UNITED	 2
+FILE										OPEN		   PASSWORD	   UNITED	 4
+
+3 rows selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AcbfRSw6k0MykQa+qBvTsMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	24.10.2026 06:21:21    24.10.2026 06:21:21
+								    ORE
+CDB$ROOT
+CDB$ROOT															      1
+
+AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	24.10.2026 06:21:25    24.10.2026 06:21:25
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+AUQiRwuoCkl9pmJW6WqD6KAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	25.10.2026 05:46:15    25.10.2026 05:46:15
+								    ORE
+CDB$ROOT
+CDB$ROOT															      1
+
+AW3bEfvafExTujp0P+55XykAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	25.10.2026 05:46:15    25.10.2026 05:46:15
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+
+4 rows selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+USERS			      6 AES256	 YES 6DDB11FBDA7C4C53BA3A743FEE795F29		  2 NORMAL	       93E36655AB6D4FFAD16F21E98178BD0A23BDFF61ADA3B5752EBB5A37DD2056CE 		 0		508	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 93E36655AB6D4FFAD16F21E98178BD0A23BDFF61ADA3B5752EBB5A37DD2056CE 6DDB11FBDA7C4C53BA3A743FEE795F29		 0		508	      2 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 555B925DAECC05C0A14EBA5A823205E6FF9BB8FCA27F06E80C98D0E632AFBF0600000000000000000000000000000000 4422470BA80A497DA66256E96A83E8A0 YES XTS		  1
+NONE	 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00000000000000000000000000000000 NO  CFB		  2
+AES256	 EFAF893C6D698ECB3CB318243928DC78439BB76FEDC399FC23168B4DF7A7A25900000000000000000000000000000000 6DDB11FBDA7C4C53BA3A743FEE795F29 YES XTS		  4
+
+3 rows selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+no rows selected
+
+2026-10-25 06:46:57 INFO  collecting key chain evidence from odbencdev (PDB ODBENCPROD)
+
+Session altered.
+
+
+Session altered.
+
+========================================================================
+== TDE key chain evidence snapshot =====================================
+========================================================================
+== Identity of this database ===========================================
+
+CONTAINER	     DB_NAME	  DB_UNIQUE_NAME	 DBID CREATED	LOG_MODE     OPEN_MODE
+-------------------- ------------ ---------------- ---------- --------- ------------ --------------------
+ODBENCPROD	     FREE	  FREE		   1519529852 24-OCT-26 ARCHIVELOG   READ WRITE
+
+1 row selected.
+
+== Keystore state from v$encryption_wallet =============================
+
+WRL_TYPE WRL_PARAMETER								STATUS		   WALLET_TYPE	   KEYSTORE CON_ID
+-------- ---------------------------------------------------------------------- ------------------ --------------- -------- ------
+FILE										OPEN		   PASSWORD	   UNITED	 4
+
+1 row selected.
+
+== Master encryption keys from v$encryption_keys =======================
+
+KEY_ID							 KEY_USE    KEYSTORE_TYPE  ORIGIN     BACKED_UP CREATION_TIME	       ACTIVATION_TIME
+-------------------------------------------------------- ---------- -------------- ---------- --------- ---------------------- ----------------------
+CREATOR_PDBNAME
+--------------------------------------------------------------------------------------------------------------------------------
+ACTIVATING_PDBNAME														 CON_ID
+-------------------------------------------------------------------------------------------------------------------------------- ------
+AdjXuw99p0YMrPv7tgGY26EAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      YES	24.10.2026 06:21:25    24.10.2026 06:21:25
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+AW3bEfvafExTujp0P+55XykAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	 TDE IN PDB SOFTWARE KEYST LOCAL      NO	25.10.2026 05:46:15    25.10.2026 05:46:15
+								    ORE
+ODBENCPROD
+ODBENCPROD															      4
+
+
+2 rows selected.
+
+== Tablespace key chain from v$encrypted_tablespaces ===================
+
+TS_NAME 		    TS# ENCRYPTI ENC MASTERKEYID_HEX			KEY_VERSION STATUS	       ENCRYPTEDKEY_HEX 						  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED CON_ID
+-------------------- ---------- -------- --- ---------------------------------- ----------- ------------------ ------------------------------------------------------------------ ---------------- ---------------- ------
+USERS			      6 AES256	 YES 6DDB11FBDA7C4C53BA3A743FEE795F29		  2 NORMAL	       93E36655AB6D4FFAD16F21E98178BD0A23BDFF61ADA3B5752EBB5A37DD2056CE 		 0		508	 4
+
+1 row selected.
+
+== Full v$encrypted_tablespaces row (version specific columns) =========
+
+       TS# ENCRYPTI ENC ENCRYPTEDKEY							 MASTERKEYID			  BLOCKS_ENCRYPTED BLOCKS_DECRYPTED KEY_VERSION STATUS		   CIPHERMODE	 CON_ID
+---------- -------- --- ---------------------------------------------------------------- -------------------------------- ---------------- ---------------- ----------- ------------------ ------------- ------
+	 6 AES256   YES 93E36655AB6D4FFAD16F21E98178BD0A23BDFF61ADA3B5752EBB5A37DD2056CE 6DDB11FBDA7C4C53BA3A743FEE795F29		 0		508	      2 NORMAL		   XTS		      4
+
+1 row selected.
+
+== Implicit database key for SYSTEM / UNDO / TEMP ======================
+
+ENCRYPTI ENCRYPTEDKEY											  MASTERKEYID			   MAS CIPHERMODE    CON_ID
+-------- ------------------------------------------------------------------------------------------------ -------------------------------- --- ------------- ------
+AES256	 EFAF893C6D698ECB3CB318243928DC78439BB76FEDC399FC23168B4DF7A7A25900000000000000000000000000000000 6DDB11FBDA7C4C53BA3A743FEE795F29 YES XTS		  4
+
+1 row selected.
+
+== Datafiles of encrypted tablespaces ==================================
+
+TS_NAME 	     RELATIVE_FNO FILE_NAME								     BLOCKS BLOCK_SIZE	    BYTES
+-------------------- ------------ ---------------------------------------------------------------------- ---------- ---------- ----------
+USERS			     1024 /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_       2560	  8192	 20971520
+				  mf_users_ofv5x7pw_.dbf
+
+
+1 row selected.
+
+2026-10-25 06:46:57 INFO  listing datafiles of tablespace USERS in PDB ODBENCPROD
+2026-10-25 06:46:57 INFO  found 1 datafile(s)
+2026-10-25 06:46:57 INFO  fingerprinting o1_mf_users_ofv5x7pw_.dbf (block size 8192)
+wrote /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/rekey_all/o1_mf_users_ofv5x7pw_.dbf.fp
+2026-10-25 06:46:58 INFO  scanning o1_mf_users_ofv5x7pw_.dbf for the clear-text marker
+no hits - needle not present as plaintext in this datafile
+2026-10-25 06:46:58 INFO  manifest written to /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/xchange/evidence/rekey_all/manifest.txt
+2026-10-25 06:46:58 INFO  Done.
+canary blocks: identical 0 differing 313 total 313 (expect all differing)
+
+========================================================================
+== Phase 9: Withdrawal - keystore with the new dev MEKs only
+========================================================================
+2026-10-25 06:46:58 INFO  carrying over the dev MEK key ids: 'AUQiRwuoCkl9pmJW6WqD6KAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'AW3bEfvafExTujp0P+55XykAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+removed leftover /opt/oracle/xchange/rekey72_dev_keys.exp
+2026-10-25 06:46:58 INFO  exporting the keys to keep before the keystore is replaced
+
+keystore altered.
+
+
+STATUS
+-------------
+keys exported
+key export /opt/oracle/xchange/rekey72_dev_keys.exp set to mode 600
+2026-10-25 06:46:58 INFO  backing the current keystore up to /opt/oracle/xchange/wallet_withdrawal_backup_72
+current keystore backed up to /opt/oracle/xchange/wallet_withdrawal_backup_72
+2026-10-25 06:46:58 INFO  moving the current keystore aside and creating an empty directory
+keystore moved to /opt/oracle/xchange/wallet_source_used_72
+fresh empty keystore directory: /opt/oracle/dbconfig/FREE/wallet/tde
+2026-10-25 06:46:59 INFO  restarting the instance to drop the old keystore from memory
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+ORACLE instance started.
+
+Total System Global Area 1603392144 bytes
+Fixed Size		    5026448 bytes
+Variable Size		  436207616 bytes
+Database Buffers	 1157627904 bytes
+Redo Buffers		    4530176 bytes
+Database mounted.
+Database opened.
+
+STATE
+------------------------------
+OPEN_MODE=READ WRITE
+
+
+    CON_ID STATUS			  WALLET_TYPE
+---------- ------------------------------ --------------------
+	 1 NOT_AVAILABLE		  UNKNOWN
+	 2 NOT_AVAILABLE		  UNKNOWN
+	 4 NOT_AVAILABLE		  UNKNOWN
+2026-10-25 06:47:19 INFO  creating the new keystore and importing the kept keys
+
+keystore altered.
+
+
+keystore altered.
+
+
+keystore altered.
+
+
+    CON_ID KEY_ID						  KEYSTORE_TYPE     ORIGIN
+---------- ------------------------------------------------------ ----------------- -----------------------------------------
+	 1 AUQiRwuoCkl9pmJW6WqD6KAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   SOFTWARE KEYSTORE LOCAL
+	 4 AW3bEfvafExTujp0P+55XykAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   SOFTWARE KEYSTORE LOCAL
+2026-10-25 06:47:20 INFO  recreating the auto-login keystore in odbencdev
+
+    CON_ID STATUS		WALLET_TYPE
+---------- -------------------- ----------------
+	 1 OPEN 		PASSWORD
+	 2 OPEN 		PASSWORD
+	 4 OPEN 		PASSWORD
+2026-10-25 06:47:20 INFO  keystore in odbencdev open via local auto-login
+removed /opt/oracle/xchange/rekey72_dev_keys.exp
+
+========================================================================
+== Phase 9a: Clean restart without the source MEKs
+========================================================================
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+ORACLE instance started.
+
+Total System Global Area 1603392144 bytes
+Fixed Size		    5026448 bytes
+Variable Size		  436207616 bytes
+Database Buffers	 1157627904 bytes
+Redo Buffers		    4530176 bytes
+Database mounted.
+Database opened.
+
+STATE
+------------------------------
+OPEN_MODE=READ WRITE
+
+
+    CON_ID STATUS			  WALLET_TYPE
+---------- ------------------------------ --------------------
+	 1 OPEN 			  LOCAL_AUTOLOGIN
+	 2 OPEN 			  LOCAL_AUTOLOGIN
+	 4 OPEN 			  LOCAL_AUTOLOGIN
+2026-10-25 06:47:23 INFO  database open mode after restart: READ WRITE
+
+========================================================================
+== Phase 9b: Read the canary in ODBENCPROD
+========================================================================
+ALTER PLUGGABLE DATABASE ODBENCPROD OPEN
+*
+ERROR at line 1:
+ORA-65019: pluggable database ODBENCPROD already open
+Help: https://docs.oracle.com/error-help/db/ora-65019/
+
+
+
+NAME
+--------------------------------------------------------------------------------
+OPEN_MODE
+----------
+ODBENCPROD
+READ WRITE
+
+
+
+Session altered.
+
+========================================================================
+== Read canary SCOTT.CANARY_TDE
+========================================================================
+
+CONTAINER
+--------------------
+ODBENCPROD
+
+1 row selected.
+
+== Row count and marker match ==========================================
+
+ROWS_TOTAL MARKER_MATCH     MIN_ID     MAX_ID
+---------- ------------ ---------- ----------
+      5000	   5000 	 1	 5000
+
+1 row selected.
+
+== Sample rows =========================================================
+
+	ID MARKER				    PAYLOAD_HEAD
+---------- ---------------------------------------- ------------------------
+	 1 OEHRLI-CANARY-01			    CANARY-0000001-XXXXX
+	 2 OEHRLI-CANARY-01			    CANARY-0000002-XXXXX
+	 3 OEHRLI-CANARY-01			    CANARY-0000003-XXXXX
+
+3 rows selected.
+
+== Verdict =============================================================
+
+VERDICT
+------------------------------------------------------------
+READABLE - all rows decrypt with the keys present here
+
+1 row selected.
+
+Rekey-all withdrawal result:
+  source MEKs : C6DF452C3A9343329106BEA81BD3B0CA D8D7BB0F7DA7460CACFBFBB60198DBA1
+  after MEKs  : 4422470BA80A497DA66256E96A83E8A0 6DDB11FBDA7C4C53BA3A743FEE795F29
+  stale refs  : none
+  canary      : identical 0 differing 313 total 313
+  open mode   : READ WRITE
+  canary read : READABLE
+
+------------------------------------------------------------------------
+VERDICT: PASS - after SET KEY in every container and ONLINE REKEY of every encrypted tablespace the target opens without the source master keys and reads its canary; ciphertext differs from the baseline (identical 0 differing 313 total 313) - independent
+------------------------------------------------------------------------
+2026-10-25 06:47:24 INFO  Done.
+2026-10-25 06:47:24 END   [72] 72_rekey_all_withdrawal.sh: PASS (224s)
+
+========================================================================
+  TDE Verification Run Results
+  Log: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/artefacts/run_20261025_064340.log
+========================================================================
+
+NR    Result      Duration  Description
+----  ----------  --------  -------------------------------------------
+72    PASS        224s      Rekey all + SET KEY per container, then withdraw the source MEK
+
+All steps PASSED.

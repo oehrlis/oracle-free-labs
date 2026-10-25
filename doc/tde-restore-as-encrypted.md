@@ -447,6 +447,13 @@ Dieser Lauf prueft, ob RMAN den Prod-MEK im Dev-Keystore voraussetzt.
 scripts/tde-verify/tde_clone.sh --variant b2 --dbid 1515066983 --key '<dev_mek>' --yes
 ```
 
+In der Suite: `scripts/tde-verify/run_all.sh --only 30 --yes`. Seit 2026-10-24 leitet
+`30_variant_b2.sh` das Verdict aus der Ausgabe ab, nicht mehr aus dem Exit-Code allein. Seit
+0.3.0 (2026-10-25) verlangt `PASS` `ORA-28374` und kein `ORA-00600`: `ORA-19870` allein ist
+nur die RMAN-Huelle und steht auch in der B1-Signatur; `ORA-00600` gilt als FAIL ("source key
+present - this is B1"). Belege: `artefacts/run_20261024_082753.log:209-210` und die
+Wiederholung `artefacts/run_20261025_063549.log:212-213`, Verdict `:229`.
+
 #### Ergebnis
 
 `RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_mek>'` scheitert mit ORA-19870 "error while
@@ -476,6 +483,17 @@ aber nicht aktiviert.
 scripts/tde-verify/tde_clone.sh --variant b1 --dbid 1515066983 \
   --key 'AV75yf3iEUAWtYUhndGAVAg...' --yes
 ```
+
+Geskripteter Ablauf seit 2026-10-24 (`scripts/tde-verify/run_all.sh --only 35 --yes`):
+`35_variant_b1.sh` erzeugt per `SET KEY` einen eigenen Ziel-MEK, `tde_clone.sh --variant b1`
+merged danach den in Schritt 15 gestagten Prod-Keystore mit `MERGE KEYSTORE ... INTO EXISTING
+KEYSTORE ... WITH BACKUP` in den Ziel-Keystore und legt die Ziel-`cwallet.sso` beiseite, damit
+der Neustart den gemergten Passwort-Keystore oeffnet. Vorher importierte der Zweig `b1` nichts,
+ein geskripteter B1-Lauf war damit faktisch B2. Das Verdict verlangt die RMAN-Zeile
+`ORA-00600: internal error code`; ein `ORA-28374`/`ORA-19870` ohne sie gilt als B2 und damit als
+FAIL. Messwerte: `tasks/e2e-facts.md`, Abschnitt vom 2026-10-24
+(`artefacts/run_20261024_082444.log:227-228`, wiederholt
+`artefacts/run_20261025_063809.log:227-228`).
 
 #### Ergebnis
 
@@ -619,9 +637,13 @@ Alle Werte aus dem durchgehenden Lauf vom 2026-09-06, Protokoll in
 <!-- markdownlint-restore -->
 
 Der Entzugstest steht bewusst ausserhalb der Matrix, weil sein Ergebnis kein Blockvergleich
-ist: nach dem Entfernen des Quell-MEK **oeffnet die Zieldatenbank nicht mehr**. Sie bleibt
-mit `ORA-28374` auf `MOUNTED` stehen. Es ist also nicht ein Tablespace unlesbar, sondern die
-Datenbank unbrauchbar.
+ist: nach dem Entfernen des Quell-MEK **oeffnete die Zieldatenbank nicht mehr**. Sie blieb
+mit `ORA-28374` auf `MOUNTED` stehen. Vorbehalt (Stand 2026-10-25): in Schritt 45 blieb eine
+CDB ebenfalls auf `MOUNTED`, solange die abhaengige PDB beim Shutdown offen war; mit vorher
+geschlossener PDB oeffnete die CDB, und nur die Daten dieser PDB scheiterten
+(`tasks/e2e-facts.md`, Abschnitt vom 2026-10-24). Ob der Befund hier derselbe
+Open-/Saved-State-Mechanismus ist - also "ein Tablespace unlesbar" statt "Datenbank
+unbrauchbar" -, ist nicht nachgemessen.
 
 ## Bewertung und Empfehlung fuer den Kunden
 

@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.1.1
 # Purpose....: PDB P4 - Remote clone of PDBCLONE via DB link (c##clone user),
 #              then export/import keys separately.
 #              The c##clone password is never written to disk and never put on
@@ -36,12 +36,17 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  compare_canary_blocks reports "differs" as 3; SC2016
+#                  disabled file-wide with reason                         0.1.1
 # ------------------------------------------------------------------------------
 
+# Single-quoted SQL and shell blocks below are expanded inside the container
+# on purpose (KSPWD, v$ views, CDB$ROOT); SC2016 is the intended behaviour.
+# shellcheck disable=SC2016
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -387,7 +392,7 @@ EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
     elif [[ ${canary_rc} -eq 2 ]]; then
         verdict="FAIL"
         msg="P4: canary blocks could not be compared - no verdict possible"
-    elif [[ "${tek_p4}" != "${tek_src}" && ${canary_rc} -eq 1 ]]; then
+    elif [[ "${tek_p4}" != "${tek_src}" && ${canary_rc} -eq 3 ]]; then
         verdict="PASS"
         msg="P4: remote clone produced NEW tablespace key material (${canary_cmp}), ORIGIN=${origin_p4}. The MASTERKEYID matches the source, so the differing wrapped key is not a re-wrap. Same behaviour as the local clone in P1, and the opposite of the archive transport in P2"
     elif [[ "${tek_p4}" == "${tek_src}" && ${canary_rc} -eq 0 ]]; then

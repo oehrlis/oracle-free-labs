@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.1.1
 # Purpose....: PDB P6 - ONLINE REKEY of CLONE_ENC in the target PDB after
 #              P2 (archive) or P4 (remote clone). ONLINE REKEY creates a new
 #              Tablespace Encryption Key and rewrites all data blocks.
@@ -25,12 +25,13 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  compare_canary_blocks reports "differs" as 3           0.1.1
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -220,7 +221,7 @@ EXIT
     elif (( kv_after_int <= kv_before_int )); then
         verdict="FAIL"
         msg="P6: KEY_VERSION did not increase (${kv_before_int} -> ${kv_after_int}) - ONLINE REKEY may not have executed"
-    elif [[ ${canary_rc} -eq 1 ]]; then
+    elif [[ ${canary_rc} -eq 3 ]]; then
         verdict="PASS"
         msg="P6: ONLINE REKEY created new key material (KEY_VERSION ${kv_before_int} -> ${kv_after_int}) and rewrote the data blocks (${canary_cmp}) - the ciphertext in ${target_pdb} no longer matches its own prior state"
     elif [[ ${canary_rc} -eq 2 ]]; then

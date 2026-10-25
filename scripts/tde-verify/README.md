@@ -14,6 +14,12 @@ re-encrypt. The answer requires block-level ciphertext comparison.
 
 See `doc/tde-restore-as-encrypted.md` for the full test protocol and results.
 
+## Requirements
+
+- bash >= 4.4 (on macOS the Homebrew bash, `/bin/bash` 3.2 is too old)
+- Docker with the compose services `odbencprod` and `odbencdev`
+- `python3` and `openssl` on the host
+
 ## Directory layout
 
 ```text
@@ -28,9 +34,10 @@ scripts/tde-verify/
     ├── 10_baseline.sh     Create canary tables, freeze tablespaces, collect baseline
     ├── 15_backup.sh       RMAN backup + stage source keystore
     ├── 20_variant_a.sh    Variant A: plain RESTORE with transported source keystore
-    ├── 30_variant_b2.sh   Variant B2: AS ENCRYPTED without prod MEK (expected: ORA-19870)
+    ├── 30_variant_b2.sh   Variant B2: AS ENCRYPTED without prod MEK (expected: ORA-28374, no ORA-00600)
     ├── 35_variant_b1.sh   Variant B1: AS ENCRYPTED with prod MEK (expected: ORA-00600)
     ├── 40_variant_c.sh    Variant C: DUPLICATE ... AS ENCRYPTED
+    ├── 45_zdlra_aux_pdb_clone.sh  Auxiliary restore + PDB clone + withdrawal
     ├── 50_variant_d.sh    Variant D: AS DECRYPTED + SET KEY + OFFLINE ENCRYPT
     ├── 60_variant_f.sh    Variant F: chain-breaking path - the only way to get new TEK
     ├── 61_pdb_testbed.sh  PDB testbed: PDBCLONE + CLONE_ENC/CLONE_PLAIN + c##clone user
@@ -43,6 +50,7 @@ scripts/tde-verify/
     ├── 68_pdb_p7_origin.sh P7: ORIGIN comparison IMPORTED vs LOCAL
     ├── 69_pdb_p8_keyver.sh P8: KEY_VERSION after plug-in to foreign CDB
     ├── 70_variant_g.sh    Variant G: ALTER TABLESPACE ENCRYPTION ONLINE REKEY
+    ├── 72_rekey_all_withdrawal.sh  Rekey all + SET KEY per container + withdrawal
     ├── 80_positive_control.sh  Two fresh encrypted tablespaces prove method sensitivity
     └── 90_withdrawal_test.sh   Key withdrawal: remove prod MEK, read canary
 ```
@@ -55,9 +63,10 @@ scripts/tde-verify/
 | 10 | `10_baseline.sh` | Create canary in USERS (encrypted) and CANARY_PLAIN, set READ ONLY, collect evidence | none |
 | 15 | `15_backup.sh` | RMAN backup + stage `ewallet.p12` (not `cwallet.sso`) to `xchange/wallet_prod` | step 10 |
 | 20 | `20_variant_a.sh` | RESTORE with transported prod keystore - expects identical ciphertext (dependent on prod MEK) | step 15 |
-| 30 | `30_variant_b2.sh` | AS ENCRYPTED without prod MEK - expects ORA-19870/ORA-28374 | step 15 |
+| 30 | `30_variant_b2.sh` | AS ENCRYPTED without prod MEK - PASS needs ORA-28374 (under ORA-19870) and no ORA-00600; ORA-00600 is FAIL (source key present, that is B1) | step 15 |
 | 35 | `35_variant_b1.sh` | AS ENCRYPTED with prod MEK + dev MEK - expects ORA-00600 on encrypted datafile | step 15 |
 | 40 | `40_variant_c.sh` | DUPLICATE ... AS ENCRYPTED - must run on pristine Auxiliary (step resets dev first) | step 15 |
+| 45 | `45_zdlra_aux_pdb_clone.sh` | Restore as auxiliary (variant A), SET KEY in root and PDB, local PDB clone, withdraw the source MEK; clone must read, auxiliary must fail | step 15 |
 | 50 | `50_variant_d.sh` | RESTORE AS DECRYPTED FORCE + SET KEY + OFFLINE ENCRYPT - TEK survives (identical ciphertext) | step 15 |
 | 60 | `60_variant_f.sh` | RESTORE + OFFLINE DECRYPT + fresh keystore + discard lost MEK handles + SET KEY + ENCRYPT - new TEK | step 15 |
 | 61 | `61_pdb_testbed.sh` | Create PDBCLONE with CLONE_ENC (AES256) and CLONE_PLAIN, canary rows, c##clone user | none |
@@ -70,6 +79,7 @@ scripts/tde-verify/
 | 68 | `68_pdb_p7_origin.sh` | ORIGIN comparison: IMPORTED (formal import) vs LOCAL (copied keystore) | step 63 or 65 |
 | 69 | `69_pdb_p8_keyver.sh` | KEY_VERSION after plug-in to foreign CDB (doc: resets to 0) | step 63 or 65 |
 | 70 | `70_variant_g.sh` | ONLINE REKEY on clone - new TEK, different ciphertext | step 15 |
+| 72 | `72_rekey_all_withdrawal.sh` | Restore (variant A), READ WRITE, SET KEY per container, ONLINE REKEY of every encrypted tablespace, probes on SYSTEM/SYSAUX/UNDO/TEMP, DICTIONARY REKEY CREDENTIALS, withdraw the source MEK | step 15 |
 | 80 | `80_positive_control.sh` | Two fresh encrypted tablespaces prove method detects TEK difference | none |
 | 90 | `90_withdrawal_test.sh` | Remove prod MEK from dev keystore, restart, read canary | none |
 
@@ -78,7 +88,7 @@ scripts/tde-verify/
 The runner verifies a state condition before each gated step. If the condition
 is not met, it stops and shows the command to resume:
 
-- Steps 15, 20, 30, 35, 40, 50, 60, 70: require `BACKUP_READY=TRUE` in the state
+- Steps 15, 20, 30, 35, 40, 45, 50, 60, 70, 72: require `BACKUP_READY=TRUE` in the state
   file (written by step 15). Missing: run step 15 first.
 - Steps 20-70 also require `SOURCE_DBID` (written by step 10).
 - Steps 62-65 (PDB P1-P4): require `PDBCLONE_READY=TRUE` (written by step 61).
@@ -171,7 +181,10 @@ data/xchange/evidence/
 ├── pdb_p4_remote/              Step 65: PDBCLONE_P4 in dev (remote clone)
 ├── pdb_p5_mekrot/              Step 66: after MEK rotation
 ├── pdb_p6_rekey/               Step 67: after ONLINE REKEY
+├── aux_restored/               Step 45: auxiliary PDB after the restore
+├── aux_clone/                  Step 45: PDB cloned out of the auxiliary
 ├── variant_g/                  Step 70
+├── rekey_all/                  Step 72: after SET KEY + ONLINE REKEY
 ├── ctrl_enc_a/                 Step 80: positive control tablespace A
 ├── ctrl_enc_b/                 Step 80: positive control tablespace B
 └── run_<timestamp>.log         Runner log
@@ -246,6 +259,40 @@ transport?
   at the target.
 - **KEY_VERSION after plug-in**: Oracle documentation states KEY_VERSION may reset to 0
   after a PDB is plugged into a different CDB. Step 69 measures the actual value.
+
+### Withdrawal tests: what the scripts do and why (steps 45, 72)
+
+- **Variant B1 merges the source keystore** (`tde_clone.sh`,
+  `merge_source_keystore`): `MERGE KEYSTORE ... INTO EXISTING KEYSTORE`, then the
+  target `cwallet.sso` is moved aside so the restart opens the merged password
+  keystore. Before 2026-10-24 the b1 branch imported nothing.
+- **The withdrawal keeps only named keys** (`lib.sh`,
+  `withdraw_keystore_to_keys`): `EXPORT KEYS ... WITH IDENTIFIER IN`, keystore
+  moved aside, restart, `CREATE KEYSTORE`, `IMPORT KEYS`, local auto-login.
+  An empty keystore is not a withdrawal test: the CDB then opens with
+  `NOT_AVAILABLE` whatever depends on the source key.
+- **Close a PDB that is expected to fail before the restart.** Observed: with
+  the dependent auxiliary PDB open at shutdown, the CDB stayed at `MOUNTED`
+  with `ORA-28374`, after `STARTUP FORCE` and `SHUTDOWN IMMEDIATE` alike. The
+  cause - that the open PDB is what blocks the CDB open - is a hypothesis, not
+  isolated: it rests on an alert log read live (not in a versioned log), and
+  the run that fixed it changed `CLOSE IMMEDIATE` and `DISCARD STATE` at once.
+  With the PDB closed first, the CDB opens and only that PDB's data fails.
+  Step 45 closes the auxiliary and discards its saved state before the restart.
+- **A missing tablespace key reads as `ORA-01187`** in the session;
+  `read_canary_in_pdb` counts it as blocked only if the alert log, read from
+  the line count recorded before the attempt, shows `File <n> not verified due
+  to error ORA-28374` for the file named in `ORA-01110`. `ORA-28365` (keystore
+  closed) is a separate return code and reported as UNCLEAR, never as blocked.
+- **`compare_canary_blocks` return codes**: 0 identical, 3 differs, 2 error.
+  A crashed Python helper used to exit 1, which read as "differs".
+- **Key export files** (`aux45_dev_keys.exp`, `rekey72_dev_keys.exp`) are set
+  to mode 600 and deleted after the withdrawal; `--keep` retains them.
+- **`ALTER DATABASE DICTIONARY` needs SYSKM**, and a SYSKM session cannot switch
+  containers; step 72 runs it in `CDB$ROOT` as SYSKM and records the PDB
+  attempt as SYSDBA.
+
+Results with log references: `tasks/e2e-facts.md`, section of 2026-10-24.
 
 ### Service name
 

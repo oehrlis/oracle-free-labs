@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-11
-# Version....: 0.2.0
+# Version....: 0.4.0
 # Purpose....: Auxiliary restore plus PDB clone - the chain a customer needs
 #              when the copy has to come from a backup appliance (ZDLRA) and
 #              the target must still be cryptographically independent.
@@ -26,13 +26,9 @@
 #              8. Withdrawal test - the discriminator: target PDB must open,
 #                 auxiliary PDB must fail with ORA-28374
 #              9. Evidence, verdict, state
-# Notes......: NOT YET RUN. Written from the conventions of 40_variant_c.sh and
-#              65_pdb_p4_remote.sh; every phase supports --dry-run. Run it with
-#              --dry-run first, then once with --verbose, before adding it to
-#              STEP_REGISTRY in run_all.sh. Registry line to add after step 40:
-#
-#                "45|45_zdlra_aux_pdb_clone.sh|Auxiliary restore + PDB clone: \
-#                 independence from a backup source|BACKUP_READY|step 15 (backup)"
+# Notes......: First passing run 2026-10-24, artefacts/run_20261024_094125.log;
+#              registered as step 45 in run_all.sh. Every phase supports
+#              --dry-run.
 #
 #              Lab limitation, stated on purpose: the lab has two containers,
 #              so the auxiliary and the target PDB live in the SAME dev CDB and
@@ -53,12 +49,20 @@
 # 2026-09-10  oes  Initial release - prepared, not yet executed              0.1.0
 # 2026-09-11  oes  Phases 3, 5 and 8 implemented; phase 6 password handling
 #                  moved off the SQL text into the container               0.2.0
+# 2026-10-24  oes  First real runs: SET KEY in CDB$ROOT reached SQL*Plus as
+#                  "CDB" (unquoted heredoc), stale CDB temp file (ORA-01187),
+#                  clone keystore closed (ORA-28365); withdrawal and canary
+#                  read moved to lib.sh; registered as step 45             0.3.0
+# 2026-10-24  oes  Phase 6 via sqlplus_kspwd without WHENEVER SQLERROR
+#                  CONTINUE, FAIL if a non-seed keystore stays CLOSED; key
+#                  export deleted by default (--keep); canary rc 3 =
+#                  differs; ORA-28365 is UNCLEAR; failed withdrawal is FAIL 0.4.0
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.0"
+VERSION="0.4.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -73,6 +77,7 @@ AUX_PDB="${AUX_PDB:-ODBENCPROD}"          # the PDB as it arrives from the resto
 TARGET_PDB="${TARGET_PDB:-PDBAUX_CLONE}"  # the clone, the actual deliverable
 AUX_TS_ENC="${AUX_TS_ENC:-USERS}"
 PDB_ONLY="FALSE"                          # see --pdb-only
+KEEP_KEYS_FILE="${KEEP_KEYS_FILE:-FALSE}"  # see --keep
 LABEL_AUX="aux_restored"
 LABEL_CLONE="aux_clone"
 
@@ -87,6 +92,9 @@ AUX_KEY_SECRET="$(openssl rand -base64 48 | LC_ALL=C tr -dc "A-Za-z0-9" | cut -c
 source "${SCRIPT_DIR}/lib.sh"
 
 KEYS_FILE="${XCHANGE_CONTAINER}/aux45_dev_keys.exp"
+# The root container name, literally - the $ is part of the Oracle name.
+# shellcheck disable=SC2016 # literal Oracle container name, no expansion wanted
+ROOT_CON='CDB$ROOT'
 WALLET_ASIDE="${XCHANGE_CONTAINER}/wallet_source_used_45"
 WALLET_BACKUP="${XCHANGE_CONTAINER}/wallet_withdrawal_backup_45"
 
@@ -113,6 +121,8 @@ Options:
   -v, --verbose    Enable verbose output
   -d, --dry-run    Show what would be done; change nothing
   -y, --yes        Do not prompt before destructive steps
+      --keep       Keep the key export file after the withdrawal (default:
+                   delete it - it holds the dev master keys)
       --pdb-only   Restrict the restore to a single PDB plus the auxiliary set
                    instead of duplicating the whole CDB. UNVERIFIED - the exact
                    supported syntax is what this option is meant to establish.
@@ -135,6 +145,7 @@ while [[ $# -gt 0 ]]; do
         -d|--dry-run) DRY_RUN="TRUE"; shift ;;
         -y|--yes)     FORCE_YES="TRUE"; shift ;;
         --pdb-only)   PDB_ONLY="TRUE"; shift ;;
+        --keep)       KEEP_KEYS_FILE="TRUE"; shift ;;
         *) lib_err "Unknown option: $1"; usage; exit 1 ;;
     esac
 done
@@ -220,7 +231,7 @@ restore_auxiliary() {
 # Args....: $1  container name inside the dev CDB (CDB\$ROOT or a PDB name)
 # Returns.: 0 SET KEY was issued, 1 the call itself failed
 # Output..: the resulting v$encryption_keys rows
-# Depends.: docker, sqlplus, in_dev_stdin
+# Depends.: sqlplus_kspwd
 # Example.: set_dev_mek ODBENCPROD
 # Notes...: One container per call, never CONTAINER=ALL. PDB\$SEED carries no
 #           master key, so CONTAINER=ALL fails with ORA-46663, "master
@@ -233,189 +244,69 @@ set_dev_mek() {
         lib_info "DRY-RUN: would run ADMINISTER KEY MANAGEMENT SET KEY in ${container}"
         return 0
     fi
-    # shellcheck disable=SC1078,SC1079
-    in_dev_stdin '
-KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
-WHENEVER SQLERROR CONTINUE
+    # The SQL goes through sqlplus_kspwd, whose heredoc is quoted. The first
+    # version used an unquoted one, so CDB$ROOT reached SQL*Plus as "CDB" -
+    # ORA-65011 - and WHENEVER SQLERROR CONTINUE let the run go on with the
+    # source root key still active (measured 2026-10-24, first real run).
+    sqlplus_kspwd "${DEV_SERVICE}" "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF
-ALTER SESSION SET CONTAINER='"${container}"';
-ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY "${KSPWD}" WITH BACKUP;
+ALTER SESSION SET CONTAINER=${container};
+ADMINISTER KEY MANAGEMENT SET KEY FORCE KEYSTORE IDENTIFIED BY \"__KSPWD__\" WITH BACKUP;
 COLUMN key_id FORMAT A54
 SELECT key_id, origin, con_id FROM v\$encryption_keys
- WHERE con_id = sys_context('"'"'userenv'"'"','"'"'con_id'"'"');
+ WHERE con_id = sys_context('userenv','con_id');
 EXIT
-SQL
-'
+"
 }
 
 # ------------------------------------------------------------------------------
-# Function: withdraw_source_mek
-# Purpose.: Replace the dev keystore with one that holds the dev-owned keys
-#           only, so the source master key is gone
-# Args....: $1  SQL identifier list of the keys to carry over, already quoted,
-#               e.g. "'AYon...', 'BXqr...'"
-# Returns.: 0 the new keystore is in place, 1 a step failed
-# Output..: the export/import output and the resulting v$encryption_keys rows
-# Depends.: docker, sqlplus, in_dev, in_dev_stdin, ensure_autologin_for
-# Example.: withdraw_source_mek "'AYonWJ...'"
-# Notes...: 90_withdrawal_test.sh swaps in the PRISTINE dev keystore that
-#           tde_clone.sh saved before the restore. That mechanism cannot be
-#           reused here, and reusing it would make phase 8 undiscriminating: the
-#           pristine keystore predates the dev MEK that phase 5 creates, so it
-#           holds neither the source key NOR the clone's key - both PDBs would
-#           fail and the measurement would say nothing about independence.
-#           What is needed instead is a keystore holding exactly the dev-owned
-#           keys: export them by identifier, move the source keystore aside,
-#           CREATE KEYSTORE fresh (the empty-directory check is from
-#           60_variant_f.sh, where a leftover file triggered ORA-46630), import
-#           the exported keys back. The restart between the two is not optional:
-#           ORA-28389 says an auto-login keystore cannot be closed by SQL, and
-#           the in-memory context survives deleting the files.
+# Function: refresh_cdb_tempfiles
+# Purpose.: Replace the CDB$ROOT temp files that the restore left stale
+# Args....: none
+# Returns.: 0 replaced, non-zero SQL*Plus exit code otherwise
+# Output..: the resulting v$tempfile rows of CDB$ROOT
+# Depends.: sqlplus_dev, ensure_omf (ADD TEMPFILE without a name needs OMF)
+# Example.: refresh_cdb_tempfiles
+# Notes...: Measured 2026-10-24, first real run: CREATE PLUGGABLE DATABASE ...
+#           FROM failed with ORA-01187 on data file 1025, temp01.dbf. Temp
+#           files are not backed up; after OPEN RESETLOGS the restored control
+#           file points at the path the pristine dev CDB already used, and the
+#           file there belongs to that former database and fails verification.
+#           The PDB temp file lives under a new GUID path and is created fresh,
+#           so only CDB$ROOT is affected. Same cause as the note in
+#           ensure_independent_dev_cdb in lib.sh.
 # ------------------------------------------------------------------------------
-withdraw_source_mek() {
-    local key_ids="$1"
-
+refresh_cdb_tempfiles() {
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would export the dev-owned keys to ${KEYS_FILE}"
-        lib_info "DRY-RUN: would copy the current keystore to ${WALLET_BACKUP}"
-        lib_info "DRY-RUN: would move ${WALLET_DIR_CONTAINER}/tde to ${WALLET_ASIDE}"
-        lib_info "DRY-RUN: would restart, CREATE KEYSTORE, IMPORT KEYS, recreate the auto-login"
+        lib_info "DRY-RUN: would add a fresh temp file per CDB\$ROOT temp tablespace and drop the old ones"
         return 0
     fi
-
-    # EXPORT KEYS refuses to overwrite its destination with ORA-46642, so a
-    # retried run would fail on the file the previous attempt left behind.
-    lib_info "removing a leftover key export if present"
-    in_dev "if [ -f ${KEYS_FILE} ]; then rm -f ${KEYS_FILE} && echo 'removed leftover ${KEYS_FILE}'; else echo 'no leftover at ${KEYS_FILE}'; fi"
-
-    lib_info "exporting the dev-owned keys before the keystore is replaced"
-    # Runs in CDB$ROOT: EXPORT KEYS is rejected inside a PDB with ORA-65040, and
-    # naming the keys explicitly is the only stable selection - CON_ID in
-    # v$encryption_keys is the container id from when the key was created.
-    # shellcheck disable=SC1078,SC1079
-    in_dev_stdin '
-KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
-WHENEVER SQLERROR EXIT SQL.SQLCODE
-ADMINISTER KEY MANAGEMENT EXPORT KEYS WITH SECRET "'"${AUX_KEY_SECRET}"'"
-  TO '"'"''"${KEYS_FILE}"''"'"'
-  FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
-  WITH IDENTIFIER IN '"${key_ids}"';
-SELECT '"'"'dev keys exported'"'"' AS status FROM dual;
-EXIT
-SQL
-'
-
-    lib_info "backing the current keystore up to ${WALLET_BACKUP}"
-    in_dev "
-set -e
-rm -rf ${WALLET_BACKUP}
-mkdir -p ${WALLET_BACKUP}
-cp -a ${WALLET_DIR_CONTAINER}/. ${WALLET_BACKUP}/
-echo 'current keystore backed up to ${WALLET_BACKUP}'
-"
-
-    lib_info "moving the source keystore aside and creating an empty one"
-    in_dev "
-set -e
-ks_dir=${WALLET_DIR_CONTAINER}/tde
-# The two paths are separate bind mounts, so mv copies and deletes. A leftover
-# target from an earlier run made it fail with 'Directory not empty' while the
-# script still reported success.
-if [ -d \${ks_dir} ]; then
-    rm -rf ${WALLET_ASIDE}
-    mv \${ks_dir} ${WALLET_ASIDE} || { echo \"ERROR: could not move \${ks_dir} aside\" >&2; exit 1; }
-    echo 'source keystore moved to ${WALLET_ASIDE}'
-fi
-mkdir -p \${ks_dir}
-# A remaining cwallet.sso or ewallet.p12 is exactly what triggers ORA-46630 on
-# CREATE KEYSTORE.
-if [ -n \"\$(ls -A \${ks_dir})\" ]; then
-    echo \"ERROR: \${ks_dir} is not empty:\" >&2
-    ls -la \${ks_dir} >&2
-    exit 1
-fi
-echo \"fresh empty keystore directory: \${ks_dir}\"
-"
-
-    lib_info "restarting the instance to drop the auto-login keystore from memory"
     sqlplus_dev "
-WHENEVER SQLERROR CONTINUE
-SHUTDOWN IMMEDIATE
-STARTUP
-SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
-EXIT
-" || lib_warn "the restart reported an error - the import below will show whether it mattered"
-
-    lib_info "creating the dev-only keystore and importing the dev-owned keys"
-    # No path on CREATE KEYSTORE: WALLET_ROOT is configured, so Oracle derives
-    # WALLET_ROOT/tde itself and an explicit path fails with ORA-46633.
-    # shellcheck disable=SC1078,SC1079
-    in_dev_stdin '
-KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by|with secret"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "${KSPWD}";
--- Tolerate ORA-28354: an already open keystore is the desired state, and
--- aborting here would silently skip the import below.
-WHENEVER SQLERROR CONTINUE
-ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "${KSPWD}" CONTAINER=ALL;
-WHENEVER SQLERROR EXIT SQL.SQLCODE
-ADMINISTER KEY MANAGEMENT IMPORT KEYS WITH SECRET "'"${AUX_KEY_SECRET}"'"
-  FROM '"'"''"${KEYS_FILE}"''"'"'
-  FORCE KEYSTORE IDENTIFIED BY "${KSPWD}"
-  WITH BACKUP;
-SET LINESIZE 200 PAGESIZE 100
-COLUMN key_id FORMAT A54
-SELECT con_id, key_id, keystore_type, origin FROM v\$encryption_keys ORDER BY con_id;
+SET SERVEROUTPUT ON LINESIZE 200 PAGESIZE 100
+DECLARE
+  TYPE t_tab IS TABLE OF VARCHAR2(600);
+  l_ts t_tab;
+  l_fn t_tab;
+BEGIN
+  -- v\$tempfile and v\$tablespace come from the control file and do not read
+  -- the stale file header, unlike dba_temp_files.
+  SELECT t.name, f.name BULK COLLECT INTO l_ts, l_fn
+    FROM v\$tempfile f JOIN v\$tablespace t ON t.ts# = f.ts# AND t.con_id = f.con_id
+   WHERE f.con_id = 1;
+  FOR i IN 1 .. l_ts.COUNT LOOP
+    -- Drop first: ADD TEMPFILE verifies the existing file of the tablespace
+    -- and fails on the stale one with ORA-01122/ORA-01203 (measured).
+    EXECUTE IMMEDIATE 'ALTER DATABASE TEMPFILE ''' || l_fn(i) || ''' DROP';
+    EXECUTE IMMEDIATE 'ALTER TABLESPACE ' || l_ts(i) || ' ADD TEMPFILE SIZE 50M AUTOEXTEND ON';
+    DBMS_OUTPUT.PUT_LINE('replaced temp file ' || l_fn(i) || ' of ' || l_ts(i));
+  END LOOP;
+END;
+/
+SELECT file#, name, status FROM v\$tempfile WHERE con_id = 1;
 EXIT
-SQL
-'
-
-    # The auto-login has to be recreated on this host; without it the STARTUP
-    # FORCE below comes up with a closed keystore and both PDBs fail for the
-    # same reason, which would destroy the discrimination phase 8 is built on.
-    ensure_autologin_for "${DEV_SERVICE}" \
-        || lib_warn "the auto-login could not be recreated - the reads below will show the consequence"
-}
-
-# ------------------------------------------------------------------------------
-# Function: read_canary_in_pdb
-# Purpose.: Open a PDB and try to read the canary table in it
-# Args....: $1  PDB name
-# Returns.: 0 canary readable, 1 blocked by a missing key, 2 unclear
-# Output..: the full SQL*Plus output of the attempt
-# Depends.: docker, sqlplus
-# Example.: read_canary_in_pdb PDBAUX_CLONE
-# Notes...: A non-zero return is a measurement here, not a harness failure - for
-#           the auxiliary PDB the expected outcome after the withdrawal is
-#           exactly return code 1 (ORA-28374). Every caller has to treat it that
-#           way; under set -e it must be called with "|| rc=$?".
-#           ALTER PLUGGABLE DATABASE ... OPEN on an already open PDB answers
-#           ORA-65019, which is tolerated on purpose.
-# ------------------------------------------------------------------------------
-read_canary_in_pdb() {
-    local pdb="$1" out
-    if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would open ${pdb} and read ${CANARY_OWNER}.CANARY_TDE"
-        return 0
-    fi
-    out=$(printf '%s\n' "
-WHENEVER SQLERROR CONTINUE
-ALTER PLUGGABLE DATABASE ${pdb} OPEN;
-SELECT name, open_mode FROM v\$pdbs WHERE name='${pdb}';
-ALTER SESSION SET CONTAINER=${pdb};
-@/opt/oracle/common/scripts/ssenc_canary.sql ${CANARY_OWNER} ${CANARY_MARKER} CANARY_TDE
-EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>&1 || true)
-    printf '%s\n' "${out}"
-    if printf '%s' "${out}" | grep -qE "ORA-28374|ORA-28365|not found in wallet"; then
-        return 1
-    fi
-    if printf '%s' "${out}" | grep -qE "rows selected|${CANARY_MARKER}"; then
-        return 0
-    fi
-    return 2
+"
 }
 
 # ------------------------------------------------------------------------------
@@ -469,6 +360,10 @@ EXIT
     fi
     collect_evidence "${DEV_SERVICE}" "${AUX_PDB}" "${LABEL_AUX}" "${AUX_TS_ENC}"
 
+    # The local clone in phase 6 needs a usable CDB temp file.
+    step_header "Phase 4b: Replace the stale CDB\$ROOT temp files"
+    refresh_cdb_tempfiles
+
     # Phase 5: the ordering subtlety, and the reason this step exists.
     # A clone wraps its new tablespace key with whatever MEK is active at the
     # time. If the source MEK is still the active one, the clone's key is
@@ -492,13 +387,13 @@ EXIT
     # are recorded below and phase 7 reports which one the clone's tablespace
     # key hangs on.
     step_header "Phase 5: Create and activate a dev-owned MEK before the clone"
-    set_dev_mek 'CDB$ROOT'
+    set_dev_mek "${ROOT_CON}"
     set_dev_mek "${AUX_PDB}"
 
     local mek_root mek_pdb
     mek_root="DRY-RUN"; mek_pdb="DRY-RUN"
     if [[ "${DRY_RUN}" != "TRUE" ]]; then
-        mek_root=$(get_pdb_active_mek "${DEV_SERVICE}" 'CDB$ROOT') || {
+        mek_root=$(get_pdb_active_mek "${DEV_SERVICE}" "${ROOT_CON}") || {
             lib_err "could not read the active MEK of CDB\$ROOT after SET KEY"
             return 1
         }
@@ -521,29 +416,69 @@ EXIT
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         lib_info "DRY-RUN: would clone ${AUX_PDB} to ${TARGET_PDB} with KEYSTORE IDENTIFIED BY"
     else
-        # shellcheck disable=SC1078,SC1079
-        in_dev_stdin '
-KSPWD=$(cat '"${WALLET_DIR_CONTAINER}"'/wallet_pwd.txt)
-sqlplus -S / as sysdba <<SQL 2>&1 | grep -viE "identified by"; _rc=${PIPESTATUS[0]}; [ "${_rc}" -eq 0 ] || { echo "ERROR: sqlplus exited ${_rc}" >&2; exit "${_rc}"; }
-WHENEVER SQLERROR CONTINUE
-ALTER PLUGGABLE DATABASE '"${TARGET_PDB}"' CLOSE IMMEDIATE;
-DROP PLUGGABLE DATABASE '"${TARGET_PDB}"' INCLUDING DATAFILES;
+        # A leftover clone from an earlier attempt is dropped first. Checked
+        # explicitly instead of running CLOSE/DROP under WHENEVER SQLERROR
+        # CONTINUE, which also swallowed every other error of those statements.
+        local existing
+        existing=$(printf '%s\n' "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
+SELECT COUNT(*) FROM v\$pdbs WHERE name = '${TARGET_PDB}';
+EXIT" | docker exec -i "${DEV_SERVICE}" sqlplus -S / as sysdba 2>/dev/null \
+            | awk 'NF && $1 ~ /^[0-9]+$/ { print $1; exit }' || true)
+        if [[ "${existing}" == "1" ]]; then
+            lib_info "dropping the leftover ${TARGET_PDB} of an earlier attempt"
+            sqlplus_dev "
 WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER PLUGGABLE DATABASE ${TARGET_PDB} CLOSE IMMEDIATE;
+DROP PLUGGABLE DATABASE ${TARGET_PDB} INCLUDING DATAFILES;
+EXIT
+" || {
+                print_verdict "FAIL" "phase 6: could not drop the leftover ${TARGET_PDB} - no clean clone possible"
+                return 1
+            }
+        elif [[ "${existing}" != "0" ]]; then
+            print_verdict "FAIL" "phase 6: could not determine whether ${TARGET_PDB} exists (got '${existing}')"
+            return 1
+        fi
+        # The keystore password stays in the container: sqlplus_kspwd replaces
+        # __KSPWD__ there from wallet_pwd.txt, nothing reaches the host process
+        # list. Every statement runs under WHENEVER SQLERROR EXIT.
+        sqlplus_kspwd "${DEV_SERVICE}" "
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+SET LINESIZE 200 PAGESIZE 100 FEEDBACK ON
 -- The source of a local clone has to be READ ONLY.
-ALTER PLUGGABLE DATABASE '"${AUX_PDB}"' CLOSE IMMEDIATE;
-ALTER PLUGGABLE DATABASE '"${AUX_PDB}"' OPEN READ ONLY;
+ALTER PLUGGABLE DATABASE ${AUX_PDB} CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE ${AUX_PDB} OPEN READ ONLY;
 -- KEYSTORE IDENTIFIED BY is mandatory as soon as the source carries encrypted
 -- tablespaces; without it the clone fails with ORA-46697, and an auto-login
 -- keystore does not satisfy the clause (measured in 62_pdb_p1_local.sh).
-CREATE PLUGGABLE DATABASE '"${TARGET_PDB}"' FROM '"${AUX_PDB}"'
-  KEYSTORE IDENTIFIED BY "${KSPWD}";
-ALTER PLUGGABLE DATABASE '"${TARGET_PDB}"' OPEN READ WRITE;
-ALTER PLUGGABLE DATABASE '"${AUX_PDB}"' CLOSE IMMEDIATE;
-ALTER PLUGGABLE DATABASE '"${AUX_PDB}"' OPEN READ WRITE;
+CREATE PLUGGABLE DATABASE ${TARGET_PDB} FROM ${AUX_PDB}
+  KEYSTORE IDENTIFIED BY \"__KSPWD__\";
+ALTER PLUGGABLE DATABASE ${TARGET_PDB} OPEN READ WRITE;
+ALTER PLUGGABLE DATABASE ${AUX_PDB} CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE ${AUX_PDB} OPEN READ WRITE;
+-- A freshly created or reopened PDB does not inherit the open password
+-- keystore: the next query on USERS in the clone failed with ORA-28365 and
+-- v\$encryption_wallet showed CLOSED / UNKNOWN for it (measured 2026-10-24).
+-- With CONTAINER=ALL and FORCE KEYSTORE the statement succeeded in the
+-- 2026-10-24 run (keystore altered); the check below verifies the outcome.
+ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN FORCE KEYSTORE IDENTIFIED BY \"__KSPWD__\" CONTAINER=ALL;
+COLUMN name FORMAT A20
 SELECT name, open_mode FROM v\$pdbs ORDER BY name;
+COLUMN status FORMAT A20
+COLUMN wallet_type FORMAT A16
+SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 EXIT
-SQL
-'
+" || {
+            print_verdict "FAIL" "phase 6: the clone of ${AUX_PDB} into ${TARGET_PDB} failed (see the SQL*Plus output above)"
+            return 1
+        }
+        local closed
+        closed=$(count_closed_keystores "${DEV_SERVICE}")
+        if [[ "${closed}" != "0" ]]; then
+            print_verdict "FAIL" "phase 6: after SET KEYSTORE OPEN ${closed:-an unknown number of} non-seed container(s) still have a closed keystore - the reads below would fail with ORA-28365, not for a missing key"
+            return 1
+        fi
+        lib_info "keystore open in every container except PDB\$SEED"
     fi
 
     # Phase 7: evidence and the ciphertext comparison
@@ -564,7 +499,7 @@ SQL
         # one can fail in a way that invalidates the run.
         case "${canary_rc}" in
             0) lib_warn "the clone reproduced the auxiliary ciphertext exactly - no new tablespace key material" ;;
-            1) lib_info "clone ciphertext differs from the auxiliary - new tablespace key material" ;;
+            3) lib_info "clone ciphertext differs from the auxiliary - new tablespace key material" ;;
             *) lib_warn "the canary blocks could not be compared - the ciphertext half of the evidence is missing" ;;
         esac
     fi
@@ -618,15 +553,40 @@ SQL
         read -rp "Confirm the withdrawal test on ${DEV_SERVICE}? [y/N] " _reply
         [[ "${_reply}" == [yY] ]] || { lib_warn "withdrawal test aborted by user"; return 1; }
     fi
-    withdraw_source_mek "${key_ids}"
+    local withdraw_rc=0
+    withdraw_keystore_to_keys "${key_ids}" "${KEYS_FILE}" "${WALLET_ASIDE}" "${WALLET_BACKUP}" "${AUX_KEY_SECRET}" \
+        || withdraw_rc=$?
+    # The export holds the dev master keys. Removed by default, also after a
+    # failed withdrawal; --keep retains it for a manual rerun of the import.
+    if [[ "${KEEP_KEYS_FILE}" == "TRUE" ]]; then
+        lib_info "--keep: key export kept at ${KEYS_FILE} (mode 600)"
+    else
+        lib_run in_dev "rm -f ${KEYS_FILE} && echo 'removed ${KEYS_FILE}'" \
+            || lib_warn "could not remove ${KEYS_FILE} - remove it by hand"
+    fi
+    if [[ ${withdraw_rc} -ne 0 ]]; then
+        print_verdict "FAIL" "the keystore withdrawal failed (see above) - no withdrawal result, rollback copy in ${WALLET_BACKUP}"
+        return 1
+    fi
 
     step_header "Phase 8a: Restart ${DEV_SERVICE} without the source master key"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
-        lib_info "DRY-RUN: would run STARTUP FORCE and report the open mode"
+        lib_info "DRY-RUN: would run SHUTDOWN IMMEDIATE + STARTUP and report the open mode"
     else
         sqlplus_dev "
 WHENEVER SQLERROR CONTINUE
-STARTUP FORCE;
+-- Measured 2026-10-24: with the auxiliary PDB open at shutdown, ALTER DATABASE
+-- OPEN of the whole CDB fails with ORA-28374 - the alert log names the
+-- missing key as the source PDB MEK in container 4 - after STARTUP FORCE and
+-- after SHUTDOWN IMMEDIATE alike. The alert log line Crash Recovery
+-- excluding pdb 2 which was cleanly closed shows the way out: a PDB closed
+-- explicitly before the shutdown is not part of the open. So the auxiliary is
+-- closed first and its saved state discarded; each PDB is opened on its own
+-- in phases 8b and 8c, where its dependency shows separately.
+ALTER PLUGGABLE DATABASE ${AUX_PDB} CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE ${AUX_PDB} DISCARD STATE;
+SHUTDOWN IMMEDIATE
+STARTUP
 SELECT 'OPEN_MODE=' || open_mode AS state FROM v\$database;
 SELECT con_id, status, wallet_type FROM v\$encryption_wallet ORDER BY con_id;
 EXIT
@@ -637,21 +597,25 @@ EXIT
     # is reported as a measurement; only an unclear result is a harness problem.
     step_header "Phase 8b: Read the canary in ${TARGET_PDB} (must succeed)"
     local clone_rc=0
-    read_canary_in_pdb "${TARGET_PDB}" || clone_rc=$?
+    read_canary_in_pdb "${DEV_SERVICE}" "${TARGET_PDB}" || clone_rc=$?
 
     step_header "Phase 8c: Read the canary in ${AUX_PDB} (must fail with ORA-28374)"
     local aux_rc=0
-    read_canary_in_pdb "${AUX_PDB}" || aux_rc=$?
+    read_canary_in_pdb "${DEV_SERVICE}" "${AUX_PDB}" || aux_rc=$?
 
     local clone_state aux_state
+    # rc 3 is a closed keystore (ORA-28365): a harness state, not a missing
+    # key, so it is UNCLEAR and never counts as "blocked".
     case "${clone_rc}" in
         0) clone_state="READABLE" ;;
-        1) clone_state="BLOCKED (ORA-28374/ORA-28365)" ;;
+        1) clone_state="BLOCKED (ORA-28374)" ;;
+        3) clone_state="UNCLEAR (keystore closed, ORA-28365)" ;;
         *) clone_state="UNCLEAR" ;;
     esac
     case "${aux_rc}" in
         0) aux_state="READABLE" ;;
-        1) aux_state="BLOCKED (ORA-28374/ORA-28365)" ;;
+        1) aux_state="BLOCKED (ORA-28374)" ;;
+        3) aux_state="UNCLEAR (keystore closed, ORA-28365)" ;;
         *) aux_state="UNCLEAR" ;;
     esac
 
@@ -668,7 +632,7 @@ EXIT
     printf '  clone %s: %s\n' "${TARGET_PDB}" "${clone_state}"
     printf '  auxiliary %s: %s\n' "${AUX_PDB}" "${aux_state}"
     printf '  clone MEK: %s\n' "${mek_clone}"
-    printf '  dev MEK CDB$ROOT: %s\n' "${mek_root}"
+    printf '  dev MEK %s: %s\n' "${ROOT_CON}" "${mek_root}"
     printf '  dev MEK %s: %s\n' "${AUX_PDB}" "${mek_pdb}"
     if [[ -n "${canary_cmp}" ]]; then
         printf '  canary blocks: %s\n' "${canary_cmp}"
@@ -678,7 +642,7 @@ EXIT
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN"
-    elif [[ ${clone_rc} -eq 2 || ${aux_rc} -eq 2 ]]; then
+    elif [[ ${clone_rc} -ge 2 || ${aux_rc} -ge 2 ]]; then
         verdict="FAIL"
         msg="at least one canary read gave an unclear result (clone ${clone_state}, auxiliary ${aux_state}) - no verdict possible, investigate the output above"
     elif [[ ${clone_rc} -eq 0 && ${aux_rc} -eq 1 ]]; then
