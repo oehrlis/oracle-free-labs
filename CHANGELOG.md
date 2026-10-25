@@ -7,6 +7,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-25
+
 ### Added
 
 - TDE verify: step 72 `72_rekey_all_withdrawal.sh` - ONLINE REKEY of every encrypted
