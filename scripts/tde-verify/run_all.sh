@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.4.0
 # Purpose....: Runner for the TDE restore verification test suite.
 #              Executes the scripts in scripts/tde-verify/tests/ in numeric
 #              order with explicit gates between steps. Each gate checks that
@@ -25,12 +25,13 @@
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
 # 2026-09-11  oes  Step banner and result table also go to the run log  0.2.0
+# 2026-10-24  oes  Steps 45 and 72 registered                              0.4.0
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.3.0"
+VERSION="0.4.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -123,6 +124,7 @@ declare -a STEP_REGISTRY=(
     "30|30_variant_b2.sh|Variant B2: AS ENCRYPTED USING KEY without prod MEK|BACKUP_READY|step 15 (backup)"
     "35|35_variant_b1.sh|Variant B1: AS ENCRYPTED USING KEY with prod MEK|BACKUP_READY|step 15 (backup)"
     "40|40_variant_c.sh|Variant C: DUPLICATE ... AS ENCRYPTED|BACKUP_READY|step 15 (backup)"
+    "45|45_zdlra_aux_pdb_clone.sh|Auxiliary restore + PDB clone: independence from a backup source|BACKUP_READY|step 15 (backup)"
     "50|50_variant_d.sh|Variant D: RESTORE AS DECRYPTED + SET KEY + OFFLINE ENCRYPT|BACKUP_READY|step 15 (backup)"
     "60|60_variant_f.sh|Variant F: chain-breaking path (new TEK)|BACKUP_READY|step 15 (backup)"
     "61|61_pdb_testbed.sh|PDB testbed: create PDBCLONE with canary tables and c##clone user||none"
@@ -138,6 +140,7 @@ declare -a STEP_REGISTRY=(
     "68|68_pdb_p5_mekrot.sh|PDB P5: MEK rotation in target after P2 or P4|PDB_TARGET_READY|step 63 P2 or step 65 P4"
     "69|69_pdb_p6_rekey.sh|PDB P6: ONLINE REKEY in target after P2 or P4|PDB_TARGET_READY|step 63 P2 or step 65 P4"
     "70|70_variant_g.sh|Variant G: ALTER TABLESPACE ENCRYPTION ONLINE REKEY|BACKUP_READY|step 15 (backup)"
+    "72|72_rekey_all_withdrawal.sh|Rekey all + SET KEY per container, then withdraw the source MEK|BACKUP_READY|step 15 (backup)"
     "80|80_positive_control.sh|Positive control: two tablespaces prove method sensitivity||none"
     "90|90_withdrawal_test.sh|Key withdrawal test: verify cryptographic independence||none"
 )

@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-03
-# Version....: 0.1.0
+# Version....: 0.2.0
 # Purpose....: Clone the TDE enabled source database into the target container
 #              using one of the variants under test, so that each variant is
 #              executed identically and is reproducible from the protocol.
@@ -31,6 +31,9 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-03  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  Variant b1 merges the source keystore (MERGE KEYSTORE);
+#                  the target cwallet.sso is moved aside only after a
+#                  successful merge                                       0.2.0
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -38,7 +41,7 @@
 # ------------------------------------------------------------------------------
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
-VERSION="0.1.0"
+VERSION="0.2.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -210,9 +213,8 @@ prepare_wallet() {
         b1)
             # Target keeps its own key and additionally holds the source key, so
             # RMAN can read the source blocks at all.
-            log_info "variant b1: target keystore keeps its own MEK, source MEK imported"
-            in_container "mkdir -p ${XCHANGE}/wallet_dev_pristine"
-            log_warn "import of the source MEK is a separate documented step, see protocol"
+            log_info "variant b1: target keystore keeps its own MEK, source MEK merged in"
+            merge_source_keystore
             ;;
         b2)
             log_info "variant b2: target keystore holds only its own MEK, source MEK absent"
@@ -233,6 +235,82 @@ prepare_wallet() {
             return 1
             ;;
     esac
+}
+
+# ------------------------------------------------------------------------------
+# Function: merge_source_keystore
+# Purpose.: Merge the staged source keystore into the target keystore, so the
+#           target holds its own MEK and the source MEKs side by side
+# Args....: none
+# Returns.: 0 merged and the source MEK is listed, 1 otherwise
+# Output..: the merge result and the key count before and after
+# Depends.: docker, sqlplus
+# Example.: merge_source_keystore
+# Notes...: Variant b1 needs the source MEK in the target, or RMAN cannot read
+#           the source blocks and stops with ORA-19870/ORA-28374 - which is
+#           variant b2, not b1. Until 2026-10-24 this branch only logged that the
+#           import was "a separate documented step", so every scripted b1 run was
+#           a b2 run in disguise. MERGE KEYSTORE keeps the target keystore and
+#           its password and adds the source keys; it is the documented remedy
+#           for ORA-28374. Both passwords are read inside the container from
+#           their wallet_pwd.txt and never reach this script.
+#           After a successful merge - and only then, a failed merge leaves the
+#           target keystore exactly as it was - the target auto-login
+#           cwallet.sso is moved aside: it is a
+#           separate copy that does not receive the merged keys, and the instance
+#           would open from it on the next restart. open_keystore then opens the
+#           merged password keystore, ensure_autologin recreates the .sso later.
+# ------------------------------------------------------------------------------
+merge_source_keystore() {
+    if [[ "${DRY_RUN}" == "TRUE" ]]; then
+        log_info "DRY-RUN: would MERGE KEYSTORE ${XCHANGE}/wallet_prod/tde INTO EXISTING KEYSTORE ${WALLET_DIR}/tde"
+        return 0
+    fi
+    if ! docker exec "${TARGET}" test -s "${XCHANGE}/wallet_prod/tde/ewallet.p12"; then
+        log_error "no staged source keystore in ${XCHANGE}/wallet_prod/tde - run step 15 first"
+        return 1
+    fi
+    if ! docker exec "${TARGET}" test -s "${XCHANGE}/wallet_prod/wallet_pwd.txt"; then
+        log_error "no source keystore password in ${XCHANGE}/wallet_prod/wallet_pwd.txt"
+        return 1
+    fi
+    log_info "backing the target keystore up to ${XCHANGE}/wallet_dev_pristine"
+    in_container "rm -rf ${XCHANGE}/wallet_dev_pristine && mkdir -p ${XCHANGE}/wallet_dev_pristine && cp -a ${WALLET_DIR}/. ${XCHANGE}/wallet_dev_pristine/"
+
+    log_info "merging the source keystore into the target keystore"
+    # Quoted heredoc: nothing expands on this side, the passwords stay inside.
+    local out rc=0
+    out=$(docker exec -i "${TARGET}" bash -s <<'INNER' 2>&1
+set -u
+W="/opt/oracle/dbconfig/FREE/wallet"
+XCH="/opt/oracle/xchange"
+DEVPW="$(cat "${W}/wallet_pwd.txt")"
+SRCPW="$(cat "${XCH}/wallet_prod/wallet_pwd.txt")"
+sqlplus -S / as sysdba <<SQL
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 200
+SELECT 'KEYS_BEFORE=' || COUNT(*) FROM v\$encryption_keys;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ADMINISTER KEY MANAGEMENT MERGE KEYSTORE '${XCH}/wallet_prod/tde' IDENTIFIED BY "${SRCPW}"
+  INTO EXISTING KEYSTORE '${W}/tde' IDENTIFIED BY "${DEVPW}" WITH BACKUP;
+SELECT 'MERGE_OK' FROM dual;
+EXIT
+SQL
+_rc=$?
+if [ "${_rc}" -eq 0 ]; then
+    mkdir -p "${XCH}/sso_b1_target"
+    mv "${W}"/tde/cwallet*.sso "${XCH}/sso_b1_target/" 2>/dev/null && echo "target cwallet.sso moved to ${XCH}/sso_b1_target"
+else
+    echo "MERGE KEYSTORE failed (sqlplus exit ${_rc}) - target cwallet.sso left in place"
+fi
+exit ${_rc}
+INNER
+) || rc=$?
+    printf '%s\n' "${out}" | grep -viE "identified by" || true
+    if [[ "${rc}" -ne 0 ]] || ! grep -q "MERGE_OK" <<<"${out}"; then
+        log_error "MERGE KEYSTORE failed (exit ${rc}) - the target does not hold the source MEK"
+        return 1
+    fi
+    log_info "source keystore merged; the keystore is reopened from ewallet.p12 after the restart"
 }
 
 # ------------------------------------------------------------------------------

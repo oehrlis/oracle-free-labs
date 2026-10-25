@@ -310,3 +310,208 @@ Marker-Blockzahl 313.
   den RMAN-Skripten - identische Zahl wie im Lauf `run_20260911_080723`.
 - `ORA-28365` tritt auch hier nicht auf; der automatisierte Weg transportiert
   nur `ewallet.p12`, nicht `cwallet.sso`.
+
+## Messwerte der Einzellaeufe vom 2026-10-24 - B1, B2, Schritt 45, Schritt 72
+
+**Eigene Laeufe, eigene Zahlen.** Neue Basis (Schritte 00, 10, 15), neue
+Schluessel-IDs. Keine ID aus diesem Abschnitt darf mit einer ID aus den
+Abschnitten darueber vermischt werden. Vergleichbar sind allein die
+Canary-Blockzahlen (313) und die strukturellen Aussagen.
+
+Belege, alle unter `artefacts/` und ueber `!artefacts/run_*.log` versioniert,
+Secret-Pruefung nach `artefacts/README.md` je Datei `0`:
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Log | Inhalt |
+|---|---|
+| `artefacts/run_20261024_081906.log` | Basis: 00, 10, 15, je `PASS` (Zeilen 73, 646, 792) |
+| `artefacts/run_20261024_082444.log` | Schritt 35, Variante B1 |
+| `artefacts/run_20261024_082753.log` | Schritt 30, Variante B2 |
+| `artefacts/run_20261024_090859.log` | Schritt 45, Fehlversuch: `STARTUP FORCE` mit offener Auxiliary-PDB |
+| `artefacts/run_20261024_092534.log` | Schritt 45, Fehlversuch: `SHUTDOWN IMMEDIATE` mit offener Auxiliary-PDB |
+| `artefacts/run_20261024_094125.log` | Schritt 45, gueltiger Lauf |
+| `artefacts/run_20261024_095047.log` | Schritt 72, gueltiger Lauf |
+| `artefacts/run_20261025_063549.log` | Wiederholung Schritt 30 mit der finalen Skriptrevision |
+| `artefacts/run_20261025_063809.log` | Wiederholung Schritt 35 mit der finalen Skriptrevision |
+| `artefacts/run_20261025_064027.log` | Wiederholung Schritt 45 mit der finalen Skriptrevision |
+| `artefacts/run_20261025_064340.log` | Wiederholung Schritt 72 mit der finalen Skriptrevision |
+
+<!-- markdownlint-restore -->
+
+Prod-DBID `1519529852`, Prod `USERS` `MASTERKEYID`
+`D8D7BB0F7DA7460CACFBFBB60198DBA1`, `ENCRYPTEDKEY`
+`894916F8682E723C4EFF5BD8A35050AD85A54A35746019670CABDAC8CE2AFFD2`
+(`run_20261024_081906.log:641-643`).
+
+### B1 - `AS ENCRYPTED USING KEY` mit Prod-MEK, erstmals per Skript gemessen
+
+- Bis 2026-10-23 hat `tde_clone.sh` fuer `b1` den Prod-MEK **gar nicht**
+  importiert (nur ein Hinweis "separate documented step"). Jeder geskriptete
+  B1-Lauf waere damit ein verkappter B2-Lauf gewesen. Seit 2026-10-24 merged
+  `merge_source_keystore` den gestagten Prod-Keystore per `MERGE KEYSTORE ...
+  INTO EXISTING KEYSTORE` in den Dev-Keystore: `MERGE_OK`
+  (`run_20261024_082444.log:52`), Keystore danach `OPEN` / `PASSWORD`
+  (`:143`).
+- Das erste Backup-Set (Datafiles 1, 3, 7, 11 der CDB, unverschluesselt) wurde
+  restauriert, `elapsed time: 00:00:03` (`:201-210`). Die Laufzeit von 5:45 aus
+  dem manuellen Lauf ist hier **nicht** reproduziert; ob `AS ENCRYPTED` diese
+  Dateien tatsaechlich verschluesselt hat, ist nicht pruefbar, weil der Restore
+  danach abbricht.
+- Beim Backup-Set mit Datafile 20 (`USERS`, verschluesselt, `:217`):
+  `ORA-19870` plus `ORA-00600: internal error code, arguments:
+  [kcbtse_encdec_tbsblk_1], [4], [2], [1244], [18], [1244], [20],
+  [4294967295], [0], [0], [], []` (`:227-228`). Das Argument `[20]` entspricht der Datafile-Nummer von `USERS`.
+- Verdict `PASS` aus der RMAN-Zeile abgeleitet, nicht aus festem Text
+  (`:244`). **Damit steht `kcbtse` erstmals in einem Log unter `artefacts/`.**
+  Die Argumente 3 und 5 (`1244`) weichen vom manuellen Lauf (`806`) ab; die
+  Struktur ist identisch.
+
+### B2 - `AS ENCRYPTED USING KEY` ohne Prod-MEK
+
+- Abbruch bereits beim **ersten** Backup-Piece `024ojrp4_2_1_1`, also beim Set
+  mit den CDB-Datafiles 1, 3, 7, 11 (`:197-201`), die alle zu unverschluesselten
+  Tablespaces gehoeren (`CDB$ROOT` `SYSTEM`, `SYSAUX`, `USERS`, `UNDOTBS1` mit
+  `ENC NO`, `run_20261024_095047.log:296-307`): `ORA-19870` plus
+  `ORA-28374: typed master key not found in wallet`
+  (`run_20261024_082753.log:208-210`), Verdict `PASS` (`:226`).
+- `30_variant_b2.sh` leitet das Verdict seit 0.2.0 aus der Ausgabe ab; vorher
+  genuegte jeder Exit-Code ungleich 0, wie bei B1 vor 2026-09-22. 0.2.0
+  akzeptierte noch `ORA-19870` **oder** `ORA-28374` - `ORA-19870` allein steht
+  aber auch in der B1-Signatur (`ORA-19870` + `ORA-00600`). Seit 0.3.0 verlangt
+  `PASS` `ORA-28374` und kein `ORA-00600`; `ORA-00600` ist `FAIL` ("source key
+  present - this is B1"). Der Lauf vom 2026-10-24 erfuellt auch die strengere
+  Regel (`run_20261024_082753.log:209-210`, kein `ORA-00600` im Log).
+
+### Schritt 45 - PDB-Klon aus einem restaurierten Auxiliary
+
+- Auxiliary nach dem Restore: `USERS` haengt am Prod-MEK
+  `D8D7BB0F...DBA1` (`run_20261024_094125.log:382`), Canary 5000 Zeilen
+  (`:316`). `READ ONLY` ist dort nicht protokolliert; belegt ist es fuer die
+  Baseline (`run_20261024_081906.log:643`) und fuer dasselbe restaurierte
+  `USERS` in Schritt 72 (`run_20261024_095047.log:307`).
+- Dev-MEK in `CDB$ROOT` `CD13CEB06BE943EC973D0DEDE1949481`, in der
+  Auxiliary-PDB `0664705EC4554DBE91737247B5AB23BE` (`:525-526`).
+- Klon `PDBAUX_CLONE`: `USERS` unter `0664705E...23BE`, `ENCRYPTEDKEY`
+  `BBCC75A99A1413FDACE1307F07883FD5D84FFFC391F84684C07EF846976B00CD`
+  (`:662`, `:795`); Canary-Bloecke Auxiliary gegen Klon
+  `identical 0 differing 313 total 313` (`:793`) - neues Schluesselmaterial.
+- Entzug: neuer Keystore nur mit den zwei Dev-MEKs (`:854-855`). Danach oeffnet
+  die CDB `READ WRITE` (`:890`), der Klon liest den Canary
+  (`READABLE - all rows decrypt`, `:950`), die Auxiliary-PDB nicht:
+  `File 20 not verified due to error ORA-28374` (`:1008`). Verdict `PASS`
+  (`:1027`).
+- **Antwort:** ein PDB-Klon aus einem restaurierten Auxiliary bekommt neues
+  Tablespace-Schluesselmaterial unter dem Dev-MEK und uebersteht den Entzug des
+  Quell-MEK; die Auxiliary-PDB scheitert. Einschraenkung: Auxiliary und Klon in
+  derselben CDB mit einem Keystore (Lab hat zwei Container).
+
+Befunde aus den Fehlversuchen desselben Tages:
+
+- **Beobachtung:** mit offener Auxiliary-PDB blieb die CDB nach dem Entzug
+  `MOUNTED` mit `ORA-28374`, nach `STARTUP FORCE`
+  (`run_20261024_090859.log:871`, `:878`) wie nach `SHUTDOWN IMMEDIATE` +
+  `STARTUP` (`run_20261024_092534.log:870`, `:877`). **Ursache nicht
+  isoliert (Hypothese):** dass die offene abhaengige PDB das Oeffnen der ganzen
+  CDB verhindert, stuetzt sich auf das Alert-Log, das als fehlenden Schluessel
+  den Prod-PDB-MEK in Container 4 nannte - live gelesen, **nicht** in einem
+  versionierten Log - und auf den Folgelauf, der `CLOSE IMMEDIATE` und
+  `DISCARD STATE` gleichzeitig einfuehrte. Mit vorher geschlossener PDB oeffnet
+  die CDB `READ WRITE` (`run_20261024_094125.log:890`), und nur die Daten dieser
+  PDB scheitern (`ORA-01187` `:986`, Alert-Log `:1008`); der Klon liest (`:950`).
+- **Leerer Keystore != Keystore ohne den Quellschluessel.** Mit leerem
+  Keystore-Verzeichnis oeffnet dieselbe CDB `READ WRITE`, Wallet-Status
+  `NOT_AVAILABLE` (`run_20261024_090859.log:826-834`). Ein Entzugstest, der den
+  Keystore nur wegnimmt, unterscheidet abhaengig und unabhaengig deshalb nicht
+  am Open-Mode.
+- **Fehlender Tablespace-Schluessel zeigt sich in der Session als `ORA-01187`**
+  ("failed verification tests"), nicht als `ORA-28374`. Die Ursache steht nur
+  im Alert-Log (`ORA-01187` `run_20261024_094125.log:986`, `File 20 not
+  verified due to error ORA-28374` `:1008`). Seit `lib.sh` 0.3.0 zaehlt nur eine
+  Alert-Log-Zeile, die waehrend des Versuchs geschrieben wurde und die Datei aus
+  `ORA-01110` nennt.
+- Nach dem Restore ist der CDB-Tempfile `temp01.dbf` (Datei 1025) unbrauchbar
+  (`ORA-01187`), `ADD TEMPFILE` scheitert an ihm mit `ORA-01122`/`ORA-01203`;
+  erst `DROP` dann `ADD` geht. Eine neu geklonte PDB hat den Keystore
+  `CLOSED` / `UNKNOWN` (`ORA-28365`), bis er erneut mit Passwort geoeffnet
+  wird. Beides in Schritt 45 behoben. Die Logs dieser zwei Fehlversuche hat die
+  erste Session geloescht - die Befunde sind damit **unbelegt** (siehe
+  `tasks/lessons.md`, 2026-10-25).
+
+### Schritt 72 - Rekey aller verschluesselten Tablespaces, `SET KEY` je Container, Entzug
+
+- Vorher: einziger verschluesselter Tablespace `ODBENCPROD.USERS` unter
+  `D8D7BB0F...DBA1`, `KEY_VERSION 1` (`run_20261024_095047.log:288`);
+  Container Database Keys unter den Prod-MEKs `C6DF452C3A9343329106BEA81BD3B0CA`
+  (`CDB$ROOT`) und `D8D7BB0F...DBA1` (`ODBENCPROD`) (`:315`, `:317`).
+  `SYSTEM`, `SYSAUX`, `UNDOTBS1`, `TEMP` in beiden Containern unverschluesselt
+  (`:291-309`).
+- Nach `READ WRITE`, `SET KEY` in `CDB$ROOT` und in `ODBENCPROD` und
+  `ONLINE REKEY` von `USERS`: `USERS` unter `256E49C63EA347DEAE6101B4A746618D`,
+  `KEY_VERSION 2`, `ENCRYPTEDKEY` `384F426D...C2AB` (`:377`); Database Keys
+  unter den neuen MEKs `B0E568695FCF4CE2AB1B70A6E5503334` und `256E49C6...618D`
+  (`:404`, `:406`) - `SET KEY` wrappt den Database Key also um.
+- Probes `ALTER TABLESPACE ... ENCRYPTION ONLINE REKEY` auf den
+  **unverschluesselten** `SYSTEM`, `SYSAUX`, `UNDOTBS1`: `Tablespace altered.`
+  in beiden Containern (`:428-438`, `:454-464`), die Tablespaces bleiben
+  `ENC NO` (`:538`, `:545`). Danach hat der Database Key bei **gleicher**
+  `MASTERKEYID` einen anderen gewrappten Wert (`:404` gegen `:556`, `:406`
+  gegen `:558`). **Schluss, nicht Messung:** das kann neues Material fuer den
+  Database Key sein (Logik wie bei P1), aber ebenso ein erneutes Wrappen
+  desselben Schluessels mit neuem IV - der gewrappte Wert allein trennt das
+  nicht. `TEMP`: `ORA-28370 ... online encryption not allowed for temp`
+  (`:440-444`, `:466-470`).
+- `ALTER DATABASE DICTIONARY REKEY CREDENTIALS` als SYSKM in `CDB$ROOT`:
+  `ORA-28446 ... missing current encryption key` (`:495`), weil
+  `dictionary_credentials_encrypt` `DISABLED` ist (`:486`) - es gibt keinen
+  Credential-Schluessel, also nichts zu erneuern. In der PDB als SYSDBA:
+  `ORA-28447` (`:519`); eine SYSKM-Session konnte den Container nicht wechseln
+  (`ORA-01031` im ersten, verworfenen Lauf - **nicht** in einem versionierten Log).
+- Danach referenziert kein Tablespace- und kein Database Key mehr einen
+  Quell-MEK (`:575`). Canary-Bloecke gegen Baseline
+  `identical 0 differing 313 total 313` (`:763`).
+- Entzug: neuer Keystore nur mit den zwei neuen MEKs (`:768`, `:820-821`),
+  sauberer Neustart `OPEN_MODE=READ WRITE` (`:849`), Canary
+  `READABLE - all rows decrypt` (`:913`). Verdict `PASS` (`:928`).
+- **Antwort:** `SET KEY` in **jedem** Container, `ONLINE REKEY` der
+  verschluesselten Tablespaces **und** die `ONLINE REKEY`-Probes auf den
+  unverschluesselten `SYSTEM`/`SYSAUX`/`UNDOTBS1` zusammen machen ein per RMAN
+  restauriertes Ziel unabhaengig vom Quell-MEK - belegt durch den Entzug
+  (`READ WRITE` `:849`, Canary lesbar `:913`), nicht durch die
+  `v$`-Zeilen. Der Beitrag der Probes ist nicht isoliert. Dass der
+  Entzugstest nach Variante G scheiterte, **weil** dort der MEK nie gewechselt
+  wurde, ist eine Hypothese; moeglich ist auch derselbe Open-/Saved-State-
+  Mechanismus wie in Schritt 45, nicht nachgemessen.
+
+### Wiederholung 2026-10-25 mit der finalen Skriptrevision
+
+Nach den Fixes aus Review 2 (`lib.sh` 0.3.0, `tde_clone.sh` 0.2.0,
+`30_variant_b2.sh` 0.3.0, `35_variant_b1.sh` 0.4.0, `45_zdlra_aux_pdb_clone.sh`
+0.4.0, `72_rekey_all_withdrawal.sh` 0.2.0) liefen 30, 35, 45 und 72 erneut auf
+derselben Basis (Schritte 00/10/15 vom 2026-10-24, Gates erfuellt). **Kein
+Verdict hat sich geaendert.** Die Laeufe vom 2026-10-24 bleiben als Belege
+erhalten; neue Zahlen ersetzen sie nur, wo unten genannt.
+
+<!-- markdownlint-disable MD013 MD060 -->
+
+| Schritt | 2026-10-24 | 2026-10-25 |
+|---|---|---|
+| 30 B2 | `PASS`, `run_20261024_082753.log:226` | `PASS`, `ORA-19870` + `ORA-28374` (`run_20261025_063549.log:212-213`), kein `ORA-00600`, Verdict `:229` |
+| 35 B1 | `PASS`, `run_20261024_082444.log:244` | `PASS`, `MERGE_OK` `:52`, `ORA-00600 [kcbtse_encdec_tbsblk_1] ... [20]` (`run_20261025_063809.log:227-228`), Verdict `:244` |
+| 45 | `PASS`, `run_20261024_094125.log:1027` | `PASS`, Canary `identical 0 differing 313 total 313` (rc 3, `run_20261025_064027.log:741`), Keystore offen ausser `PDB$SEED` (`:541`), Klon `READABLE` (`:899`), Auxiliary `ORA-01187` (`:935`) mit Alert-Log `File 20 not verified due to error ORA-28374` aus dem Versuchsfenster (`:957`), Verdict `:972` |
+| 72 | `PASS`, `run_20261024_095047.log:928` | `PASS`, keine Quell-MEK-Referenz (`run_20261025_064340.log:561`), Canary `identical 0 differing 313 total 313` (`:745`), `READ WRITE` nach Entzug (`:833`), Canary `READABLE` (`:897`), Verdict `:910` |
+
+<!-- markdownlint-restore -->
+
+- Der transiente Docker-Desktop-Fehler `mount source path` trat erneut auf und
+  wurde mit einem Retry ueberwunden (`run_20261025_063549.log:34-35`).
+- Die Schluesselexporte werden auf Mode 600 gesetzt und nach dem Entzug
+  geloescht (`run_20261025_064027.log:758`, `:813`;
+  `run_20261025_064340.log:760`, `:813`).
+- Schritt 72 reproduziert: der gewrappte Database Key aendert sich bei
+  gleicher `MASTERKEYID` nach den Probes (`run_20261025_064340.log:390` gegen
+  `:542`, `:392` gegen `:544`) - weiterhin Schluss, nicht Messung (siehe oben).
+- Schritt 45 reproduziert auch den Negativbefund: die Auxiliary-PDB hat nach
+  `SET KEY` (ohne Rekey) ihren `USERS`-Schluessel unter dem Dev-MEK
+  (`run_20261025_064027.log:612`) und scheitert nach dem Entzug trotzdem
+  (`:935`, `:957`).

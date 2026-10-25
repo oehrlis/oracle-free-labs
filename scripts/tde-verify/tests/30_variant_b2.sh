@@ -6,13 +6,14 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.3.0
 # Purpose....: Variant B2: RESTORE DATABASE AS ENCRYPTED USING KEY without the
 #              source MEK present in the target keystore.
 #              This tests the documented RESTORE ... AS ENCRYPTED path where only
 #              a dev-own target key is available and the prod MEK is absent.
-#              Expected result: RMAN fails with ORA-19870 + ORA-28374
-#              "typed master key not found in wallet". RMAN must be able to read
+#              Expected result: RMAN fails with ORA-28374 "typed master key not
+#              found in wallet" (reported under ORA-19870), and without an
+#              ORA-00600. RMAN must be able to read
 #              the source blocks (which are encrypted under the prod MEK) to re-
 #              encrypt them. Without the prod MEK the blocks are unreadable.
 #              A controlled failure is a valid and informative test result.
@@ -23,18 +24,26 @@
 #              - RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_key_id>'
 #              The resulting ORA-19870 / ORA-28374 is captured in the log;
 #              the script does not abort - the error IS the result.
+#              PASS requires ORA-28374 and no ORA-00600. ORA-19870 alone is
+#              only the RMAN wrapper; together with ORA-00600 it is the B1
+#              signature (source key present), not B2.
 # Reference..: https://github.com/oehrlis/oracle-free-labs
 # License....: Apache License Version 2.0, January 2004 as shown
 #              at http://www.apache.org/licenses/
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  Derive the verdict from the RMAN output: PASS needs
+#                  ORA-19870 or ORA-28374, a bare non-zero exit is FAIL    0.2.0
+# 2026-10-24  oes  PASS requires ORA-28374 and no ORA-00600; ORA-00600 is
+#                  FAIL (source key present - B1); FAIL message no longer
+#                  aborts under set -e; clone output removed by a trap      0.3.0
 # ------------------------------------------------------------------------------
 
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.3.0"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -55,7 +64,8 @@ Usage: ${SCRIPT_NAME} [OPTIONS]
 
   Resets odbencdev, creates a dev-own MEK, then attempts
   RESTORE DATABASE AS ENCRYPTED USING KEY '<dev_key_id>' without staging
-  the prod wallet. Captures the expected ORA-19870 / ORA-28374 failure.
+  the prod wallet. Captures the expected ORA-28374 failure (under ORA-19870);
+  an ORA-00600 in the output means the source key was present and is FAIL.
 
   Prerequisite: step 15 (backup) must have completed.
 
@@ -145,15 +155,22 @@ main() {
     lib_info "DBID: ${dbid}, dev key: ${dev_key_id:0:16}..."
 
     local clone_exit=0
+    # Not local: the EXIT trap runs after main has returned.
+    CLONE_OUT=$(mktemp)
+    trap 'rm -f "${CLONE_OUT}"' EXIT
+    local clone_out="${CLONE_OUT}"
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         lib_info "DRY-RUN: would run: ${CLONE_SCRIPT} --variant b2 --dbid ${dbid} --cf-piece ${cf_piece} --key <dev_key_id>"
     else
+        set +e
         "${CLONE_SCRIPT}" \
             --variant b2 \
             --dbid     "${dbid}" \
             --cf-piece "${cf_piece}" \
             --key    "${dev_key_id}" \
-            "${CLONE_EXTRA_ARGS[@]}" || clone_exit=$?
+            "${CLONE_EXTRA_ARGS[@]}" 2>&1 | tee "${clone_out}"
+        clone_exit=${PIPESTATUS[0]}
+        set -e
     fi
 
     # Record the result
@@ -162,9 +179,20 @@ main() {
     if [[ "${DRY_RUN}" == "TRUE" ]]; then
         verdict="PASS"
         msg="DRY-RUN - no actual RMAN run"
-    elif [[ "${clone_exit}" -ne 0 ]]; then
+    elif [[ "${clone_exit}" -ne 0 ]] && grep -q "ORA-00600" "${clone_out}"; then
+        # ORA-19870 together with ORA-00600 is the B1 signature: RMAN could
+        # read the source blocks, so the source key was in the keystore.
+        verdict="FAIL"
+        msg="RMAN failed with ORA-00600 (exit ${clone_exit}): source key present - this is B1, not B2: $({ grep -m1 -o "ORA-00600.*" "${clone_out}" || true; } | tail -c 120)"
+    elif [[ "${clone_exit}" -ne 0 ]] && grep -qE "^ORA-28374:" "${clone_out}"; then
         verdict="PASS"
-        msg="RMAN failed as expected (exit ${clone_exit}): ORA-19870/ORA-28374 without prod MEK"
+        msg="RMAN failed as expected (exit ${clone_exit}): $({ grep -E "^ORA-(19870|28374):" "${clone_out}" || true; } | sed 's/ \/opt.*//' | paste -sd ' ' -)"
+    elif [[ "${clone_exit}" -ne 0 ]]; then
+        # Same trap as in step 35 before 2026-09-22: a fixed PASS text on any
+        # non-zero exit turns a usage error into a measurement. ORA-19870
+        # without ORA-28374 does not name the missing key either.
+        verdict="FAIL"
+        msg="clone aborted (exit ${clone_exit}) without ORA-28374: $({ grep -m1 -iE "ERROR|ORA-[0-9]+" "${clone_out}" || true; } | tail -c 120)"
     else
         verdict="FAIL"
         msg="RMAN unexpectedly succeeded without prod MEK - investigate"

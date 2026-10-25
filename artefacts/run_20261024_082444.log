@@ -1,0 +1,258 @@
+2026-10-24 08:24:44 RUN run_all.sh 0.4.0
+  DRY_RUN=FALSE FORCE_YES=TRUE VERBOSE=FALSE
+  OPT_ONLY=35 OPT_FROM= OPT_TO=
+
+========================================================================
+  STEP 35: Variant B1: AS ENCRYPTED USING KEY with prod MEK
+  Script: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/scripts/tde-verify/tests/35_variant_b1.sh
+  Time:   2026-10-24 08:24:44
+========================================================================
+2026-10-24 08:24:44 START [35] 35_variant_b1.sh
+2026-10-24 08:24:44 INFO  Starting 35_variant_b1.sh 0.3.0
+
+========================================================================
+== Step 35: Variant B1 - AS ENCRYPTED with prod MEK + new dev MEK
+========================================================================
+
+========================================================================
+== Reset odbencdev
+========================================================================
+2026-10-24 08:24:44 INFO  resetting service 'odbencdev' ...
+ Container odbencdev Stopping 
+ Container odbencdev Stopped 
+ Container odbencdev Removing 
+ Container odbencdev Removed 
+ Network oracle-free-labs_default Removing 
+ Network oracle-free-labs_default Resource is still in use 
+2026-10-24 08:24:47 INFO  removing /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/data/odbencdev
+2026-10-24 08:24:47 INFO  restored tracked files under data/odbencdev
+2026-10-24 08:24:47 INFO  service 'odbencdev' reset complete
+2026-10-24 08:24:47 INFO  starting service 'odbencdev' ...
+ Container odbencdev Creating 
+ Container odbencdev Created 
+ Container odbencdev Starting 
+ Container odbencdev Started 
+2026-10-24 08:24:48 INFO  waiting for odbencdev to be ready (timeout 600s) ...
+2026-10-24 08:26:59 INFO  odbencdev is ready
+
+========================================================================
+== Create dev-own MEK (prod MEK is imported on top)
+========================================================================
+2026-10-24 08:26:59 INFO  dev key ID: ASOgSwuOSEJqlNFh...
+
+========================================================================
+== Attempt RESTORE AS ENCRYPTED USING KEY (prod MEK present)
+========================================================================
+2026-10-24 08:26:59 INFO  DBID: 1519529852, dev key: ASOgSwuOSEJqlNFh...
+2026-10-24 08:27:00 INFO  Starting tde_clone.sh 0.1.0
+2026-10-24 08:27:00 INFO  variant b1: target keystore keeps its own MEK, source MEK merged in
+2026-10-24 08:27:00 INFO  backing the target keystore up to /opt/oracle/xchange/wallet_dev_pristine
+2026-10-24 08:27:00 INFO  merging the source keystore into the target keystore
+KEYS_BEFORE=1
+MERGE_OK
+target cwallet.sso moved to /opt/oracle/xchange/sso_b1_target
+2026-10-24 08:27:00 INFO  source keystore merged; the keystore is reopened from ewallet.p12 after the restart
+2026-10-24 08:27:00 INFO  shutting the target down and starting it NOMOUNT
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+ORACLE instance started.
+
+Total System Global Area 1603392144 bytes
+Fixed Size		    5026448 bytes
+Variable Size		  419430400 bytes
+Database Buffers	 1174405120 bytes
+Redo Buffers		    4530176 bytes
+2026-10-24 08:27:03 INFO  moving stale online redo logs to /opt/oracle/xchange/stale_redo_odbencdev
+moved /opt/oracle/oradata/FREE/redo01.log
+moved /opt/oracle/oradata/FREE/redo02.log
+moved /opt/oracle/oradata/FREE/redo03.log
+2026-10-24 08:27:03 INFO  restoring the source control file and mounting
+2026-10-24 08:27:03 INFO  control file autobackup: cf_c-1519529852-20261024-00
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sat Oct 24 08:27:04 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (not mounted)
+
+RMAN> 
+
+RMAN> SET DBID 1519529852;
+executing command: SET DBID
+
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
+4>   RESTORE CONTROLFILE FROM '/opt/oracle/xchange/backup/cf_c-1519529852-20261024-00';
+5>   ALTER DATABASE MOUNT;
+6>   RELEASE CHANNEL c1;
+7> }
+using target database control file instead of recovery catalog
+allocated channel: c1
+channel c1: SID=38 device type=DISK
+
+executing command: SET CONTROLFILE AUTOBACKUP FORMAT
+
+Starting restore at 24-OCT-26
+
+channel c1: restoring control file
+channel c1: restore complete, elapsed time: 00:00:01
+output file name=/opt/oracle/oradata/FREE/control01.ctl
+output file name=/opt/oracle/oradata/FREE/control02.ctl
+Finished restore at 24-OCT-26
+
+Statement processed
+
+released channel: c1
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sat Oct 24 08:27:06 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852, not open)
+
+RMAN> 
+
+RMAN> CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
+using target database control file instead of recovery catalog
+old RMAN configuration parameters:
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/xchange/backup/cf_%F';
+new RMAN configuration parameters:
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/opt/oracle/oradata/cf_target_%F';
+new RMAN configuration parameters are successfully stored
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+2026-10-24 08:27:06 INFO  opening the target keystore with the stored keystore password
+
+    CON_ID STATUS	  WALLET_TYPE
+---------- -------------- ----------------
+	 1 OPEN 	  PASSWORD
+2026-10-24 08:27:06 INFO  cataloging the backup pieces
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sat Oct 24 08:27:06 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852, not open)
+
+RMAN> 
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   # No CATALOG: both containers see the exchange directory at the same path, so
+4>   # the restored control file already knows the source pieces. Cataloging would
+5>   # also pick up a previous clone's control file autobackup and its incarnation,
+6>   # which makes recovery fail with ORA-19912.
+7>   RELEASE CHANNEL c1;
+8> }
+using target database control file instead of recovery catalog
+allocated channel: c1
+channel c1: SID=4 device type=DISK
+
+released channel: c1
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+2026-10-24 08:27:07 INFO  restoring with: RESTORE DATABASE AS ENCRYPTED USING KEY 'ASOgSwuOSEJqlNFhATAGEGoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+2026-10-24 08:27:07 INFO  recovery will stop before archived log sequence 6
+
+Recovery Manager: Release 23.26.3.0.0 - Production on Sat Oct 24 08:27:07 2026
+Version 23.26.3.0.0
+
+Copyright (c) 1982, 2026, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: FREE (DBID=1519529852, not open)
+
+RMAN> 
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   SET UNTIL SEQUENCE 6 THREAD 1;
+4>   RESTORE DATABASE AS ENCRYPTED USING KEY 'ASOgSwuOSEJqlNFhATAGEGoAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+5>   RECOVER DATABASE;
+6>   RELEASE CHANNEL c1;
+7> }
+using target database control file instead of recovery catalog
+allocated channel: c1
+channel c1: SID=38 device type=DISK
+
+executing command: SET until clause (SEQUENCE)
+
+Starting restore at 24-OCT-26
+
+channel c1: starting datafile backup set restore
+channel c1: specifying datafile(s) to restore from backup set
+channel c1: restoring datafile 00001 to /opt/oracle/oradata/FREE/system01.dbf
+channel c1: restoring datafile 00003 to /opt/oracle/oradata/FREE/sysaux01.dbf
+channel c1: restoring datafile 00007 to /opt/oracle/oradata/FREE/users01.dbf
+channel c1: restoring datafile 00011 to /opt/oracle/oradata/FREE/undotbs01.dbf
+channel c1: reading from backup piece /opt/oracle/xchange/backup/024ojrp4_2_1_1
+channel c1: piece handle=/opt/oracle/xchange/backup/024ojrp4_2_1_1 tag=TAG20261024T082403
+channel c1: restored backup piece 1
+channel c1: restore complete, elapsed time: 00:00:03
+channel c1: starting datafile backup set restore
+channel c1: specifying datafile(s) to restore from backup set
+channel c1: restoring datafile 00016 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_system_ofrmlftd_.dbf
+channel c1: restoring datafile 00017 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_sysaux_ofrmlftg_.dbf
+channel c1: restoring datafile 00018 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_undotbs1_ofrmlftg_.dbf
+channel c1: restoring datafile 00019 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_audit_da_ofrmljmf_.dbf
+channel c1: restoring datafile 00020 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_users_ofrmm540_.dbf
+channel c1: restoring datafile 00021 to /opt/oracle/oradata/FREE/5E9119D0C266101BE063020013AC70A7/datafile/o1_mf_canary_p_ofrmqxxx_.dbf
+channel c1: reading from backup piece /opt/oracle/xchange/backup/037ojrp7_3_1_1
+RMAN Command Id : 2026-10-24T08:27:07
+RMAN Command Id : 2026-10-24T08:27:07
+released channel: c1
+RMAN-00571: ===========================================================
+RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+RMAN-00571: ===========================================================
+RMAN-03002: failure of restore command at 10/24/2026 08:27:14
+ORA-19870: error while restoring backup piece /opt/oracle/xchange/backup/037ojrp7_3_1_1
+ORA-00600: internal error code, arguments: [kcbtse_encdec_tbsblk_1], [4], [2], [1244], [18], [1244], [20], [4294967295], [0], [0], [], []
+RMAN Client Diagnostic Trace file : /opt/oracle/diag/clients/user_oracle/RMAN_2145370381_116/trace/ora_rman_5360_0.trc
+RMAN Server Diagnostic Trace file : /opt/oracle/diag/rdbms/free/FREE/trace/FREE_ora_5377.trc
+RMAN Server Diagnostic Trace file : /opt/oracle/diag/rdbms/free/FREE/trace/FREE_ora_5371.trc
+
+
+RMAN> EXIT
+
+
+Recovery Manager complete.
+
+========================================================================
+== Result
+========================================================================
+
+------------------------------------------------------------------------
+VERDICT: PASS - RMAN failed as expected (exit 1): ORA-00600: internal error code, arguments: [kcbtse_encdec_tbsblk_1], [4], [2], [1244], [18], [1244], [20], [4294967295], [0], [0], [], []
+------------------------------------------------------------------------
+2026-10-24 08:27:14 INFO  Done.
+2026-10-24 08:27:14 END   [35] 35_variant_b1.sh: PASS (150s)
+
+========================================================================
+  TDE Verification Run Results
+  Log: /Users/stefan.oehrli/repos/own/oehrlis/oracle-free-labs/artefacts/run_20261024_082444.log
+========================================================================
+
+NR    Result      Duration  Description
+----  ----------  --------  -------------------------------------------
+35    PASS        150s      Variant B1: AS ENCRYPTED USING KEY with prod MEK
+
+All steps PASSED.

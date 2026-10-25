@@ -7,6 +7,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- TDE verify: step 72 `72_rekey_all_withdrawal.sh` - ONLINE REKEY of every encrypted
+  tablespace plus SET KEY per container, then withdrawal of the source master keys.
+  Step 45 (auxiliary restore + PDB clone) ran for the first time and is registered in
+  `run_all.sh`. Measured 2026-10-24, rerun 2026-10-25 on the final scripts: B1, B2,
+  45 and 72 PASS, logs in `artefacts/`, facts in `tasks/e2e-facts.md`.
+
+### Fixed
+
+- TDE verify: B1 (`tde_clone.sh b1`) never imported the prod master key, so every
+  scripted B1 run was really B2. It now merges the source keystore; B1 PASS needs
+  `ORA-00600`, B2 PASS needs `ORA-28374` without `ORA-00600`.
+- TDE verify: verdicts that could false-PASS - canary compare exit codes (0 identical,
+  3 differs, 2 error), alert-log scan limited to lines written by the attempt,
+  closed keystore (ORA-28365) reported as unclear, step 45 `CDB$ROOT` quoting and
+  hidden SQL errors, `set -e` aborts on the FAIL path. Key exports mode 600 and
+  deleted after use.
+
 ## [1.6.1] - 2026-10-23
 
 ### Fixed

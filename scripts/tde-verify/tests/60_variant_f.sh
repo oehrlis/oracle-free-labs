@@ -6,7 +6,7 @@
 # Author.....: Stefan Oehrli (oes) stefan.oehrli@oradba.ch
 # Editor.....: Stefan Oehrli
 # Date.......: 2026-09-04
-# Version....: 0.1.0
+# Version....: 0.1.1
 # Purpose....: Variant F: the only measured path that breaks the key chain and
 #              creates genuinely new TEK material.
 #              Steps:
@@ -34,12 +34,17 @@
 # ------------------------------------------------------------------------------
 # CHANGE LOG:
 # 2026-09-04  oes  Initial release                                        0.1.0
+# 2026-10-24  oes  compare_canary_blocks reports "differs" as 3; SC2016
+#                  disabled file-wide with reason                         0.1.1
 # ------------------------------------------------------------------------------
 
+# Single-quoted SQL and shell blocks below are expanded inside the container
+# on purpose (KSPWD, v$ views, CDB$ROOT); SC2016 is the intended behaviour.
+# shellcheck disable=SC2016
 set -euo pipefail
 SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.1.1"
 VERBOSE=${VERBOSE:-"FALSE"}
 DRY_RUN=${DRY_RUN:-"FALSE"}
 FORCE_YES=${FORCE_YES:-"FALSE"}
@@ -375,7 +380,7 @@ EXIT
     elif [[ "${tek_clone}" == "${tek_source}" ]]; then
         verdict="FAIL"
         msg="TEK is still identical to baseline - chain not broken (investigate)"
-    elif [[ ${canary_rc} -eq 1 ]]; then
+    elif [[ ${canary_rc} -eq 3 ]]; then
         verdict="PASS"
         msg="TEK DIFFERS and the canary ciphertext changed with it (${canary_cmp}) - new key material, chain broken. Same OFFLINE ENCRYPT as variant D, which reproduced the ciphertext: the difference is the renewed Database Key"
     elif [[ ${canary_rc} -eq 2 ]]; then
