@@ -3,9 +3,18 @@
 Begleitdokument zu [tde-key-architecture.md](tde-key-architecture.md) und
 [tde-restore-as-encrypted.md](tde-restore-as-encrypted.md).
 
-Alle Messwerte in diesem Dokument stammen aus dem durchgehenden E2E-Lauf vom 2026-09-06
-(Rohlog `artefacts/tde-e2e-run-20260906.log`, Faktenblatt `tasks/e2e-facts.md`), gemessen an
-Oracle AI Database Free 26ai. Schluessel-IDs und gewrappte Schluesselwerte sind pro Lauf neu:
+Stand: 2026-10-25, Messungen vom 2026-09-06 und vom 2026-10-24/25.
+
+Die Messwerte in diesem Dokument stammen, wo nicht anders genannt, aus dem durchgehenden
+E2E-Lauf vom 2026-09-06 (Rohlog `artefacts/tde-e2e-run-20260906.log`, Faktenblatt
+`tasks/e2e-facts.md`), gemessen an Oracle AI Database Free 26ai. Die Aussagen zu B1, B2, zur
+Auxiliary-Kette (PDB-Klon aus einem restaurierten Auxiliary) und zum `ONLINE REKEY` mit
+vollstaendigem Entzug der Quell-MEKs stammen aus Einzellaeufen vom 2026-10-24, am 2026-10-25
+mit der finalen Skriptrevision wiederholt, alle Ergebnisse unveraendert (Rohlogs
+`artefacts/run_20261024_*.log` und `artefacts/run_20261025_*.log`, Faktenblatt
+`tasks/e2e-facts.md`, Abschnitt "Messwerte der Einzellaeufe vom 2026-10-24"). Diese Laeufe
+haben eine eigene Basis; aus ihnen werden nur Relationen, Blockzahlen und Fehlercodes zitiert,
+keine Schluessel-IDs. Schluessel-IDs und gewrappte Schluesselwerte sind pro Lauf neu:
 die genannten Hex-Werte belegen diesen Lauf, sie sind keine Zielwerte und in einer anderen
 Umgebung nicht reproduzierbar. Reproduzierbar sind die Aussagen dahinter, nicht die Werte.
 
@@ -35,8 +44,8 @@ abgeleitet, nicht im Lab gemessen.
 flowchart LR
     S0["Stufe 0\nProd-Schluessel und Prod-Chiffrat\nim Ziel\nVariante A, C, PDB-Archiv P2"]
     S1["Stufe 1\neigener MEK, Prod-TEK\nidentisches Chiffrat\nVariante D"]
-    S2["Stufe 2\neigener MEK, Prod-TEK\nQuell-MEK entfernt\nnicht gemessen"]
-    S3["Stufe 3\neigener MEK, eigener TEK\nkein Quell-MEK\nPDB-Klon P1/P4, ONLINE REKEY, Variante F"]
+    S2["Stufe 2\neigener MEK, Prod-TEK\nQuell-MEK entfernt\nnicht als gelungen gemessen"]
+    S3["Stufe 3\neigener MEK, eigener TEK\nkein Quell-MEK\nPDB-Klon P1/P4, ONLINE REKEY\nmit SET KEY je Container, Variante F"]
     S4["Stufe 4\ngetrennte Schluesselhoheit\ntechnisch kein Zugriff\nauf Prod-Schluessel\nnur mit externem KMS"]
     S0 --> S1
     S1 --> S2
@@ -54,8 +63,8 @@ den konkreten Varianten-Bezeichnungen.
 | 0 | Prod-Keystore und Prod-TEK im Ziel | A, C | MEK, TEK, Chiffrat | vollstaendige kryptografische Abhaengigkeit von Prod | minimal | ja |
 | 0 | PDB-Archiv-Transport in eine fremde CDB | P2 | MEK, TEK, Chiffrat - trotz fremder CDB und eigener DBID | wie Variante A; die fremde CDB taeuscht Trennung nur vor | gering | ja |
 | 1 | eigener MEK, Prod-TEK, Quell-MEK noch im Keystore | D | TEK-Klartext, identisches Chiffrat | Ciphertext-Vergleich Prod gegen Klon moeglich; Quell-MEK im Keystore | mittel | ja |
-| 2 | eigener MEK, Prod-TEK, Quell-MEK aus Keystore entfernt | kein Verfahren direkt gemessen | TEK-Klartext, identisches Chiffrat | Ciphertext-Vergleich bleibt; Read-only-Tablespaces blockieren die Entfernung | mittel | nein, abgeleitet |
-| 3 | eigener MEK, eigener TEK, kein Quell-MEK | P1, P4, ONLINE REKEY (G), F | nichts Schluesselrelevantes fuer die behandelten Tablespaces | Read-only-Tablespaces bleiben aussen vor; bei F: Datenfenster im Klartext und Hidden Parameter | gering (PDB-Klon), mittel (REKEY), hoch (F) | ja |
+| 2 | eigener MEK, Prod-TEK, Quell-MEK aus Keystore entfernt | kein Verfahren als gelungen gemessen; Negativ-Datenpunkt: nur `SET KEY` je Container, kein Rekey | TEK-Klartext, identisches Chiffrat | Ciphertext-Vergleich bleibt; Read-only-Tablespaces blockieren die Entfernung | mittel | nicht als gelungen gemessen; gemessen ist ein Negativ-Datenpunkt bei sehr wahrscheinlich read-only `USERS` |
+| 3 | eigener MEK, eigener TEK, kein Quell-MEK | P1, P4, ONLINE REKEY plus SET KEY in jedem Container plus ONLINE REKEY auf SYSTEM/SYSAUX/UNDO, F | nichts Schluesselrelevantes fuer die behandelten Tablespaces | Read-only-Tablespaces bleiben aussen vor; bei F: Datenfenster im Klartext und Hidden Parameter | gering (PDB-Klon), mittel (REKEY), hoch (F) | ja; Entzugstest fuer den REKEY-Weg; Beitrag der SYSTEM/SYSAUX/UNDO-Probes nicht isoliert |
 | 4 | getrennte Schluesselhoheit via externem KMS | OKV | keine | Verfuegbarkeitsabhaengigkeit vom KMS | hoch | nein, abgeleitet |
 
 <!-- markdownlint-restore -->
@@ -94,10 +103,18 @@ Ausserdem zeigt `ORIGIN` fuer den transportierten Prod-Schluessel `LOCAL`, nicht
 
 #### Entzugstest - was ohne den Quell-MEK passiert
 
-Der Entzugstest wurde nach dem `ONLINE REKEY` gemessen und faellt deutlicher aus, als die
-Formulierung "ein Tablespace ist nicht mehr lesbar" nahelegt: nach dem Entfernen des
-Quell-MEK **oeffnet die Zieldatenbank nicht mehr**. Sie bleibt mit `ORA-28374` auf `MOUNTED`
-stehen. Es ist also nicht ein Tablespace unlesbar, sondern die Datenbank unbrauchbar.
+Der Entzugstest wurde nach einem `ONLINE REKEY` **ohne MEK-Wechsel** gemessen (Variante G):
+nach dem Entfernen des Quell-MEK **oeffnete die Zieldatenbank nicht mehr** (`MOUNTED`,
+`ORA-28374`). Vorbehalt: dieser Befund ist nicht nachgemessen und moeglicherweise derselbe
+Open-/Saved-State-Mechanismus wie unten - ob die CDB mit geschlossener PDB oeffnen und nur
+deren Daten verlieren wuerde, ist offen. Mit `SET KEY` in jedem Container vor dem Rekey
+besteht dasselbe Ziel den Entzugstest (siehe
+[ONLINE REKEY](#online-rekey---der-dokumentierte-weg-nach-einem-restore)).
+
+In einer CDB mit mehreren PDBs wurde beobachtet (Laeufe 2026-10-24): war die abhaengige PDB
+beim Shutdown offen, blieb die CDB auf `MOUNTED`; wurde sie vorher geschlossen, oeffnete die
+CDB, und nur die Daten dieser PDB scheiterten. Dass die offene PDB die Ursache ist, ist eine
+Hypothese (nicht isoliert).
 
 Fuer die Bewertung heisst das: der Quell-MEK ist keine Bequemlichkeit, die man nachtraeglich
 wegnehmen kann, solange irgendein Objekt der Datenbank noch auf ihn verweist.
@@ -162,13 +179,23 @@ Zusaetzlich bleibt der Quell-MEK im Keystore, solange ihn ein Objekt noch benoet
 
 ### Stufe 2 - Eigener MEK, gleicher TEK, Quell-MEK entfernt
 
-**Nicht als eigenstaendige Variante gemessen. Abgeleitet.**
+**Nicht als gelungen gemessen. Ein gemessener Negativ-Datenpunkt (Lauf 2026-10-24,
+wiederholt 2026-10-25).**
 
 Stufe 2 waere die Stufe-1-Situation, in der zusaetzlich alle Prod-MEKs aus dem
 Ziel-Keystore entfernt werden. Praktische Huerde: der Quell-MEK bleibt notwendig,
-solange irgendein Objekt im Klon auf ihn verweist - und der Entzugstest zeigt, dass eine
-Datenbank ohne den benoetigten MEK nicht oeffnet, sondern mit `ORA-28374` auf `MOUNTED`
-stehen bleibt.
+solange irgendein Objekt im Klon auf ihn verweist - ohne ihn oeffnete die Datenbank im
+Entzugstest nach Variante G nicht, oder die Daten der betroffenen PDB waren nicht lesbar
+(Vorbehalte siehe
+[Entzugstest](#entzugstest---was-ohne-den-quell-mek-passiert)).
+
+Gemessen ist, dass `SET KEY` je Container ohne Rekey nicht genuegte: der Tablespace war
+danach unter dem neuen MEK gefuehrt, nach dem Entzug des Quell-MEK aber nicht lesbar - bei
+einem Tablespace, der sehr wahrscheinlich `READ ONLY` war. Ein `READ WRITE`-Tablespace mit
+nur `SET KEY` ist nicht gemessen. Der Datenpunkt stammt aus der Auxiliary-PDB der
+Auxiliary-Kette (siehe [PDB-Klon](#pdb-klon---der-praktisch-empfohlene-weg)): `SET KEY` in
+`CDB$ROOT` und in der PDB, kein Rekey; nach dem Entzug scheiterte das Datafile mit
+`ORA-01187`, Ursache laut Alert-Log `ORA-28374`.
 
 Die zentrale Einschraenkung ist gemessen: **Read-only-Tablespaces ueberstehen eine
 MEK-Rotation unveraendert** (Fall P5, siehe unten). Sie zeigen danach weiter auf den
@@ -182,7 +209,8 @@ Weg zu Stufe 3.
 
 ### Stufe 3 - Eigener MEK, eigener TEK, kein Quell-MEK
 
-**Auf drei Wegen gemessen: PDB-Klon (P1, P4), `ONLINE REKEY` (G, P6) und Discard-Pfad (F).**
+**Auf drei Wegen gemessen: PDB-Klon (P1, P4), `ONLINE REKEY` (G, P6; mit `SET KEY` je
+Container und Entzug der Quell-MEKs am 2026-10-24/25) und Discard-Pfad (F).**
 
 Alle drei erzeugen neues Tablespace-Key-Material. Sie unterscheiden sich im Aufwand, in den
 Auflagen und im Risikoprofil. Reihenfolge unten nach Praxistauglichkeit.
@@ -212,6 +240,14 @@ Betriebliche Voraussetzung, im Lauf gemessen: jede PDB-Operation ueber verschlue
 Tablespaces verlangt das Keystore-Passwort (`ORA-46697`) - lokaler Klon, Remote-Klon und
 Einpluggen gleichermassen. Ein Auto-Login-Keystore genuegt fuer keine davon.
 
+Auxiliary-Kette (ZDLRA-Szenario, Lauf 2026-10-24, wiederholt 2026-10-25): auch ein PDB-Klon
+aus einer per RMAN restaurierten Auxiliary-CDB erhaelt neues Tablespace-Schluesselmaterial,
+nachdem in der Auxiliary `SET KEY` in `CDB$ROOT` und in der Quell-PDB lief: 0 von 313
+Canary-Bloecken identisch, Klon-TEK unter dem neuen MEK. Nach dem Entfernen des Quell-MEK
+liest der Klon seine Daten; die Auxiliary scheitert mit `ORA-01187`, Ursache laut Alert-Log
+`ORA-28374`. Gemessen mit Auxiliary und Klon in derselben CDB; getrennte CDBs mit getrennten
+Keystores sind nicht gemessen.
+
 #### ONLINE REKEY - der dokumentierte Weg nach einem Restore
 
 **Gemessen: Variante G in der CDB, Fall P6 in der PDB.**
@@ -219,6 +255,15 @@ Einpluggen gleichermassen. Ein Auto-Login-Keystore genuegt fuer keine davon.
 `ALTER TABLESPACE <name> ENCRYPTION ONLINE REKEY` ist seit Oracle Database 12.2.0.1
 dokumentiert und erzeugt nachweislich neuen TEK-Klartext. Kein Hidden Parameter, kein
 Datenfenster im Klartext.
+
+Neuer TEK allein trennt nicht: er wird unter dem aktiven MEK eingewickelt, nach einem
+Restore also unter dem Prod-MEK. Im Lab getrennt hat diese Folge (Lauf 2026-10-24,
+wiederholt 2026-10-25): Read-only-Tablespaces `READ WRITE`,
+`ADMINISTER KEY MANAGEMENT SET KEY` in `CDB$ROOT` und in jeder PDB - einzeln, nicht
+`CONTAINER=ALL` -, dann `ONLINE REKEY` der verschluesselten Tablespaces und `ONLINE REKEY`
+auf `SYSTEM`, `SYSAUX` und `UNDO`. So durchgefuehrt oeffnet das Ziel nach dem Entfernen
+aller Prod-MEKs und liest seine Daten. Ob die Probes auf `SYSTEM`/`SYSAUX`/`UNDO` dazu
+beitragen, ist nicht isoliert.
 
 Ergebnis der Labmessung (Lauf 2026-09-06):
 
@@ -301,7 +346,8 @@ Datafile-Header nicht beschreiben kann.
 
 **Konsequenz:** wer eine Stufe ueber eine MEK-Rotation erreichen will, erreicht sie fuer
 read-only Tablespaces nicht. Der alte Produktionsschluessel muss dann im Keystore bleiben,
-sonst sind die Daten unlesbar - und die Datenbank oeffnet nicht. In grossen Umgebungen ist das
+sonst sind die Daten unlesbar - und im Entzugstest nach Variante G oeffnete die Datenbank
+nicht (Vorbehalt siehe [Entzugstest](#entzugstest---was-ohne-den-quell-mek-passiert)). In grossen Umgebungen ist das
 der Normalfall: historische Partitionen, abgeschlossene Geschaeftsjahre, archivierte Mandanten.
 
 Die Einschraenkung betrifft Stufe 2 und Stufe 3 gleichermassen, soweit der jeweilige Weg auf
@@ -343,8 +389,9 @@ Ausfuehrliche Behandlung in [tde-okv-argumentation.md](tde-okv-argumentation.md)
 1. **PDB-Klon**, lokal oder remote ueber DB-Link. Ein regulaer unterstuetztes Kommando, das
    Kopie und Schluesselwechsel in einem Schritt erledigt. Erste Wahl, wo die Quelle als PDB
    vorliegt.
-2. **`ONLINE REKEY`** nach dem Restore, wenn der RMAN-Weg gesetzt ist und eine gueltige EE mit
-   Advanced Security Option vorliegt.
+2. **`ONLINE REKEY`** nach dem Restore, mit `SET KEY` in jedem Container davor (siehe
+   [ONLINE REKEY](#online-rekey---der-dokumentierte-weg-nach-einem-restore)), wenn der
+   RMAN-Weg gesetzt ist und eine gueltige EE mit Advanced Security Option vorliegt.
 3. **Variante F**, wenn Stufe 3 erforderlich ist und weder PDB-Klon noch `ONLINE REKEY` zur
    Verfuegung stehen - mit vollstaendiger Umsetzung der Auflagen, Austausch des
    Undo-Tablespace und nach Abklaerung mit dem Oracle Support.
@@ -376,14 +423,17 @@ auf demselben System als Hot-Spare betrieben wird.
 Alle Fehlwege gemessen, nicht hergeleitet.
 
 **`RESTORE ... AS ENCRYPTED USING KEY` mit Prod-MEK im Ziel (`ORA-00600`):**
-Die unverschluesselten CDB-Datafiles werden konvertiert. Sobald RMAN das bereits
+Gemessen per Skript am 2026-10-24, wiederholt am 2026-10-25.
+Die unverschluesselten CDB-Datafiles werden restauriert. Sobald RMAN das bereits
 verschluesselte Datafile erreicht, bricht der Lauf mit
 `ORA-00600 [kcbtse_encdec_tbsblk_1]` ab. Ursache: `AS ENCRYPTED` versucht, bereits
 verschluesselte Bloecke erneut zu verschluesseln - das ist nicht vorgesehen. Fuer eine
 bereits verschluesselte Quelle ist der Weg nicht nutzbar.
 
 **`RESTORE ... AS ENCRYPTED USING KEY` ohne Prod-MEK (`ORA-19870` plus `ORA-28374`):**
-Scheitert sofort beim ersten Backup-Piece. RMAN braucht den Quell-MEK, um die
+Gemessen am 2026-10-24, wiederholt am 2026-10-25.
+Scheitert sofort beim ersten Backup-Piece. Dieses enthielt nur unverschluesselte
+CDB-Datafiles; der Abbruch mit `ORA-28374` kommt trotzdem. RMAN braucht den Quell-MEK, um die
 verschluesselten Quellbloecke zu lesen. Ein RMAN-Klon ohne Transfer des Prod-Schluessels
 existiert nicht.
 
@@ -422,6 +472,17 @@ in [tde-restore-as-encrypted.md](tde-restore-as-encrypted.md), Abschnitt
 
 - Faktenblatt zum E2E-Lauf vom 2026-09-06: `tasks/e2e-facts.md`
 - Rohlog: `artefacts/tde-e2e-run-20260906.log`
+- Faktenblatt zu den Einzellaeufen vom 2026-10-24/25: `tasks/e2e-facts.md`, Abschnitt
+  "Messwerte der Einzellaeufe vom 2026-10-24"
+- Rohlogs der Wiederholung 2026-10-25: B2 `artefacts/run_20261025_063549.log`, B1
+  `artefacts/run_20261025_063809.log`, Auxiliary-Kette `artefacts/run_20261025_064027.log`,
+  `ONLINE REKEY` mit Entzug `artefacts/run_20261025_064340.log`
+- Rohlogs 2026-10-24: Basis `artefacts/run_20261024_081906.log` (Baseline `USERS`
+  `READ ONLY`); Beobachtung `MOUNTED` mit offener PDB `artefacts/run_20261024_090859.log`
+  und `artefacts/run_20261024_092534.log`; Erstlaeufe B1, B2, Auxiliary-Kette und
+  `ONLINE REKEY` mit Entzug `artefacts/run_20261024_082444.log`,
+  `artefacts/run_20261024_082753.log`, `artefacts/run_20261024_094125.log`,
+  `artefacts/run_20261024_095047.log`
 - Protokoll: [tde-e2e-protokoll.md](tde-e2e-protokoll.md)
 
 **Oracle-Primaerquellen:**
