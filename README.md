@@ -6,6 +6,21 @@ It comes with preconfigured services, scripts, and supporting files that make it
 Database instances - with or without OraDBA demo labs - using **Docker** or **Podman**. The setup is optimized for
 **reproducibility**, allowing labs to be reset or cloned quickly for consistent results.
 
+## Role in the lab architecture
+
+This repository is the **predecessor** of the Free lab setup (decision E3), not the core lab infrastructure.
+New labs are built in [oradba-labs](https://github.com/oehrlis/oradba-labs).
+
+- Today: still the working Free lab environment (`labdb` and the other services) and still used until the move
+  is done.
+- Moving out: the Free image and its config go to `oradba-docker/database/free` (planned); lab profiles and
+  common scripts go to oradba-labs. Afterwards this repo is frozen with a README pointer.
+- Is not: the place for new labs, new images or host automation. Do not add new features here.
+- Neighbours: oradba-labs (successor for labs), oradba-docker (successor for the image), oci-labs (OCI hosts),
+  oradba-ansible (VM configuration), odb_autoupgrade (home engine), oradba (runtime).
+
+See the [lab architecture overview](https://github.com/oehrlis/oradba-labs/blob/main/docs/architecture.md).
+
 ## Requirements
 
 Before starting, ensure you have the following:
@@ -151,7 +166,8 @@ Before the first start: `make check SERVICE=<service>`.
 
 ## Demo and Engineering Overlays
 
-This repository provides the core lab infrastructure. Demo scripts, talks content, and
+This repository is the predecessor of the Free lab setup (see "Role in the lab architecture");
+new labs are built in oradba-labs. Demo scripts, talks content, and
 engineering-specific configuration live in **separate repositories** and are layered on top
 via Docker Compose's native override mechanism - without modifying the core files here.
 

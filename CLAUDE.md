@@ -8,6 +8,21 @@ Container-based lab environment for **Oracle AI Database 26ai Free** using Docke
 Provides six independent services, each representing a different Oracle database configuration for labs and training.
 See `docker-compose.yml` and `.env.example` for full configuration.
 
+## Role in the lab architecture
+
+This repository is the **predecessor** of the Free lab setup (decision E3), not the core lab infrastructure.
+New labs are built in [oradba-labs](https://github.com/oehrlis/oradba-labs).
+
+- Today: still the working Free lab environment (`labdb` and the other services) and still used until the move
+  is done.
+- Moving out: the Free image and its config go to `oradba-docker/database/free` (planned); lab profiles and
+  common scripts go to oradba-labs. Afterwards this repo is frozen with a README pointer.
+- Is not: the place for new labs, new images or host automation. Do not add new features here.
+- Neighbours: oradba-labs (successor for labs), oradba-docker (successor for the image), oci-labs (OCI hosts),
+  oradba-ansible (VM configuration), odb_autoupgrade (home engine), oradba (runtime).
+
+See the [lab architecture overview](https://github.com/oehrlis/oradba-labs/blob/main/docs/architecture.md).
+
 ## Service Management
 
 Copy `.env.example` to `.env` and adjust before first use. Each service runs independently via Docker Compose profiles:
