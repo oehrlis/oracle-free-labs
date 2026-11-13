@@ -64,7 +64,7 @@ BEGIN
     SELECT regexp_substr(file_name, '^/.*/')
       INTO l_create_file_dest
       FROM cdb_data_files
-     WHERE tablespace_name='SYSTEM' AND ROWNUM=1;
+     WHERE tablespace_name='SYSTEM' AND con_id = 1 AND ROWNUM=1; -- CDB$ROOT, not a PDB file (19c non-OMF)
 
     SELECT db_unique_name INTO l_db_unique_name FROM v$database;
 

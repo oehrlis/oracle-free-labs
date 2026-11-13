@@ -7,6 +7,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `create_pdb.sql`: CREATE_FILE_DEST from the CDB$ROOT SYSTEM datafile (`con_id = 1`); on a
+  non-OMF 19c CDB the first SYSTEM file could belong to a PDB (ORA-65165, found in oradba-labs)
+
 ### Changed
 
 - Docs: role in the lab architecture (oradba-labs, oradba-docker)
