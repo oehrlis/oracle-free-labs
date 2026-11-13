@@ -7,6 +7,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- `common_db_config.sql`: legacy common profiles, password verify function and common users
+  (project-specific names, not needed by any lab)
+
 ### Fixed
 
 - `create_pdb.sql`: CREATE_FILE_DEST from the CDB$ROOT SYSTEM datafile (`con_id = 1`); on a

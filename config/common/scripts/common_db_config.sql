@@ -20,7 +20,6 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 SET LINESIZE 256 PAGESIZE 1000
 SET SERVEROUTPUT ON
 
-
 -- Main ------------------------------------------------------------------------
 -- Must run in CDB$ROOT (prefer also calling require_cdb_root.sql before this)
 
@@ -34,34 +33,6 @@ ALTER SYSTEM SET db_files  = 1024        SCOPE = SPFILE;
 PROMPT - Restart database to apply parameter changes
 SHUTDOWN IMMEDIATE;
 STARTUP;
-
--- common password verification function ---------------------------------------
-PROMPT - Create common password verification function
-CREATE OR REPLACE FUNCTION verify_function_bit (
-  username     VARCHAR2,
-  password     VARCHAR2,
-  old_password VARCHAR2
-) RETURN BOOLEAN IS
-BEGIN
-  IF NOT ora_complexity_check(password, chars => 8) THEN
-    RETURN FALSE;
-  END IF;
-  RETURN TRUE;
-END;
-/
--- Create common profiles similar to the BIT environment -----------------------
-PROMPT - Create common user profiles
-CREATE PROFILE c##u_user LIMIT sessions_per_user UNLIMITED PASSWORD_VERIFY_FUNCTION verify_function_bit;
-CREATE PROFILE c##m_user LIMIT sessions_per_user UNLIMITED PASSWORD_VERIFY_FUNCTION verify_function_bit;
-CREATE PROFILE c##admin_user LIMIT sessions_per_user UNLIMITED PASSWORD_VERIFY_FUNCTION verify_function_bit;
-CREATE PROFILE c##end_user LIMIT sessions_per_user UNLIMITED PASSWORD_VERIFY_FUNCTION verify_function_bit;
-
--- Create COMMON users similar to BIT environmentbut without authentication:
-PROMPT - Create common users without authentication
-CREATE USER c##discovery NO AUTHENTICATION CONTAINER=ALL;
-CREATE USER c##sparx     NO AUTHENTICATION CONTAINER=ALL;
-CREATE USER c##fub_admin NO AUTHENTICATION CONTAINER=ALL;
-CREATE USER c##sec_admin NO AUTHENTICATION CONTAINER=ALL;
 
 -- Grant roles/privileges as needed here or in a PDB-scoped script.
 
